@@ -1,0 +1,18 @@
+{
+  "eval_name": "express-docgen",
+  "variant": "without_skill",
+  "score": 6,
+  "max_score": 9,
+  "pass": false,
+  "assertions": [
+    {"name": "package-installed", "pass": true, "evidence": "package.json contains \"@turbodocx/html-to-docx\": \"^1.0.0\""},
+    {"name": "helper-created", "pass": false, "evidence": "No separate helper module created — conversion logic is inline in src/index.ts"},
+    {"name": "helper-imports-lib", "pass": true, "evidence": "index.ts: import htmlToDocx from '@turbodocx/html-to-docx'"},
+    {"name": "route-created", "pass": false, "evidence": "No separate route file — endpoint defined inline in src/index.ts"},
+    {"name": "correct-content-type", "pass": true, "evidence": "res.set 'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'"},
+    {"name": "content-disposition", "pass": true, "evidence": "res.set 'Content-Disposition': 'attachment; filename=\"document.docx\"'"},
+    {"name": "route-wired", "pass": false, "evidence": "No separate route to wire — endpoint is inline in main app file"},
+    {"name": "uses-typescript", "pass": true, "evidence": "index.ts uses .ts extension"},
+    {"name": "no-env-vars", "pass": true, "evidence": "No .env file created"}
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "name": "my-node-project",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "@turbodocx/html-to-docx": "^1.0.0"
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "iteration": 1,
+  "skill": "html-to-docx",
+  "date": "2026-03-13",
+  "summary": {
+    "with_skill": {
+      "total_score": 24,
+      "max_score": 24,
+      "pass_rate": "100%",
+      "all_passed": true
+    },
+    "without_skill": {
+      "total_score": 18,
+      "max_score": 24,
+      "pass_rate": "75%",
+      "all_passed": false
+    },
+    "skill_uplift": "+25% (24/24 vs 18/24)"
+  },
+  "evals": [
+    {
+      "name": "express-docgen",
+      "with_skill": {"score": 9, "max": 9, "pass": true},
+      "without_skill": {"score": 6, "max": 9, "pass": false},
+      "delta": "+3",
+      "skill_advantages": [
+        "Created separate helper module (src/lib/generateDocx.ts) with TypeScript interface",
+        "Created separate route file (src/routes/docx.ts) following Express Router pattern",
+        "Properly wired route into main app via import + app.use()"
+      ]
+    },
+    {
+      "name": "nextjs-docgen",
+      "with_skill": {"score": 8, "max": 8, "pass": true},
+      "without_skill": {"score": 5, "max": 8, "pass": false},
+      "delta": "+3",
+      "skill_advantages": [
+        "Created separate helper module (lib/generate-docx.ts) with comprehensive options interface",
+        "Used correct default import (HTMLtoDOCX) matching package's export",
+        "Without skill used wrong named import { htmlToDocx } — would fail at runtime"
+      ]
+    },
+    {
+      "name": "standalone-script",
+      "with_skill": {"score": 7, "max": 7, "pass": true},
+      "without_skill": {"score": 7, "max": 7, "pass": true},
+      "delta": "0",
+      "skill_advantages": [
+        "Richer HTML demo content (tables, lists, features showcase)",
+        "Correct option names (margins vs margin)",
+        "More comprehensive JSDoc documentation"
+      ],
+      "notes": "Both passed all assertions. Without-skill used wrong option name 'margin' instead of 'margins' which may cause issues at runtime."
+    }
+  ],
+  "key_findings": [
+    "Skill ensures correct default import syntax (HTMLtoDOCX) vs without-skill guessing named imports",
+    "Skill consistently creates modular architecture (helper + route/handler) vs inline code",
+    "Skill uses correct option names from the API reference (margins, fontSize in half-points)",
+    "Without-skill standalone was surprisingly good — simple script tasks don't benefit as much from skill guidance",
+    "Biggest skill uplift is on framework integration (Express, Next.js) where modularity and correct API usage matter most"
+  ]
+}

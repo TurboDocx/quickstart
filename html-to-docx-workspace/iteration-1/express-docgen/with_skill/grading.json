@@ -1,0 +1,18 @@
+{
+  "eval_name": "express-docgen",
+  "variant": "with_skill",
+  "score": 9,
+  "max_score": 9,
+  "pass": true,
+  "assertions": [
+    {"name": "package-installed", "pass": true, "evidence": "package.json contains \"@turbodocx/html-to-docx\": \"^1.0.0\""},
+    {"name": "helper-created", "pass": true, "evidence": "src/lib/generateDocx.ts created with GenerateDocxOptions interface and generateDocx() wrapper"},
+    {"name": "helper-imports-lib", "pass": true, "evidence": "generateDocx.ts: import HTMLtoDOCX from '@turbodocx/html-to-docx'"},
+    {"name": "route-created", "pass": true, "evidence": "src/routes/docx.ts created with POST /generate endpoint"},
+    {"name": "correct-content-type", "pass": true, "evidence": "res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')"},
+    {"name": "content-disposition", "pass": true, "evidence": "res.setHeader('Content-Disposition', `attachment; filename=\"${filename}.docx\"`)"},
+    {"name": "route-wired", "pass": true, "evidence": "src/index.ts: import docxRouter from './routes/docx.js'; app.use('/docx', docxRouter)"},
+    {"name": "uses-typescript", "pass": true, "evidence": "All generated files use .ts extension"},
+    {"name": "no-env-vars", "pass": true, "evidence": "No .env file created — library needs no API keys"}
+  ]
+}

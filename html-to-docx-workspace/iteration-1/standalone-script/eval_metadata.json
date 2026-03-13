@@ -1,0 +1,14 @@
+{
+  "eval_id": 3,
+  "eval_name": "standalone-script",
+  "prompt": "Create a Node.js script in my project that converts an HTML string to a DOCX file. I want a reusable function I can call from other scripts.",
+  "assertions": [
+    {"name": "package-installed", "type": "file_contains", "description": "package.json contains @turbodocx/html-to-docx as a dependency"},
+    {"name": "script-created", "type": "file_exists", "description": "A script or module file was created for DOCX generation"},
+    {"name": "imports-lib", "type": "file_contains", "description": "Script imports HTMLtoDOCX from @turbodocx/html-to-docx"},
+    {"name": "exports-function", "type": "file_contains", "description": "Script exports a reusable function (not just inline code)"},
+    {"name": "writes-file", "type": "file_contains", "description": "Script writes the buffer to a .docx file using fs.writeFileSync or fs.writeFile"},
+    {"name": "has-example", "type": "file_contains", "description": "Script includes example HTML content to demonstrate usage"},
+    {"name": "uses-async", "type": "file_contains", "description": "Script uses async/await (HTMLtoDOCX is async)"}
+  ]
+}

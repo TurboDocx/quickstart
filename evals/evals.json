@@ -146,6 +146,57 @@
         {"name": "uses-context", "type": "file_contains", "description": "Handler code uses context.Context or c.Request.Context() for SDK calls"},
         {"name": "follows-project-structure", "type": "file_exists", "description": "New files placed in internal/ directory (matching existing project structure)"}
       ]
+    },
+    {
+      "id": 10,
+      "skill_name": "html-to-docx",
+      "prompt": "Add an endpoint to my Express app that converts HTML to DOCX documents. I want to POST HTML and get back a downloadable .docx file.",
+      "expected_output": "Creates a helper module wrapping HTMLtoDOCX, a route file with POST endpoint, wires route into main app, installs @turbodocx/html-to-docx",
+      "files": ["package.json", "tsconfig.json", "src/index.ts"],
+      "assertions": [
+        {"name": "package-installed", "type": "file_contains", "description": "package.json contains @turbodocx/html-to-docx as a dependency"},
+        {"name": "helper-created", "type": "file_exists", "description": "A helper/utility module was created that wraps HTMLtoDOCX"},
+        {"name": "helper-imports-lib", "type": "file_contains", "description": "Helper file imports HTMLtoDOCX from @turbodocx/html-to-docx"},
+        {"name": "route-created", "type": "file_exists", "description": "A route/handler file was created for the docx generation endpoint"},
+        {"name": "correct-content-type", "type": "file_contains", "description": "Response sets Content-Type to application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
+        {"name": "content-disposition", "type": "file_contains", "description": "Response sets Content-Disposition header for file download"},
+        {"name": "route-wired", "type": "file_contains", "description": "Main app file (src/index.ts) was modified to import and register the new route"},
+        {"name": "uses-typescript", "type": "file_exists", "description": "Generated files use .ts extension (tsconfig.json was detected)"},
+        {"name": "no-env-vars", "type": "file_not_contains", "description": "No .env file created with API keys (this library doesn't need them)"}
+      ]
+    },
+    {
+      "id": 11,
+      "skill_name": "html-to-docx",
+      "prompt": "Add an API route to my Next.js app that accepts HTML in the request body and returns a generated DOCX file. I'm using the App Router.",
+      "expected_output": "Creates a helper module wrapping HTMLtoDOCX, an App Router API route in app/api/ with POST handler, installs @turbodocx/html-to-docx",
+      "files": ["package.json", "tsconfig.json", "next.config.js", "app/page.tsx", "app/api/health/route.ts"],
+      "assertions": [
+        {"name": "package-installed", "type": "file_contains", "description": "package.json contains @turbodocx/html-to-docx as a dependency"},
+        {"name": "helper-created", "type": "file_exists", "description": "A helper/utility module was created that wraps HTMLtoDOCX"},
+        {"name": "helper-imports-lib", "type": "file_contains", "description": "Helper file imports HTMLtoDOCX from @turbodocx/html-to-docx"},
+        {"name": "api-route-created", "type": "file_exists", "description": "API route created in app/api/ directory using route.ts convention"},
+        {"name": "exports-post", "type": "file_contains", "description": "API route exports a POST function (Next.js App Router pattern)"},
+        {"name": "correct-content-type", "type": "file_contains", "description": "Response includes Content-Type for DOCX (application/vnd.openxmlformats-officedocument.wordprocessingml.document)"},
+        {"name": "uses-response", "type": "file_contains", "description": "API route uses Response or NextResponse (not Express res)"},
+        {"name": "no-app-wiring", "type": "file_not_contains", "description": "No attempt to wire routes into a main app file (Next.js uses file-based routing)"}
+      ]
+    },
+    {
+      "id": 12,
+      "skill_name": "html-to-docx",
+      "prompt": "Create a Node.js script in my project that converts an HTML string to a DOCX file. I want a reusable function I can call from other scripts.",
+      "expected_output": "Creates a reusable module exporting a function that wraps HTMLtoDOCX, a demo script that generates a .docx file, installs @turbodocx/html-to-docx",
+      "files": ["package.json", "src/index.js"],
+      "assertions": [
+        {"name": "package-installed", "type": "file_contains", "description": "package.json contains @turbodocx/html-to-docx as a dependency"},
+        {"name": "script-created", "type": "file_exists", "description": "A script or module file was created for DOCX generation"},
+        {"name": "imports-lib", "type": "file_contains", "description": "Script imports HTMLtoDOCX from @turbodocx/html-to-docx"},
+        {"name": "exports-function", "type": "file_contains", "description": "Script exports a reusable function (not just inline code)"},
+        {"name": "writes-file", "type": "file_contains", "description": "Script writes the buffer to a .docx file using fs.writeFileSync or fs.writeFile"},
+        {"name": "has-example", "type": "file_contains", "description": "Script includes example HTML content to demonstrate usage"},
+        {"name": "uses-async", "type": "file_contains", "description": "Script uses async/await (HTMLtoDOCX is async)"}
+      ]
     }
   ]
 }

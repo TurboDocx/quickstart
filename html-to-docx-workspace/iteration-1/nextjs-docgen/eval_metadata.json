@@ -1,0 +1,15 @@
+{
+  "eval_id": 2,
+  "eval_name": "nextjs-docgen",
+  "prompt": "Add an API route to my Next.js app that accepts HTML in the request body and returns a generated DOCX file. I'm using the App Router.",
+  "assertions": [
+    {"name": "package-installed", "type": "file_contains", "description": "package.json contains @turbodocx/html-to-docx as a dependency"},
+    {"name": "helper-created", "type": "file_exists", "description": "A helper/utility module was created that wraps HTMLtoDOCX"},
+    {"name": "helper-imports-lib", "type": "file_contains", "description": "Helper file imports HTMLtoDOCX from @turbodocx/html-to-docx"},
+    {"name": "api-route-created", "type": "file_exists", "description": "API route created in app/api/ directory using route.ts convention"},
+    {"name": "exports-post", "type": "file_contains", "description": "API route exports a POST function (Next.js App Router pattern)"},
+    {"name": "correct-content-type", "type": "file_contains", "description": "Response includes Content-Type for DOCX (application/vnd.openxmlformats-officedocument.wordprocessingml.document)"},
+    {"name": "uses-response", "type": "file_contains", "description": "API route uses Response or NextResponse (not Express res)"},
+    {"name": "no-app-wiring", "type": "file_not_contains", "description": "No attempt to wire routes into a main app file (Next.js uses file-based routing)"}
+  ]
+}
