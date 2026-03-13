@@ -1,0 +1,4 @@
+django>=4.2,<5.0
+djangorestframework>=3.14.0
+python-dotenv>=1.0.0
+turbodocx-sdk>=1.0.0

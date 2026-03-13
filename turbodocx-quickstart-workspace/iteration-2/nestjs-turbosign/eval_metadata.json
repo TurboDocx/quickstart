@@ -1,0 +1,16 @@
+{
+  "eval_id": 4,
+  "eval_name": "nestjs-turbosign",
+  "prompt": "Add TurboSign digital signature support to my NestJS app. I need endpoints for sending documents for signing and checking signature status.",
+  "assertions": [
+    {"name": "config-file-created", "type": "file_exists", "description": "A TurboSign config/client file was created (e.g. turbodocx.service.ts or turbodocx.module.ts)"},
+    {"name": "config-has-turbosign", "type": "file_contains", "description": "Config file calls TurboSign.configure with API key and sender email env vars"},
+    {"name": "uses-nest-decorators", "type": "file_contains", "description": "Generated code uses NestJS decorators (@Controller, @Get, @Post, @Injectable, or @Module)"},
+    {"name": "controller-created", "type": "file_exists", "description": "A NestJS controller file was created for signature endpoints (not a plain Express Router)"},
+    {"name": "module-wired", "type": "file_contains", "description": "The signature module/controller is registered in app.module.ts or a feature module"},
+    {"name": "env-has-sign-vars", "type": "file_contains", "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_SENDER_EMAIL"},
+    {"name": "no-partner-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY (user only asked for TurboSign)"},
+    {"name": "no-express-router", "type": "file_not_contains", "description": "Generated code does NOT use Express Router() directly (should use NestJS patterns)"},
+    {"name": "uses-typescript", "type": "file_exists", "description": "Generated files use .ts extension"}
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "expectations": [
+    {"text": "config-file-created", "passed": false, "evidence": "No dedicated TurboSign config/client file exists. The turbosign.service.ts reads env vars directly in its constructor but there is no turbodocx.service.ts or turbodocx.module.ts config file"},
+    {"text": "config-has-turbosign", "passed": false, "evidence": "No file calls TurboSign.configure(). The service reads TURBODOCX_API_KEY and TURBODOCX_BASE_URL from process.env directly in the constructor without using the SDK's configure method"},
+    {"text": "uses-nest-decorators", "passed": true, "evidence": "turbosign.controller.ts uses @Controller('turbosign'), @Post('send'), @Get('status/:id'); turbosign.service.ts uses @Injectable(); turbosign.module.ts uses @Module()"},
+    {"text": "controller-created", "passed": true, "evidence": "src/turbosign/turbosign.controller.ts exists as a NestJS controller with @Controller decorator"},
+    {"text": "module-wired", "passed": true, "evidence": "src/app.module.ts imports TurboSignModule: imports: [TurboSignModule]"},
+    {"text": "env-has-sign-vars", "passed": false, "evidence": ".env.example contains TURBODOCX_API_KEY and TURBODOCX_BASE_URL but does NOT contain TURBODOCX_SENDER_EMAIL. No .env file exists either."},
+    {"text": "no-partner-vars", "passed": true, "evidence": "No file contains TURBODOCX_PARTNER_API_KEY"},
+    {"text": "no-express-router", "passed": true, "evidence": "No file contains 'Router()' or 'express.Router'. All routing uses NestJS @Controller and @Module patterns"},
+    {"text": "uses-typescript", "passed": true, "evidence": "All generated files use .ts extension (turbosign.controller.ts, turbosign.service.ts, turbosign.module.ts, etc.)"}
+  ]
+}

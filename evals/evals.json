@@ -1,63 +1,151 @@
-[
-  {
-    "name": "js-express-signatures",
-    "description": "JavaScript Express project needs TurboSign integration",
-    "prompt": "I need to add digital signature functionality to my Express app. Set up TurboDocx so I can send documents for signing and check their status.",
-    "setup": {
-      "files": {
-        "package.json": "{\"name\":\"my-express-app\",\"type\":\"module\",\"dependencies\":{\"express\":\"^4.18.0\"},\"devDependencies\":{\"typescript\":\"^5.0.0\",\"@types/express\":\"^4.17.0\",\"@types/node\":\"^20.0.0\"}}",
-        "tsconfig.json": "{\"compilerOptions\":{\"target\":\"ES2020\",\"module\":\"ESNext\",\"moduleResolution\":\"node\",\"outDir\":\"dist\",\"strict\":true}}",
-        "src/index.ts": "import express from 'express';\n\nconst app = express();\napp.use(express.json());\n\napp.get('/health', (req, res) => res.json({ ok: true }));\n\napp.listen(3000, () => console.log('Server running on :3000'));\n",
-        "package-lock.json": "{}"
-      }
+{
+  "skill_name": "turbodocx-quickstart",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I need to add digital signature functionality to my Express app. Set up TurboDocx so I can send documents for signing and check their status.",
+      "expected_output": "Creates a TurboSign config file, route handlers for sendSignature and getStatus, wires routes into the main app, adds .env with TurboSign vars, installs @turbodocx/sdk",
+      "files": ["package.json", "tsconfig.json", "src/index.ts", "package-lock.json"],
+      "assertions": [
+        {"name": "config-file-created", "type": "file_exists", "description": "A TurboSign config/client file was created"},
+        {"name": "config-has-turbosign", "type": "file_contains", "description": "Config file calls TurboSign.configure with API key and sender email env vars"},
+        {"name": "route-file-created", "type": "file_exists", "description": "A route/handler file for signatures was created"},
+        {"name": "routes-wired", "type": "file_contains", "description": "Main app file (src/index.ts) was modified to import and register signature routes"},
+        {"name": "env-file-created", "type": "file_contains", "description": ".env file contains TURBODOCX_API_KEY and TURBODOCX_SENDER_EMAIL"},
+        {"name": "gitignore-has-env", "type": "file_contains", "description": ".gitignore includes .env"},
+        {"name": "no-partner-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY (user only asked for TurboSign)"},
+        {"name": "uses-typescript", "type": "file_exists", "description": "Generated files use .ts extension (tsconfig.json was detected)"},
+        {"name": "esm-imports", "type": "file_contains", "description": "Generated code uses ESM import syntax (package.json type is module)"}
+      ]
     },
-    "expected": {
-      "files_created": ["src/lib/turbodocx.ts"],
-      "files_modified": ["package.json", ".env", "src/index.ts"],
-      "contains": {
-        "src/lib/turbodocx.ts": ["TurboSign.configure", "TURBODOCX_API_KEY"],
-        ".env": ["TURBODOCX_API_KEY", "TURBODOCX_SENDER_EMAIL"]
-      }
-    }
-  },
-  {
-    "name": "python-partner-management",
-    "description": "Python FastAPI project needs TurboPartner integration",
-    "prompt": "Set up TurboDocx TurboPartner in my FastAPI app so I can provision and manage customer organizations.",
-    "setup": {
-      "files": {
-        "pyproject.toml": "[project]\nname = \"my-api\"\nversion = \"0.1.0\"\ndependencies = [\"fastapi>=0.100.0\", \"uvicorn>=0.23.0\"]\n\n[build-system]\nrequires = [\"hatchling\"]\nbuild-backend = \"hatchling.build\"",
-        "app/main.py": "from fastapi import FastAPI\n\napp = FastAPI()\n\n@app.get('/health')\nasync def health():\n    return {'ok': True}\n",
-        "app/routers/__init__.py": ""
-      }
+    {
+      "id": 2,
+      "prompt": "Set up TurboDocx TurboPartner in my FastAPI app so I can provision and manage customer organizations.",
+      "expected_output": "Creates a TurboPartner config file, route handlers for createOrganization and listOrganizations, wires router into FastAPI app, adds .env with TurboPartner vars",
+      "files": ["pyproject.toml", "app/main.py", "app/routers/__init__.py"],
+      "assertions": [
+        {"name": "config-file-created", "type": "file_exists", "description": "A TurboPartner config file was created"},
+        {"name": "config-has-turbopartner", "type": "file_contains", "description": "Config file calls TurboPartner.configure with partner API key and partner ID env vars"},
+        {"name": "router-file-created", "type": "file_exists", "description": "A FastAPI router file for partner/org management was created"},
+        {"name": "router-wired", "type": "file_contains", "description": "app/main.py was modified to include the new router"},
+        {"name": "env-has-partner-vars", "type": "file_contains", "description": ".env contains TURBODOCX_PARTNER_API_KEY and TURBODOCX_PARTNER_ID"},
+        {"name": "no-sign-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_API_KEY (user only asked for TurboPartner)"},
+        {"name": "uses-async", "type": "file_contains", "description": "Generated route handlers use async/await (FastAPI convention)"},
+        {"name": "uses-fastapi-patterns", "type": "file_contains", "description": "Generated code uses APIRouter and proper FastAPI patterns"}
+      ]
     },
-    "expected": {
-      "files_created": ["app/core/turbodocx.py"],
-      "files_modified": ["app/main.py", ".env"],
-      "contains": {
-        "app/core/turbodocx.py": ["TurboPartner.configure", "TURBODOCX_PARTNER_API_KEY"],
-        ".env": ["TURBODOCX_PARTNER_API_KEY", "TURBODOCX_PARTNER_ID"]
-      }
-    }
-  },
-  {
-    "name": "go-project-setup",
-    "description": "Go project needs both TurboSign and TurboPartner",
-    "prompt": "I need both TurboSign and TurboPartner in my Go project. Set up the TurboDocx SDK with both products.",
-    "setup": {
-      "files": {
-        "go.mod": "module github.com/myorg/myapp\n\ngo 1.22\n",
-        "cmd/server/main.go": "package main\n\nimport (\n\t\"fmt\"\n\t\"net/http\"\n)\n\nfunc main() {\n\thttp.HandleFunc(\"/health\", func(w http.ResponseWriter, r *http.Request) {\n\t\tfmt.Fprintln(w, `{\"ok\":true}`)\n\t})\n\thttp.ListenAndServe(\":8080\", nil)\n}\n",
-        "internal/handlers/.gitkeep": ""
-      }
+    {
+      "id": 3,
+      "prompt": "I need both TurboSign and TurboPartner in my Go project. Set up the TurboDocx SDK with both products.",
+      "expected_output": "Creates config file with both TurboSign client and TurboPartner client, handler files, wires into main.go, adds .env with all 6 vars",
+      "files": ["go.mod", "cmd/server/main.go", "internal/handlers/.gitkeep"],
+      "assertions": [
+        {"name": "config-file-created", "type": "file_exists", "description": "A Go config/client file was created for TurboDocx"},
+        {"name": "config-has-both-clients", "type": "file_contains", "description": "Config file creates both NewClientWithConfig (TurboSign) and NewPartnerClient (TurboPartner)"},
+        {"name": "handler-files-created", "type": "file_exists", "description": "Handler files were created for signature and/or partner operations"},
+        {"name": "main-wired", "type": "file_contains", "description": "cmd/server/main.go was modified to import and register handlers"},
+        {"name": "env-has-all-vars", "type": "file_contains", "description": ".env contains all 6 vars: TURBODOCX_API_KEY, ORG_ID, SENDER_EMAIL, SENDER_NAME, PARTNER_API_KEY, PARTNER_ID"},
+        {"name": "uses-context", "type": "file_contains", "description": "Handler code uses context.Context for SDK calls (Go convention)"},
+        {"name": "follows-project-structure", "type": "file_exists", "description": "New files placed in internal/ directory (matching existing project structure)"}
+      ]
     },
-    "expected": {
-      "files_created": ["internal/turbodocx/client.go"],
-      "files_modified": ["go.mod", ".env", "cmd/server/main.go"],
-      "contains": {
-        "internal/turbodocx/client.go": ["NewClientWithConfig", "NewPartnerClient", "TURBODOCX_API_KEY", "TURBODOCX_PARTNER_API_KEY"],
-        ".env": ["TURBODOCX_API_KEY", "TURBODOCX_PARTNER_API_KEY"]
-      }
+    {
+      "id": 4,
+      "prompt": "Add TurboSign digital signature support to my NestJS app. I need endpoints for sending documents for signing and checking signature status.",
+      "expected_output": "Creates TurboSign config as NestJS service/module, controller with decorators, wires module into app.module.ts, adds .env with TurboSign vars",
+      "files": ["package.json", "nest-cli.json", "tsconfig.json", "src/app.module.ts", "src/main.ts", "src/app.controller.ts", "src/app.service.ts"],
+      "assertions": [
+        {"name": "config-file-created", "type": "file_exists", "description": "A TurboSign config/client file was created (e.g. turbodocx.service.ts or turbodocx.module.ts)"},
+        {"name": "config-has-turbosign", "type": "file_contains", "description": "Config file calls TurboSign.configure with API key and sender email env vars"},
+        {"name": "uses-nest-decorators", "type": "file_contains", "description": "Generated code uses NestJS decorators (@Controller, @Get, @Post, @Injectable, or @Module)"},
+        {"name": "controller-created", "type": "file_exists", "description": "A NestJS controller file was created for signature endpoints (not a plain Express Router)"},
+        {"name": "module-wired", "type": "file_contains", "description": "The signature module/controller is registered in app.module.ts or a feature module"},
+        {"name": "env-has-sign-vars", "type": "file_contains", "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_SENDER_EMAIL"},
+        {"name": "no-partner-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY (user only asked for TurboSign)"},
+        {"name": "no-express-router", "type": "file_not_contains", "description": "Generated code does NOT use Express Router() directly (should use NestJS patterns)"},
+        {"name": "uses-typescript", "type": "file_exists", "description": "Generated files use .ts extension"}
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Set up TurboDocx TurboSign in my Next.js app so I can send documents for e-signature and check their status. I'm using the App Router.",
+      "expected_output": "Creates TurboSign config file, App Router API routes in app/api/, uses NextResponse, no main app wiring needed",
+      "files": ["package.json", "next.config.js", "tsconfig.json", "app/layout.tsx", "app/page.tsx", "app/api/health/route.ts"],
+      "assertions": [
+        {"name": "config-file-created", "type": "file_exists", "description": "A TurboSign config/client file was created (e.g. lib/turbodocx.ts)"},
+        {"name": "config-has-turbosign", "type": "file_contains", "description": "Config file calls TurboSign.configure with API key and sender email env vars"},
+        {"name": "api-route-created", "type": "file_exists", "description": "API route handler created in app/api/ directory using Next.js App Router conventions (route.ts)"},
+        {"name": "uses-route-handlers", "type": "file_contains", "description": "API routes export named functions (GET, POST) — Next.js App Router pattern, not pages/api style"},
+        {"name": "no-app-wiring", "type": "file_not_contains", "description": "No attempt to wire routes into a main app file (Next.js uses file-based routing)"},
+        {"name": "env-has-sign-vars", "type": "file_contains", "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_SENDER_EMAIL"},
+        {"name": "no-partner-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY (user only asked for TurboSign)"},
+        {"name": "uses-typescript", "type": "file_exists", "description": "Generated files use .ts or .tsx extension"},
+        {"name": "uses-nextresponse", "type": "file_contains", "description": "API route handlers use NextRequest/NextResponse or Response (not Express req/res)"}
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Set up TurboDocx TurboPartner in my Django app so I can provision and manage customer organizations through API endpoints.",
+      "expected_output": "Creates TurboPartner config, Django views, URL patterns wired into project urls.py, adds .env with TurboPartner vars",
+      "files": ["requirements.txt", "manage.py", "myproject/settings.py", "myproject/urls.py", "myproject/wsgi.py", "myproject/__init__.py"],
+      "assertions": [
+        {"name": "config-file-created", "type": "file_exists", "description": "A TurboPartner config file was created"},
+        {"name": "config-has-turbopartner", "type": "file_contains", "description": "Config file calls TurboPartner.configure with partner API key and partner ID env vars"},
+        {"name": "views-created", "type": "file_exists", "description": "Django views file was created for partner/organization management"},
+        {"name": "urls-wired", "type": "file_contains", "description": "URL patterns are defined and included in the project urls.py"},
+        {"name": "uses-django-patterns", "type": "file_contains", "description": "Generated code uses Django patterns (views, urlpatterns, JsonResponse or DRF serializers)"},
+        {"name": "no-fastapi-patterns", "type": "file_not_contains", "description": "Generated code does NOT use FastAPI patterns (APIRouter, FastAPI(), @app.post)"},
+        {"name": "env-has-partner-vars", "type": "file_contains", "description": ".env contains TURBODOCX_PARTNER_API_KEY and TURBODOCX_PARTNER_ID"},
+        {"name": "no-sign-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_API_KEY (user only asked for TurboPartner)"}
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "Add TurboSign digital signature functionality to my Spring Boot app. I need REST endpoints for sending documents for signing and checking signature status.",
+      "expected_output": "Creates TurboSign config with Builder pattern, Spring @RestController, proper Java package structure, application.properties with vars",
+      "files": ["pom.xml", "src/main/java/com/example/app/Application.java", "src/main/java/com/example/app/HealthController.java", "src/main/resources/application.properties"],
+      "assertions": [
+        {"name": "config-file-created", "type": "file_exists", "description": "A TurboSign config/client file was created (e.g. TurboDocxConfig.java or TurboSignService.java)"},
+        {"name": "config-has-turbosign", "type": "file_contains", "description": "Config file creates TurboSign client using Builder pattern with API key and sender email"},
+        {"name": "controller-created", "type": "file_exists", "description": "A Spring @RestController was created for signature endpoints"},
+        {"name": "uses-spring-annotations", "type": "file_contains", "description": "Generated code uses Spring annotations (@RestController, @PostMapping, @GetMapping, @Bean, @Configuration)"},
+        {"name": "env-has-sign-vars", "type": "file_contains", "description": "application.properties or .env contains turbodocx.api-key and turbodocx.sender-email (or TURBODOCX_ env vars)"},
+        {"name": "no-partner-vars", "type": "file_not_contains", "description": "Config does NOT contain partner API key variables (user only asked for TurboSign)"},
+        {"name": "follows-java-conventions", "type": "file_exists", "description": "Files placed in proper Java package directory structure (src/main/java/...)"},
+        {"name": "uses-java-extension", "type": "file_exists", "description": "Generated files use .java extension"}
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "Set up TurboDocx TurboPartner in my Laravel app so I can create and manage customer organizations via API endpoints.",
+      "expected_output": "Creates TurboPartner config/service, Laravel controller, routes in routes/api.php, adds .env with TurboPartner vars",
+      "files": ["composer.json", "routes/api.php", "routes/web.php", "app/Http/Controllers/Controller.php", "app/Providers/AppServiceProvider.php", "bootstrap/app.php"],
+      "assertions": [
+        {"name": "config-file-created", "type": "file_exists", "description": "A TurboPartner config or service file was created"},
+        {"name": "config-has-turbopartner", "type": "file_contains", "description": "Config file calls TurboPartner::configure or creates TurboPartner client with partner API key and partner ID"},
+        {"name": "controller-created", "type": "file_exists", "description": "A Laravel controller was created for partner/organization management"},
+        {"name": "routes-defined", "type": "file_contains", "description": "API routes are defined in routes/api.php using Route::get/post or Route::resource"},
+        {"name": "uses-laravel-patterns", "type": "file_contains", "description": "Generated code uses Laravel patterns (Controller class, response()->json(), Request injection)"},
+        {"name": "env-has-partner-vars", "type": "file_contains", "description": ".env contains TURBODOCX_PARTNER_API_KEY and TURBODOCX_PARTNER_ID"},
+        {"name": "no-sign-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_API_KEY (user only asked for TurboPartner)"},
+        {"name": "uses-php-extension", "type": "file_exists", "description": "Generated files use .php extension"}
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "I need both TurboSign and TurboPartner in my Gin project. Set up the TurboDocx SDK with both products.",
+      "expected_output": "Creates config with both clients, Gin handlers using *gin.Context, routes with r.POST/r.GET, .env with all 6 vars",
+      "files": ["go.mod", "main.go", "internal/handlers/.gitkeep", "internal/config/.gitkeep"],
+      "assertions": [
+        {"name": "config-file-created", "type": "file_exists", "description": "A Go config/client file was created for TurboDocx"},
+        {"name": "config-has-both-clients", "type": "file_contains", "description": "Config file creates both NewClientWithConfig (TurboSign) and NewPartnerClient (TurboPartner)"},
+        {"name": "handler-files-created", "type": "file_exists", "description": "Handler files were created for signature and partner operations"},
+        {"name": "uses-gin-context", "type": "file_contains", "description": "Handler functions use *gin.Context parameter (not http.ResponseWriter/http.Request)"},
+        {"name": "routes-use-gin", "type": "file_contains", "description": "Routes registered using gin methods (r.POST, r.GET, router.Group) not http.HandleFunc"},
+        {"name": "env-has-all-vars", "type": "file_contains", "description": ".env contains all 6 vars: TURBODOCX_API_KEY, ORG_ID, SENDER_EMAIL, SENDER_NAME, PARTNER_API_KEY, PARTNER_ID"},
+        {"name": "uses-context", "type": "file_contains", "description": "Handler code uses context.Context or c.Request.Context() for SDK calls"},
+        {"name": "follows-project-structure", "type": "file_exists", "description": "New files placed in internal/ directory (matching existing project structure)"}
+      ]
     }
-  }
-]
+  ]
+}

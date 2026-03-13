@@ -1,0 +1,15 @@
+{
+  "eval_id": 8,
+  "eval_name": "laravel-turbopartner",
+  "prompt": "Set up TurboDocx TurboPartner in my Laravel app so I can create and manage customer organizations via API endpoints.",
+  "assertions": [
+    {"name": "config-file-created", "type": "file_exists", "description": "A TurboPartner config or service file was created"},
+    {"name": "config-has-turbopartner", "type": "file_contains", "description": "Config file calls TurboPartner::configure or creates TurboPartner client with partner API key and partner ID"},
+    {"name": "controller-created", "type": "file_exists", "description": "A Laravel controller was created for partner/organization management"},
+    {"name": "routes-defined", "type": "file_contains", "description": "API routes are defined in routes/api.php using Route::get/post or Route::resource"},
+    {"name": "uses-laravel-patterns", "type": "file_contains", "description": "Generated code uses Laravel patterns (Controller class, response()->json(), Request injection)"},
+    {"name": "env-has-partner-vars", "type": "file_contains", "description": ".env contains TURBODOCX_PARTNER_API_KEY and TURBODOCX_PARTNER_ID"},
+    {"name": "no-sign-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_API_KEY (user only asked for TurboPartner)"},
+    {"name": "uses-php-extension", "type": "file_exists", "description": "Generated files use .php extension"}
+  ]
+}

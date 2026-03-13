@@ -1,0 +1,13 @@
+{
+  "expectations": [
+    {"text": "config-file-created", "passed": true, "evidence": "lib/turbosign.ts exists as a TurboSign config/client file"},
+    {"text": "config-has-turbosign", "passed": true, "evidence": "lib/turbosign.ts calls TurboSign.configure({ apiKey: process.env.TURBODOCX_API_KEY, orgId: process.env.TURBODOCX_ORG_ID, senderEmail: process.env.TURBODOCX_SENDER_EMAIL, senderName: process.env.TURBODOCX_SENDER_NAME, baseUrl: process.env.TURBODOCX_BASE_URL })"},
+    {"text": "api-route-created", "passed": true, "evidence": "API routes created at app/api/turbosign/send/route.ts and app/api/turbosign/status/[documentId]/route.ts in the app/api/ directory"},
+    {"text": "uses-route-handlers", "passed": true, "evidence": "app/api/turbosign/send/route.ts exports 'export async function POST(request: NextRequest)'; status route exports 'export async function GET('"},
+    {"text": "no-app-wiring", "passed": true, "evidence": "No main app file wires routes — file-based routing is used via app/api/ directory structure"},
+    {"text": "env-has-sign-vars", "passed": true, "evidence": ".env.local contains TURBODOCX_API_KEY and TURBODOCX_SENDER_EMAIL; .env.example also has both"},
+    {"text": "no-partner-vars", "passed": true, "evidence": "No file contains TURBODOCX_PARTNER_API_KEY anywhere in the project"},
+    {"text": "uses-typescript", "passed": true, "evidence": "Generated files use .ts and .tsx extensions (route.ts, turbosign.ts, page.tsx)"},
+    {"text": "uses-nextresponse", "passed": true, "evidence": "Both route handlers import and use NextRequest/NextResponse from 'next/server'"}
+  ]
+}

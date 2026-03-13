@@ -1,0 +1,12 @@
+{
+  "expectations": [
+    {"text": "config-file-created", "passed": true, "evidence": "app/Providers/AppServiceProvider.php configures TurboPartner in boot() method, serving as the config/service setup file"},
+    {"text": "config-has-turbopartner", "passed": true, "evidence": "AppServiceProvider.php calls TurboPartner::configure(new PartnerClientConfig(partnerApiKey: env('TURBODOCX_PARTNER_API_KEY'), partnerId: env('TURBODOCX_PARTNER_ID')))"},
+    {"text": "controller-created", "passed": true, "evidence": "app/Http/Controllers/OrganizationController.php exists for partner/organization management"},
+    {"text": "routes-defined", "passed": true, "evidence": "routes/api.php defines Route::prefix('organizations')->group() with Route::post and Route::get"},
+    {"text": "uses-laravel-patterns", "passed": true, "evidence": "OrganizationController extends Controller class, uses response()->json(), Request $request injection, and $request->validate()"},
+    {"text": "env-has-partner-vars", "passed": true, "evidence": ".env contains TURBODOCX_PARTNER_API_KEY=TDXP-your_partner_key_here and TURBODOCX_PARTNER_ID=your_partner_id_here"},
+    {"text": "no-sign-vars", "passed": true, "evidence": "No file contains TURBODOCX_API_KEY in .env or .env.example — only partner vars are present"},
+    {"text": "uses-php-extension", "passed": true, "evidence": "Generated files use .php extension (OrganizationController.php, AppServiceProvider.php, api.php, etc.)"}
+  ]
+}

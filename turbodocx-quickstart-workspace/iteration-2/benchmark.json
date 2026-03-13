@@ -1,0 +1,73 @@
+{
+  "metadata": {
+    "skill_name": "turbodocx-quickstart",
+    "executor_model": "claude-opus-4-6",
+    "timestamp": "2026-03-13T16:15:00Z",
+    "iteration": 2,
+    "focus": "Framework-specific variants (NestJS, Next.js, Django, Spring Boot, Laravel, Gin)"
+  },
+  "runs": [
+    {
+      "eval_id": "nestjs-turbosign",
+      "eval_name": "NestJS + TurboSign",
+      "configurations": [
+        {"name": "with_skill", "pass_rate": 1.0, "passed": 9, "total": 9, "time_seconds": 104.8, "tokens": 26753},
+        {"name": "without_skill", "pass_rate": 0.556, "passed": 5, "total": 9, "time_seconds": 66.0, "tokens": 17468}
+      ]
+    },
+    {
+      "eval_id": "nextjs-turbosign",
+      "eval_name": "Next.js App Router + TurboSign",
+      "configurations": [
+        {"name": "with_skill", "pass_rate": 1.0, "passed": 9, "total": 9, "time_seconds": 110.0, "tokens": 25110},
+        {"name": "without_skill", "pass_rate": 1.0, "passed": 9, "total": 9, "time_seconds": 146.1, "tokens": 48846}
+      ]
+    },
+    {
+      "eval_id": "django-turbopartner",
+      "eval_name": "Django + TurboPartner",
+      "configurations": [
+        {"name": "with_skill", "pass_rate": 1.0, "passed": 8, "total": 8, "time_seconds": 103.1, "tokens": 27293},
+        {"name": "without_skill", "pass_rate": 1.0, "passed": 8, "total": 8, "time_seconds": 174.6, "tokens": 47117}
+      ]
+    },
+    {
+      "eval_id": "spring-boot-turbosign",
+      "eval_name": "Spring Boot + TurboSign",
+      "configurations": [
+        {"name": "with_skill", "pass_rate": 1.0, "passed": 8, "total": 8, "time_seconds": 99.5, "tokens": 26862},
+        {"name": "without_skill", "pass_rate": 0.75, "passed": 6, "total": 8, "time_seconds": 99.4, "tokens": 20410}
+      ]
+    },
+    {
+      "eval_id": "laravel-turbopartner",
+      "eval_name": "Laravel + TurboPartner",
+      "configurations": [
+        {"name": "with_skill", "pass_rate": 1.0, "passed": 8, "total": 8, "time_seconds": 85.0, "tokens": 25114},
+        {"name": "without_skill", "pass_rate": 0.625, "passed": 5, "total": 8, "time_seconds": 91.7, "tokens": 19890}
+      ]
+    },
+    {
+      "eval_id": "gin-both",
+      "eval_name": "Gin + Both Products",
+      "configurations": [
+        {"name": "with_skill", "pass_rate": 1.0, "passed": 8, "total": 8, "time_seconds": 91.0, "tokens": 25646},
+        {"name": "without_skill", "pass_rate": 0.625, "passed": 5, "total": 8, "time_seconds": 88.9, "tokens": 19147}
+      ]
+    }
+  ],
+  "run_summary": {
+    "with_skill": {"mean_pass_rate": 1.0, "stddev_pass_rate": 0.0, "mean_time_seconds": 98.9, "mean_tokens": 26130},
+    "without_skill": {"mean_pass_rate": 0.759, "stddev_pass_rate": 0.189, "mean_time_seconds": 111.1, "mean_tokens": 28813},
+    "delta": {"pass_rate": "+0.241", "time_seconds": "-12.2", "tokens": "-2683"}
+  },
+  "notes": [
+    "with_skill achieved 100% pass rate across all 6 framework variants — no SKILL.md changes needed",
+    "Without-skill NestJS run used raw fetch() instead of SDK, missing TurboSign.configure() entirely",
+    "Without-skill Laravel run used HTTP client wrapper instead of SDK configure() pattern",
+    "Without-skill Spring Boot run had wrong env var format in application.properties",
+    "Without-skill Gin run used wrong SDK package name (sdk-go vs sdk) and missed context propagation",
+    "Next.js and Django without-skill runs passed all assertions — model has strong built-in knowledge of these frameworks",
+    "with_skill runs were faster on average (98.9s vs 111.1s) and used fewer tokens (26k vs 29k)"
+  ]
+}

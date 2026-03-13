@@ -1,0 +1,12 @@
+{
+  "expectations": [
+    {"text": "config-file-created", "passed": true, "evidence": "src/main/java/com/example/app/config/TurboSignConfig.java exists as a TurboSign config file"},
+    {"text": "config-has-turbosign", "passed": true, "evidence": "TurboSignConfig.java creates client using Builder pattern: new TurboDocxClient.Builder().apiKey(apiKey).baseUrl(baseUrl).build(). However it only uses apiKey and baseUrl, missing senderEmail."},
+    {"text": "controller-created", "passed": true, "evidence": "src/main/java/com/example/app/controller/TurboSignController.java exists with @RestController annotation"},
+    {"text": "uses-spring-annotations", "passed": true, "evidence": "TurboSignController.java uses @RestController, @PostMapping, @GetMapping, @RequestMapping, @DeleteMapping; TurboSignConfig.java uses @Configuration, @Bean, @Value"},
+    {"text": "env-has-sign-vars", "passed": false, "evidence": ".env.example contains TURBODOCX_API_KEY but NOT TURBODOCX_SENDER_EMAIL. application.properties has turbosign.api-key and turbosign.base-url but no sender-email property."},
+    {"text": "no-partner-vars", "passed": true, "evidence": "No file contains partner API key variables anywhere in the project"},
+    {"text": "follows-java-conventions", "passed": true, "evidence": "Files placed in src/main/java/com/example/app/ with proper package structure (config/, controller/, service/, dto/)"},
+    {"text": "uses-java-extension", "passed": true, "evidence": "All generated files use .java extension (TurboSignConfig.java, TurboSignController.java, TurboSignService.java, SignatureRequest.java, SignatureResponse.java)"}
+  ]
+}

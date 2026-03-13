@@ -1,0 +1,12 @@
+{
+  "expectations": [
+    {"text": "config-file-created", "passed": true, "evidence": "src/main/java/com/example/app/config/TurboDocxConfig.java exists as a TurboSign config file"},
+    {"text": "config-has-turbosign", "passed": true, "evidence": "TurboDocxConfig.java creates client using Builder pattern: new TurboDocxClient.Builder().apiKey(apiKey).orgId(orgId).senderEmail(senderEmail).senderName(senderName).build()"},
+    {"text": "controller-created", "passed": true, "evidence": "src/main/java/com/example/app/controller/SignatureController.java exists with @RestController annotation"},
+    {"text": "uses-spring-annotations", "passed": true, "evidence": "SignatureController.java uses @RestController, @PostMapping, @GetMapping, @RequestMapping; TurboDocxConfig.java uses @Configuration, @Bean, @Value"},
+    {"text": "env-has-sign-vars", "passed": true, "evidence": ".env contains TURBODOCX_API_KEY and TURBODOCX_SENDER_EMAIL; application.properties references them via ${TURBODOCX_API_KEY} and ${TURBODOCX_SENDER_EMAIL}"},
+    {"text": "no-partner-vars", "passed": true, "evidence": "No file contains partner API key variables (TURBODOCX_PARTNER_API_KEY or partner-api-key) anywhere in the project"},
+    {"text": "follows-java-conventions", "passed": true, "evidence": "Files placed in src/main/java/com/example/app/ with proper package structure (config/, controller/)"},
+    {"text": "uses-java-extension", "passed": true, "evidence": "All generated files use .java extension (TurboDocxConfig.java, SignatureController.java, Application.java, HealthController.java)"}
+  ]
+}

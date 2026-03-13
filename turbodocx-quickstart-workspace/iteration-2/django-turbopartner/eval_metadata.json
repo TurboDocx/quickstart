@@ -1,0 +1,15 @@
+{
+  "eval_id": 6,
+  "eval_name": "django-turbopartner",
+  "prompt": "Set up TurboDocx TurboPartner in my Django app so I can provision and manage customer organizations through API endpoints.",
+  "assertions": [
+    {"name": "config-file-created", "type": "file_exists", "description": "A TurboPartner config file was created"},
+    {"name": "config-has-turbopartner", "type": "file_contains", "description": "Config file calls TurboPartner.configure with partner API key and partner ID env vars"},
+    {"name": "views-created", "type": "file_exists", "description": "Django views file was created for partner/organization management"},
+    {"name": "urls-wired", "type": "file_contains", "description": "URL patterns are defined and included in the project urls.py"},
+    {"name": "uses-django-patterns", "type": "file_contains", "description": "Generated code uses Django patterns (views, urlpatterns, JsonResponse or DRF serializers)"},
+    {"name": "no-fastapi-patterns", "type": "file_not_contains", "description": "Generated code does NOT use FastAPI patterns (APIRouter, FastAPI(), @app.post)"},
+    {"name": "env-has-partner-vars", "type": "file_contains", "description": ".env contains TURBODOCX_PARTNER_API_KEY and TURBODOCX_PARTNER_ID"},
+    {"name": "no-sign-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_API_KEY (user only asked for TurboPartner)"}
+  ]
+}
