@@ -1,0 +1,63 @@
+[
+  {
+    "name": "js-express-signatures",
+    "description": "JavaScript Express project needs TurboSign integration",
+    "prompt": "I need to add digital signature functionality to my Express app. Set up TurboDocx so I can send documents for signing and check their status.",
+    "setup": {
+      "files": {
+        "package.json": "{\"name\":\"my-express-app\",\"type\":\"module\",\"dependencies\":{\"express\":\"^4.18.0\"},\"devDependencies\":{\"typescript\":\"^5.0.0\",\"@types/express\":\"^4.17.0\",\"@types/node\":\"^20.0.0\"}}",
+        "tsconfig.json": "{\"compilerOptions\":{\"target\":\"ES2020\",\"module\":\"ESNext\",\"moduleResolution\":\"node\",\"outDir\":\"dist\",\"strict\":true}}",
+        "src/index.ts": "import express from 'express';\n\nconst app = express();\napp.use(express.json());\n\napp.get('/health', (req, res) => res.json({ ok: true }));\n\napp.listen(3000, () => console.log('Server running on :3000'));\n",
+        "package-lock.json": "{}"
+      }
+    },
+    "expected": {
+      "files_created": ["src/lib/turbodocx.ts"],
+      "files_modified": ["package.json", ".env", "src/index.ts"],
+      "contains": {
+        "src/lib/turbodocx.ts": ["TurboSign.configure", "TURBODOCX_API_KEY"],
+        ".env": ["TURBODOCX_API_KEY", "TURBODOCX_SENDER_EMAIL"]
+      }
+    }
+  },
+  {
+    "name": "python-partner-management",
+    "description": "Python FastAPI project needs TurboPartner integration",
+    "prompt": "Set up TurboDocx TurboPartner in my FastAPI app so I can provision and manage customer organizations.",
+    "setup": {
+      "files": {
+        "pyproject.toml": "[project]\nname = \"my-api\"\nversion = \"0.1.0\"\ndependencies = [\"fastapi>=0.100.0\", \"uvicorn>=0.23.0\"]\n\n[build-system]\nrequires = [\"hatchling\"]\nbuild-backend = \"hatchling.build\"",
+        "app/main.py": "from fastapi import FastAPI\n\napp = FastAPI()\n\n@app.get('/health')\nasync def health():\n    return {'ok': True}\n",
+        "app/routers/__init__.py": ""
+      }
+    },
+    "expected": {
+      "files_created": ["app/core/turbodocx.py"],
+      "files_modified": ["app/main.py", ".env"],
+      "contains": {
+        "app/core/turbodocx.py": ["TurboPartner.configure", "TURBODOCX_PARTNER_API_KEY"],
+        ".env": ["TURBODOCX_PARTNER_API_KEY", "TURBODOCX_PARTNER_ID"]
+      }
+    }
+  },
+  {
+    "name": "go-project-setup",
+    "description": "Go project needs both TurboSign and TurboPartner",
+    "prompt": "I need both TurboSign and TurboPartner in my Go project. Set up the TurboDocx SDK with both products.",
+    "setup": {
+      "files": {
+        "go.mod": "module github.com/myorg/myapp\n\ngo 1.22\n",
+        "cmd/server/main.go": "package main\n\nimport (\n\t\"fmt\"\n\t\"net/http\"\n)\n\nfunc main() {\n\thttp.HandleFunc(\"/health\", func(w http.ResponseWriter, r *http.Request) {\n\t\tfmt.Fprintln(w, `{\"ok\":true}`)\n\t})\n\thttp.ListenAndServe(\":8080\", nil)\n}\n",
+        "internal/handlers/.gitkeep": ""
+      }
+    },
+    "expected": {
+      "files_created": ["internal/turbodocx/client.go"],
+      "files_modified": ["go.mod", ".env", "cmd/server/main.go"],
+      "contains": {
+        "internal/turbodocx/client.go": ["NewClientWithConfig", "NewPartnerClient", "TURBODOCX_API_KEY", "TURBODOCX_PARTNER_API_KEY"],
+        ".env": ["TURBODOCX_API_KEY", "TURBODOCX_PARTNER_API_KEY"]
+      }
+    }
+  }
+]

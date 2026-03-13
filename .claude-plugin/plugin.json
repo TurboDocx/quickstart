@@ -1,0 +1,20 @@
+{
+  "$schema": "https://cdn.anthropic.com/schemas/claude-plugin.json",
+  "name": "turbodocx-quickstart",
+  "displayName": "TurboDocx Quickstart",
+  "version": "1.0.0",
+  "description": "Install TurboDocx SDK and generate integration code for TurboSign (digital signatures) and TurboPartner (partner management) across JavaScript, Python, Go, PHP, and Java.",
+  "author": "TurboDocx",
+  "repository": "https://github.com/TurboDocx/quickstart-skill",
+  "license": "MIT",
+  "keywords": [
+    "turbodocx",
+    "esignature",
+    "digital-signature",
+    "document-signing",
+    "partner-management",
+    "sdk",
+    "quickstart"
+  ],
+  "categories": ["sdk", "integration"]
+}
