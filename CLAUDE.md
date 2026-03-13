@@ -2,7 +2,7 @@
 
 ## What This Repo Is
 
-A Claude Code plugin that provides a `/turbodocx-quickstart` skill. When invoked, it detects the user's project language, asks whether they need TurboSign (digital signatures), TurboPartner (partner/org management), or both, then installs the SDK, configures environment variables, and generates working integration code.
+An [Agent Skill](https://agentskills.io) (open standard) that provides a `/turbodocx-quickstart` skill. Works with Claude Code (as a plugin), GitHub Copilot, Cursor, OpenAI Codex CLI, Gemini CLI, and any tool that supports the Agent Skills spec. When invoked, it detects the user's project language, asks whether they need TurboSign (digital signatures), TurboPartner (partner/org management), or both, then installs the SDK, configures environment variables, and generates working integration code.
 
 ## Repo Structure
 
