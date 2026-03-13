@@ -5,7 +5,7 @@
   "version": "1.0.0",
   "description": "Install TurboDocx SDK and generate integration code for TurboSign (digital signatures) and TurboPartner (partner management) across JavaScript, Python, Go, PHP, and Java.",
   "author": "TurboDocx",
-  "repository": "https://github.com/TurboDocx/quickstart-skill",
+  "repository": "https://github.com/TurboDocx/quickstart",
   "license": "MIT",
   "keywords": [
     "turbodocx",
