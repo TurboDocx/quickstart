@@ -2,9 +2,9 @@
 
 <div align="center">
 
-# TurboDocx Quickstart
+# TurboDocx Skills
 
-**Agent Skill for integrating TurboSign and TurboPartner into any project**
+**Agent Skills for TurboDocx integration — TurboSign, TurboPartner, and HTML-to-DOCX**
 
 [![GitHub Stars](https://img.shields.io/github/stars/turbodocx/quickstart-skill?style=social)](https://github.com/turbodocx/quickstart-skill)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Us-7289DA?logo=discord&logoColor=white)](https://discord.gg/NYKwz4BcpX)
@@ -18,7 +18,10 @@
 
 ---
 
-An [Agent Skill](https://agentskills.io) that installs the TurboDocx SDK and generates working integration code for **TurboSign** (digital signatures) and **TurboPartner** (partner management) in one command.
+An [Agent Skills](https://agentskills.io) plugin with two skills:
+
+- **`/turbodocx-quickstart`** — Install the TurboDocx SDK and generate working integration code for **TurboSign** (digital signatures) and **TurboPartner** (partner management) in one command. Supports JS/TS, Python, Go, PHP, and Java.
+- **`/html-to-docx`** — Set up `@turbodocx/html-to-docx` to convert HTML to Word documents in Node.js/TypeScript projects.
 
 Works with any tool that supports the Agent Skills standard: Claude Code, GitHub Copilot, Cursor, OpenAI Codex CLI, Gemini CLI, and others.
 

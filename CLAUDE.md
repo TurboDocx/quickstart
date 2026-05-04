@@ -1,48 +1,47 @@
-# TurboDocx Quickstart Skill
+# TurboDocx Skills
 
 ## What This Repo Is
 
-An [Agent Skill](https://agentskills.io) (open standard) that provides a `/turbodocx-quickstart` skill. Works with Claude Code (as a plugin), GitHub Copilot, Cursor, OpenAI Codex CLI, Gemini CLI, and any tool that supports the Agent Skills spec. When invoked, it detects the user's project language, asks whether they need TurboSign (digital signatures), TurboPartner (partner/org management), or both, then installs the SDK, configures environment variables, and generates working integration code.
+An [Agent Skills](https://agentskills.io) plugin containing two skills for TurboDocx integration. Works with Claude Code (as a plugin), GitHub Copilot, Cursor, OpenAI Codex CLI, Gemini CLI, and any tool that supports the Agent Skills spec.
+
+### Skills
+
+1. **`/turbodocx-quickstart`** — Detects the user's project language, asks whether they need TurboSign (digital signatures), TurboPartner (partner/org management), or both, then installs the SDK, configures environment variables, and generates working integration code. Supports JS/TS, Python, Go, PHP, and Java.
+
+2. **`/html-to-docx`** — Sets up `@turbodocx/html-to-docx` in a Node.js/TypeScript project to convert HTML strings to Word documents. Installs the package, creates a helper module, and generates framework-appropriate integration code.
 
 ## Repo Structure
 
 ```
-.claude-plugin/plugin.json    # Plugin manifest
+.claude-plugin/plugin.json          # Plugin manifest
 skills/
   turbodocx-quickstart/
-    SKILL.md                  # Main skill instructions (phases, logic, prompts)
+    SKILL.md                        # Skill instructions (phases, logic, prompts)
     references/
-      javascript.md           # JS/TS SDK code templates
-      python.md               # Python SDK code templates
-      go.md                   # Go SDK code templates
-      php.md                  # PHP SDK code templates
-      java.md                 # Java SDK code templates
-      env-vars.md             # Environment variable reference
+      javascript.md                 # JS/TS SDK code templates
+      python.md                     # Python SDK code templates
+      go.md                         # Go SDK code templates
+      php.md                        # PHP SDK code templates
+      java.md                       # Java SDK code templates
+      env-vars.md                   # Environment variable reference
+  html-to-docx/
+    SKILL.md                        # Skill instructions
+    references/
+      usage.md                      # API reference and code examples
 evals/
-  evals.json                  # Test prompts for validating the skill
+  evals.json                        # Test prompts for both skills
 ```
 
 ## How It Works
 
-- `SKILL.md` contains the main skill logic — language detection, user prompts, and step-by-step integration phases
-- `references/*.md` files contain language-specific code templates that SKILL.md reads on demand
-- The skill auto-discovers project language from manifest files (package.json, go.mod, etc.)
-
-## Skill Structure (SKILL.md)
-
-The skill follows a phased approach:
-1. **Detect language** from project files
-2. **Ask product selection** (TurboSign / TurboPartner / both)
-3. **Install SDK** for detected language
-4. **Configure env vars** (.env + .env.example)
-5. **Read reference file** for detected language
-6. **Analyze codebase** and generate integration code matching existing patterns
-7. **Verify** and provide summary
+- Each `SKILL.md` contains the skill logic — detection, user prompts, and step-by-step integration phases
+- `references/*.md` files contain code templates that SKILL.md reads on demand
+- Skills auto-discover project language/framework from manifest files
 
 ## How to Test / Iterate
 
 1. Install the plugin locally: `claude plugin add /home/nicolas/repos/turbodocx-quickstart-skill`
-2. Open a test project and run `/turbodocx-quickstart`
+2. Open a test project and run `/turbodocx-quickstart` or `/html-to-docx`
 3. Use evals: `claude evals run evals/evals.json`
 
 ## Coding Conventions
@@ -50,16 +49,7 @@ The skill follows a phased approach:
 - SKILL.md uses markdown with YAML frontmatter
 - Reference files are pure markdown with fenced code blocks
 - Keep reference files focused: install + configure + usage examples + error handling + gotchas
-- Each reference file should be ~100-150 lines
-- No MCP server needed — this is a purely instruction-driven skill
-
-## Key Differences from turbodocx-wizard
-
-- **Language-level** not framework-level (5 languages vs 17 framework-specific skills)
-- **Covers both TurboSign AND TurboPartner** (wizard only covers TurboSign)
-- **Includes PHP** (wizard does not)
-- **No MCP server** — zero dependencies, purely instruction-driven
-- **Single skill file** — simpler to maintain
+- No MCP server needed — purely instruction-driven skills
 
 ## SDK Documentation
 

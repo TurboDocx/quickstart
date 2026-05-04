@@ -1,11 +1,11 @@
 {
   "$schema": "https://cdn.anthropic.com/schemas/claude-plugin.json",
-  "name": "turbodocx-quickstart",
-  "displayName": "TurboDocx Quickstart",
-  "version": "1.0.0",
-  "description": "Install TurboDocx SDK and generate integration code for TurboSign (digital signatures) and TurboPartner (partner management) across JavaScript, Python, Go, PHP, and Java.",
+  "name": "turbodocx-skills",
+  "displayName": "TurboDocx Skills",
+  "version": "1.1.0",
+  "description": "Two skills for TurboDocx integration: (1) turbodocx-quickstart — install the TurboDocx SDK and generate working code for TurboSign (digital signatures) and TurboPartner (partner management) across JavaScript, Python, Go, PHP, and Java; (2) html-to-docx — set up @turbodocx/html-to-docx to convert HTML to Word documents in Node.js/TypeScript projects.",
   "author": "TurboDocx",
-  "repository": "https://github.com/TurboDocx/quickstart",
+  "repository": "https://github.com/TurboDocx/quickstart-skill",
   "license": "MIT",
   "keywords": [
     "turbodocx",
@@ -13,8 +13,11 @@
     "digital-signature",
     "document-signing",
     "partner-management",
+    "html-to-docx",
+    "docx",
+    "document-generation",
     "sdk",
     "quickstart"
   ],
-  "categories": ["sdk", "integration"]
+  "categories": ["sdk", "integration", "document-generation"]
 }
