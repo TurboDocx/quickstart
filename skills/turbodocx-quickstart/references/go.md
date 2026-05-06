@@ -3,7 +3,7 @@
 ## Install
 
 ```bash
-go get github.com/turbodocx/sdk
+go get github.com/TurboDocx/SDK/packages/go-sdk
 ```
 
 Also install godotenv for .env loading:
@@ -24,7 +24,7 @@ func main() {
 ## Import
 
 ```go
-import turbodocx "github.com/turbodocx/sdk"
+import turbodocx "github.com/TurboDocx/SDK/packages/go-sdk"
 ```
 
 ## TurboSign Configuration
@@ -156,7 +156,7 @@ import (
     "io"
     "net/http"
 
-    turbodocx "github.com/turbodocx/sdk"
+    turbodocx "github.com/TurboDocx/SDK/packages/go-sdk"
 )
 
 type SignatureHandler struct {
