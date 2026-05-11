@@ -6,16 +6,18 @@ An [Agent Skills](https://agentskills.io) plugin containing two skills for Turbo
 
 ### Skills
 
-1. **`/turbodocx-quickstart`** — Detects the user's project language, asks whether they need TurboSign (digital signatures), TurboPartner (partner/org management), or both, then installs the SDK, configures environment variables, and generates working integration code. Supports JS/TS, Python, Go, PHP, and Java.
+1. **`/turbodocx-sdk`** — Detects the user's project language, asks whether they need TurboSign (digital signatures), TurboPartner (partner/org management), or both, then installs the SDK, configures environment variables, and generates working integration code. Supports JS/TS, Python, Go, PHP, and Java.
 
-2. **`/html-to-docx`** — Sets up `@turbodocx/html-to-docx` in a Node.js/TypeScript project to convert HTML strings to Word documents. Installs the package, creates a helper module, and generates framework-appropriate integration code.
+2. **`/turbodocx-html-to-docx`** — Sets up `@turbodocx/html-to-docx` in a Node.js/TypeScript project to convert HTML strings to Word documents. Installs the package, creates a helper module, and generates framework-appropriate integration code.
+
+Both skills are *build-time* — they embed code into the user's project. For *runtime* agent access to the TurboDocx platform without the UI, see the separate MCP server (planned).
 
 ## Repo Structure
 
 ```
 .claude-plugin/plugin.json          # Plugin manifest
 skills/
-  turbodocx-quickstart/
+  turbodocx-sdk/
     SKILL.md                        # Skill instructions (phases, logic, prompts)
     references/
       javascript.md                 # JS/TS SDK code templates
@@ -24,7 +26,7 @@ skills/
       php.md                        # PHP SDK code templates
       java.md                       # Java SDK code templates
       env-vars.md                   # Environment variable reference
-  html-to-docx/
+  turbodocx-html-to-docx/
     SKILL.md                        # Skill instructions
     references/
       usage.md                      # API reference and code examples
@@ -41,7 +43,7 @@ evals/
 ## How to Test / Iterate
 
 1. Install the plugin locally: `claude plugin add /home/nicolas/repos/turbodocx-quickstart-skill`
-2. Open a test project and run `/turbodocx-quickstart` or `/html-to-docx`
+2. Open a test project and run `/turbodocx-sdk` or `/turbodocx-html-to-docx`
 3. Use evals: `claude evals run evals/evals.json`
 
 ## Coding Conventions

@@ -20,8 +20,8 @@
 
 An [Agent Skills](https://agentskills.io) plugin with two skills:
 
-- **`/turbodocx-quickstart`** — Install the TurboDocx SDK and generate working integration code for **TurboSign** (digital signatures) and **TurboPartner** (partner management) in one command. Supports JS/TS, Python, Go, PHP, and Java.
-- **`/html-to-docx`** — Set up `@turbodocx/html-to-docx` to convert HTML to Word documents in Node.js/TypeScript projects.
+- **`/turbodocx-sdk`** — Install the TurboDocx SDK and generate working integration code for **TurboSign** (digital signatures) and **TurboPartner** (partner management) in one command. Supports JS/TS, Python, Go, PHP, and Java.
+- **`/turbodocx-html-to-docx`** — Set up `@turbodocx/html-to-docx` to convert HTML to Word documents in Node.js/TypeScript projects.
 
 Works with any tool that supports the Agent Skills standard: Claude Code, GitHub Copilot, Cursor, OpenAI Codex CLI, Gemini CLI, and others.
 
@@ -51,32 +51,32 @@ claude plugin add turbodocx/quickstart-skill
 
 ```bash
 mkdir -p .claude/skills
-cp -r skills/turbodocx-quickstart .claude/skills/
+cp -r skills/turbodocx-sdk .claude/skills/
 ```
 
 ### Cursor / OpenAI Codex CLI / Gemini CLI (project-level)
 
 ```bash
 mkdir -p .agents/skills
-cp -r skills/turbodocx-quickstart .agents/skills/
+cp -r skills/turbodocx-sdk .agents/skills/
 ```
 
 ### All tools (symlink both directories)
 
 ```bash
 mkdir -p .claude/skills .agents/skills
-cp -r skills/turbodocx-quickstart .claude/skills/
-ln -s ../../.claude/skills/turbodocx-quickstart .agents/skills/turbodocx-quickstart
+cp -r skills/turbodocx-sdk .claude/skills/
+ln -s ../../.claude/skills/turbodocx-sdk .agents/skills/turbodocx-sdk
 ```
 
 ### User-level (available in all your projects)
 
 ```bash
 # Claude Code + Copilot
-cp -r skills/turbodocx-quickstart ~/.claude/skills/
+cp -r skills/turbodocx-sdk ~/.claude/skills/
 
 # Codex CLI + Gemini CLI
-cp -r skills/turbodocx-quickstart ~/.agents/skills/
+cp -r skills/turbodocx-sdk ~/.agents/skills/
 ```
 
 ---
@@ -84,7 +84,7 @@ cp -r skills/turbodocx-quickstart ~/.agents/skills/
 ## Usage
 
 ```
-/turbodocx-quickstart
+/turbodocx-sdk
 ```
 
 The skill will:
@@ -100,9 +100,9 @@ The skill will:
 Skip the product selection prompt:
 
 ```
-/turbodocx-quickstart turbosign       # TurboSign only
-/turbodocx-quickstart turbopartner    # TurboPartner only
-/turbodocx-quickstart both            # Both products
+/turbodocx-sdk turbosign       # TurboSign only
+/turbodocx-sdk turbopartner    # TurboPartner only
+/turbodocx-sdk both            # Both products
 ```
 
 ---

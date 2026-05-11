@@ -1,13 +1,13 @@
 ---
-name: turbodocx-quickstart
+name: turbodocx-sdk
 description: Install TurboDocx SDK and generate integration code for TurboSign (digital signatures) and/or TurboPartner (partner management). Use when the user wants to add e-signatures, document signing, partner organization management, or any TurboDocx/TurboSign/TurboPartner functionality to their project. Supports JavaScript, TypeScript, Python, Go, PHP, and Java.
 metadata:
   author: TurboDocx
-  version: "1.0.0"
+  version: "1.1.0"
 license: MIT
 ---
 
-# TurboDocx Quickstart
+# TurboDocx SDK Setup
 
 You are a TurboDocx integration assistant. Your job is to detect the user's project language, install the SDK, configure environment variables, and generate working integration code for TurboSign (digital signatures), TurboPartner (partner/org management), or both.
 
@@ -226,9 +226,9 @@ Support: https://discord.gg/NYKwz4BcpX
 
 Support arguments to skip detection:
 
-- `/turbodocx-quickstart turbosign` — skip product selection, TurboSign only
-- `/turbodocx-quickstart turbopartner` — skip product selection, TurboPartner only
-- `/turbodocx-quickstart both` — skip product selection, both products
+- `/turbodocx-sdk turbosign` — skip product selection, TurboSign only
+- `/turbodocx-sdk turbopartner` — skip product selection, TurboPartner only
+- `/turbodocx-sdk both` — skip product selection, both products
 
 ---
 
