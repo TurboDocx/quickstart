@@ -4,7 +4,7 @@
 
 # TurboDocx Skills
 
-**Agent Skills for TurboDocx integration — TurboSign, TurboPartner, and HTML-to-DOCX**
+**Agent Skills for TurboDocx integration — TurboSign, Deliverable, and HTML-to-DOCX**
 
 [![GitHub Stars](https://img.shields.io/github/stars/TurboDocx/quickstart?style=social)](https://github.com/TurboDocx/quickstart)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Us-7289DA?logo=discord&logoColor=white)](https://discord.gg/NYKwz4BcpX)
@@ -21,7 +21,7 @@
 
 An [Agent Skills](https://agentskills.io) plugin with two skills:
 
-- **`/turbodocx-sdk`** — Install the TurboDocx SDK and generate working integration code for **TurboSign** (digital signatures) and **TurboPartner** (partner management) in one command. Supports JS/TS, Python, Go, PHP, and Java.
+- **`/turbodocx-sdk`** — Install the TurboDocx SDK and generate working integration code for **TurboSign** (digital signatures) and **Deliverable** (template-based document generation) in one command. Also supports **TurboPartner** (partner-portal provisioning) for TurboDocx reseller/integrator accounts. Supports JS/TS, Python, Go, PHP, and Java.
 - **`/turbodocx-html-to-docx`** — Set up `@turbodocx/html-to-docx` to convert HTML to Word documents in Node.js/TypeScript projects.
 
 Works with any tool that supports the Agent Skills standard: Claude Code, GitHub Copilot, Cursor, OpenCode, OpenAI Codex CLI, Gemini CLI, and others.
@@ -62,7 +62,7 @@ Available skills:
 
 | Skill | What it does |
 |:------|:-------------|
-| **`turbodocx-sdk`** | Installs the TurboDocx SDK and generates working **TurboSign** + **TurboPartner** integration code in JS/TS, Python, Go, PHP, or Java. |
+| **`turbodocx-sdk`** | Installs the TurboDocx SDK and generates working **TurboSign** + **Deliverable** integration code in JS/TS, Python, Go, PHP, or Java. **TurboPartner** is also available via explicit shortcut for partner-portal use cases. |
 | **`turbodocx-html-to-docx`** | Sets up `@turbodocx/html-to-docx` to convert HTML strings to Word documents in Node.js/TypeScript projects. |
 
 ### Claude Code (plugin)
@@ -113,7 +113,7 @@ cp -r skills/turbodocx-sdk ~/.agents/skills/
 
 The skill will:
 1. Detect your project language from manifest files
-2. Ask what you need — TurboSign, TurboPartner, or both
+2. Ask what you need — TurboSign (signatures), Deliverable (document generation), or both
 3. Install the SDK package
 4. Add environment variables to `.env` and `.env.example`
 5. Analyze your codebase structure and generate integration code that matches your patterns
@@ -124,9 +124,10 @@ The skill will:
 Skip the product selection prompt:
 
 ```
-/turbodocx-sdk turbosign       # TurboSign only
-/turbodocx-sdk turbopartner    # TurboPartner only
-/turbodocx-sdk both            # Both products
+/turbodocx-sdk turbosign                # TurboSign only
+/turbodocx-sdk deliverable              # Deliverable only
+/turbodocx-sdk turbosign+deliverable    # Generate-then-sign workflow
+/turbodocx-sdk turbopartner             # TurboPartner (partner-portal use case; requires partner credentials)
 ```
 
 ---
@@ -135,15 +136,20 @@ Skip the product selection prompt:
 
 ### TurboSign Integration
 - Client configuration with env var loading
-- `sendSignature()` — send documents for e-signature
-- `getStatus()` — check document/recipient status
-- Route handler wired into your existing app
+- `sendSignature()`, `getStatus()`, `download()` — send, track, retrieve signed PDFs
+- Optional: `void()`, `resend()`, `getAuditTrail()` — cancellation, reminders, tamper-evident audit log
+- Route handlers wired into your existing app
 
-### TurboPartner Integration
+### Deliverable Integration
+- Client configuration with env var loading
+- `generateDeliverable()` — render a template with variable substitution
+- `getDeliverableDetails()`, `downloadPDF()`, `downloadSourceFile()` — read and download generated documents
+- When combined with TurboSign: generate-then-sign workflow (the new deliverable ID is handed directly to `sendSignature()` — no download/re-upload)
+
+### TurboPartner Integration *(opt-in via `/turbodocx-sdk turbopartner`)*
 - Partner client configuration
-- `createOrganization()` — provision customer orgs
-- `listOrganizations()` — list managed orgs
-- Route handler wired into your existing app
+- Organizations, users, API keys, entitlements, and audit logs
+- Designed for TurboDocx reseller/integrator accounts (uses a separate partner API key)
 
 ---
 

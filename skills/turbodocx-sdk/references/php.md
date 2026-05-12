@@ -263,5 +263,5 @@ try {
 - **PHP 8.1+ required** for named arguments and enum support
 - **`senderEmail` is required** — configure globally or pass per-call
 - **PHP SDK uses static methods** — configure once, call on the class
-- **`TDXP-` prefix required** for partner API keys
+- **Partner API keys are distinct** from regular API keys — using the wrong one returns `AuthenticationException`
 - **Laravel config**: add TurboSign::configure() in a service provider's `boot()` method for clean initialization

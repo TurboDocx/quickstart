@@ -276,5 +276,5 @@ try {
 - **`senderEmail` is required** for TurboSign operations
 - **Spring Boot**: use `@Value` or `application.properties` for env vars, not `System.getenv()` directly
 - **Spring Boot auto-scans** controllers in sub-packages — ensure your controller is under the base package
-- **`TDXP-` prefix required** for partner API keys
+- **Partner API keys are distinct** from regular API keys — using the wrong one returns `AuthenticationException`
 - **File input** accepts: `byte[]`, file path `String`, URL `String`, or `InputStream`
