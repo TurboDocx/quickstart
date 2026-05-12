@@ -148,6 +148,107 @@
       ]
     },
     {
+      "id": 13,
+      "prompt": "Set up TurboDocx in my Express app so I can generate documents from a template by passing in variable values. I have a contract template in TurboDocx and want to programmatically render it for each customer.",
+      "expected_output": "Creates a Deliverable config file, route handlers for generateDeliverable and downloadPDF, wires routes into the main app, adds .env with shared TurboDocx vars (no sender email since Deliverable doesn't send mail), installs @turbodocx/sdk",
+      "files": ["package.json", "tsconfig.json", "src/index.ts", "package-lock.json"],
+      "assertions": [
+        {"name": "config-file-created", "type": "file_exists", "description": "A Deliverable config/client file was created"},
+        {"name": "config-has-deliverable", "type": "file_contains", "description": "Config file calls Deliverable.configure with apiKey and orgId env vars"},
+        {"name": "no-sender-config", "type": "file_not_contains", "description": "Deliverable.configure does NOT pass senderEmail/senderName (those are TurboSign-only)"},
+        {"name": "route-file-created", "type": "file_exists", "description": "A route/handler file for deliverable generation was created"},
+        {"name": "uses-generateDeliverable", "type": "file_contains", "description": "Route handler calls Deliverable.generateDeliverable with templateId + variables"},
+        {"name": "routes-wired", "type": "file_contains", "description": "Main app file (src/index.ts) was modified to import and register deliverable routes"},
+        {"name": "env-has-shared-vars", "type": "file_contains", "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_ORG_ID"},
+        {"name": "no-sender-env-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL (Deliverable doesn't need sender vars)"},
+        {"name": "no-partner-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY"},
+        {"name": "gitignore-has-env", "type": "file_contains", "description": ".gitignore includes .env"}
+      ]
+    },
+    {
+      "id": 14,
+      "prompt": "I'm building a contract automation flow in my Next.js App Router app. When a user submits a form, I need to generate a contract from a TurboDocx template, then immediately route it for e-signature. Set everything up.",
+      "expected_output": "Creates a config file with both Deliverable and TurboSign clients, an App Router API route that calls Deliverable.generateDeliverable then TurboSign.sendSignature with the returned deliverableId, adds .env with shared API key/org + sender vars",
+      "files": ["package.json", "next.config.js", "tsconfig.json", "app/layout.tsx", "app/page.tsx"],
+      "assertions": [
+        {"name": "config-file-created", "type": "file_exists", "description": "A TurboDocx config/client file was created"},
+        {"name": "config-has-both-modules", "type": "file_contains", "description": "Config file configures both Deliverable AND TurboSign"},
+        {"name": "api-route-created", "type": "file_exists", "description": "API route handler created in app/api/ directory using Next.js App Router conventions (route.ts)"},
+        {"name": "calls-generateDeliverable", "type": "file_contains", "description": "Route handler calls Deliverable.generateDeliverable"},
+        {"name": "uses-deliverableId-not-buffer", "type": "file_contains", "description": "Route handler passes deliverableId to TurboSign.sendSignature (does NOT download the generated document and re-upload as a file/Buffer)"},
+        {"name": "uses-route-handlers", "type": "file_contains", "description": "API routes export named functions (POST) — Next.js App Router pattern"},
+        {"name": "env-has-shared-vars", "type": "file_contains", "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_ORG_ID"},
+        {"name": "env-has-sender-vars", "type": "file_contains", "description": ".env contains TURBODOCX_SENDER_EMAIL (required by TurboSign)"},
+        {"name": "no-partner-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY"},
+        {"name": "no-app-wiring", "type": "file_not_contains", "description": "No attempt to wire routes into a main app file (Next.js uses file-based routing)"}
+      ]
+    },
+    {
+      "id": 16,
+      "prompt": "Add the ability to my Express app to cancel a signature request with a reason (e.g. counterparty wanted revisions) and to resend reminder emails to specific recipients who haven't signed yet.",
+      "expected_output": "Creates endpoints calling TurboSign.void(documentId, reason) and TurboSign.resend(documentId, recipientIds) with the correct names and parameter types",
+      "files": ["package.json", "tsconfig.json", "src/index.ts", "package-lock.json"],
+      "assertions": [
+        {"name": "uses-void-correct-name", "type": "file_contains", "description": "Route handler calls TurboSign.void (the correct method name) — NOT TurboSign.voidDocument"},
+        {"name": "passes-reason-arg", "type": "file_contains", "description": "TurboSign.void is called with a reason argument (second parameter)"},
+        {"name": "uses-resend-correct-name", "type": "file_contains", "description": "Route handler calls TurboSign.resend (the correct method name) — NOT TurboSign.resendEmail"},
+        {"name": "passes-recipient-ids-array", "type": "file_contains", "description": "TurboSign.resend is called with an array of recipient IDs/UUIDs — NOT a single recipient email string"},
+        {"name": "no-obsolete-names", "type": "file_not_contains", "description": "Code does NOT contain TurboSign.voidDocument or TurboSign.resendEmail (those are wrong names from the old skill)"},
+        {"name": "config-file-created", "type": "file_exists", "description": "A TurboSign config/client file was created"},
+        {"name": "routes-wired", "type": "file_contains", "description": "Main app file (src/index.ts) was modified to register the new routes"},
+        {"name": "env-has-sign-vars", "type": "file_contains", "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_SENDER_EMAIL"}
+      ]
+    },
+    {
+      "id": 17,
+      "prompt": "Once a signature is completed, I want users to download the signed PDF directly from my Express app. Add a download endpoint that streams the file back with the right Content-Type header so the browser downloads it as a PDF.",
+      "expected_output": "Creates a download endpoint that calls TurboSign.download(documentId), correctly converts the Blob to a Node Buffer, and streams it with application/pdf Content-Type",
+      "files": ["package.json", "tsconfig.json", "src/index.ts", "package-lock.json"],
+      "assertions": [
+        {"name": "uses-download-method", "type": "file_contains", "description": "Route handler calls TurboSign.download(documentId)"},
+        {"name": "handles-blob-correctly", "type": "file_contains", "description": "Code calls .arrayBuffer() on the result (or otherwise correctly handles Blob — does NOT treat result as a Node Buffer directly which would be wrong)"},
+        {"name": "no-direct-buffer-assumption", "type": "file_not_contains", "description": "Code does NOT directly do `const buffer: Buffer = await TurboSign.download(...)` or `(await TurboSign.download(...)).pipe(...)` — these patterns assume Buffer/stream and would fail at runtime since download returns Blob"},
+        {"name": "sets-pdf-content-type", "type": "file_contains", "description": "Response sets Content-Type to application/pdf"},
+        {"name": "sets-content-disposition", "type": "file_contains", "description": "Response sets Content-Disposition header so browser downloads as a file (attachment or inline)"},
+        {"name": "config-file-created", "type": "file_exists", "description": "A TurboSign config/client file was created"},
+        {"name": "routes-wired", "type": "file_contains", "description": "Main app file (src/index.ts) was modified to register the download route"},
+        {"name": "env-has-sign-vars", "type": "file_contains", "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_SENDER_EMAIL"}
+      ]
+    },
+    {
+      "id": 18,
+      "prompt": "I'm a TurboDocx partner building an admin dashboard for my customers' onboarding. I need three things in my Express app: (1) provision a new customer organization, (2) invite a user to that newly-created org with a 'contributor' role, and (3) issue an org-scoped API key for the new org. Set everything up.",
+      "expected_output": "Creates TurboPartner config + endpoints for createOrganization, addUserToOrganization, createOrganizationApiKey — and surfaces the API key value (only returned once) in the response",
+      "files": ["package.json", "tsconfig.json", "src/index.ts", "package-lock.json"],
+      "assertions": [
+        {"name": "config-file-created", "type": "file_exists", "description": "A TurboPartner config/client file was created"},
+        {"name": "calls-createOrganization", "type": "file_contains", "description": "Route handler calls TurboPartner.createOrganization"},
+        {"name": "calls-addUserToOrganization", "type": "file_contains", "description": "Route handler calls TurboPartner.addUserToOrganization with an email and role"},
+        {"name": "uses-contributor-role", "type": "file_contains", "description": "addUserToOrganization is called with role 'contributor' (matching the user request)"},
+        {"name": "calls-createOrganizationApiKey", "type": "file_contains", "description": "Route handler calls TurboPartner.createOrganizationApiKey"},
+        {"name": "surfaces-api-key-value", "type": "file_contains", "description": "Response returns or surfaces the key field from the createOrganizationApiKey response (.data.key) — this is critical because the full key value is only returned on creation"},
+        {"name": "routes-wired", "type": "file_contains", "description": "Main app file (src/index.ts) was modified to register the new routes"},
+        {"name": "env-has-partner-vars", "type": "file_contains", "description": ".env contains TURBODOCX_PARTNER_API_KEY and TURBODOCX_PARTNER_ID"},
+        {"name": "no-sign-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL (partner-only, no signatures requested)"}
+      ]
+    },
+    {
+      "id": 15,
+      "prompt": "Set up TurboDocx in my Express app. I need to upload a contract PDF, place signature fields on it, and then show the user a preview/review URL so they can verify the field placement BEFORE the document is actually sent for signature. Once they confirm the preview looks right, that's when I'll send it.",
+      "expected_output": "Creates a TurboSign config file, route handlers for both createSignatureReviewLink (preview, no emails sent) AND sendSignature (final send), exposes previewUrl from the review response, wires routes into the main app",
+      "files": ["package.json", "tsconfig.json", "src/index.ts", "package-lock.json"],
+      "assertions": [
+        {"name": "config-file-created", "type": "file_exists", "description": "A TurboSign config/client file was created"},
+        {"name": "uses-createSignatureReviewLink", "type": "file_contains", "description": "Route handler calls TurboSign.createSignatureReviewLink (the preview-without-sending method)"},
+        {"name": "surfaces-previewUrl", "type": "file_contains", "description": "Route handler returns or surfaces the previewUrl field from the createSignatureReviewLink response"},
+        {"name": "separate-from-send", "type": "file_contains", "description": "Preview endpoint exists at a different path than the send endpoint (e.g. /review and /send) — the user wants two-step flow"},
+        {"name": "uses-sendSignature-for-final", "type": "file_contains", "description": "A separate sendSignature endpoint exists for the final send step (this is the two-step preview-then-send workflow)"},
+        {"name": "routes-wired", "type": "file_contains", "description": "Main app file (src/index.ts) was modified to import and register the routes"},
+        {"name": "env-has-sign-vars", "type": "file_contains", "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_SENDER_EMAIL"},
+        {"name": "no-partner-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY"}
+      ]
+    },
+    {
       "id": 10,
       "skill_name": "turbodocx-html-to-docx",
       "prompt": "Add an endpoint to my Express app that converts HTML to DOCX documents. I want to POST HTML and get back a downloadable .docx file.",
