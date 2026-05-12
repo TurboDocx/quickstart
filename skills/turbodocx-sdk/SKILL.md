@@ -45,7 +45,7 @@ Otherwise, ask which products they need. Use AskUserQuestion with multi-select:
 ```
 Which TurboDocx products do you need? (select all that apply)
 
-1. TurboSign   — Send documents for e-signature, track status, download signed PDFs, void, resend, audit trail
+1. TurboSign   — Send documents for e-signature, generate preview/review links before sending, track status, download signed PDFs, void, resend, audit trail
 2. Deliverable — Generate documents from templates with variable substitution (DOCX/PPTX/PDF output)
 ```
 
@@ -174,7 +174,8 @@ Create working route handlers / endpoint code for the selected product(s). The l
 - `sendSignature()` endpoint — accepts file (or `fileLink` / `deliverableId` / `templateId`), recipients, fields
 - `getStatus()` endpoint — check document status by ID
 - `download()` endpoint — stream signed PDF (returns `Blob`/`ArrayBuffer` per language)
-- Optionally: `void()`, `resend()`, `getAuditTrail()` if the user mentioned cancellation, reminders, or compliance/audit needs
+- If the user mentioned a preview, review step, draft, or "verify field placement before sending": also generate a `createSignatureReviewLink()` endpoint. This prepares the document and returns a `previewUrl` **without sending signature emails** — pair it with `sendSignature()` as a two-step preview-then-send workflow.
+- Optionally: `void()`, `resend()`, `getAuditTrail()` if the user mentioned cancellation, reminders, or compliance/audit needs (per-language method names vary — consult the language reference; e.g. JS uses `void()`/`resend()`, Java uses `voidDocument()`/`resendEmail()`)
 
 **For Deliverable, generate:**
 - `generateDeliverable()` endpoint — accepts `templateId` + `variables`, returns the new deliverable ID
