@@ -6,11 +6,12 @@
 
 **Agent Skills for TurboDocx integration — TurboSign, TurboPartner, and HTML-to-DOCX**
 
-[![GitHub Stars](https://img.shields.io/github/stars/turbodocx/quickstart-skill?style=social)](https://github.com/turbodocx/quickstart-skill)
+[![GitHub Stars](https://img.shields.io/github/stars/TurboDocx/quickstart?style=social)](https://github.com/TurboDocx/quickstart)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Us-7289DA?logo=discord&logoColor=white)](https://discord.gg/NYKwz4BcpX)
 [![X](https://img.shields.io/badge/X-@TurboDocx-000?logo=x&logoColor=white)](https://twitter.com/TurboDocx)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Agent Skills](https://img.shields.io/badge/Agent%20Skills-agentskills.io-8A2BE2)](https://agentskills.io)
+[![skills.sh](https://skills.sh/b/TurboDocx/quickstart)](https://skills.sh/TurboDocx/quickstart)
 
 [Documentation](https://docs.turbodocx.com/docs) • [SDK Reference](https://docs.turbodocx.com/docs/SDKs/) • [Discord](https://discord.gg/NYKwz4BcpX) • [Blog](https://www.turbodocx.com/blog)
 
@@ -41,10 +42,33 @@ Works with any tool that supports the Agent Skills standard: Claude Code, GitHub
 
 ## Install
 
+### `npx skills add` (Claude Code, Copilot, Cursor, Codex CLI, Gemini CLI)
+
+Auto-detects your installed agents and drops the skills into the right config directory. Works anywhere the [Agent Skills](https://agentskills.io) standard is supported.
+
+```bash
+# Install both skills at once
+npx skills add TurboDocx/quickstart
+
+# Or install one at a time
+npx skills add TurboDocx/quickstart --skill turbodocx-sdk
+npx skills add TurboDocx/quickstart --skill turbodocx-html-to-docx
+
+# Install globally (user-level, available in every project)
+npx skills add TurboDocx/quickstart -g
+```
+
+Available skills:
+
+| Skill | What it does |
+|:------|:-------------|
+| **`turbodocx-sdk`** | Installs the TurboDocx SDK and generates working **TurboSign** + **TurboPartner** integration code in JS/TS, Python, Go, PHP, or Java. |
+| **`turbodocx-html-to-docx`** | Sets up `@turbodocx/html-to-docx` to convert HTML strings to Word documents in Node.js/TypeScript projects. |
+
 ### Claude Code (plugin)
 
 ```bash
-claude plugin add turbodocx/quickstart-skill
+claude plugin add TurboDocx/quickstart
 ```
 
 ### Claude Code / GitHub Copilot (project-level)
@@ -157,7 +181,7 @@ Get your API credentials at [app.turbodocx.com](https://app.turbodocx.com).
 </a>
 </td>
 <td align="center" width="33%">
-<a href="https://github.com/TurboDocx/quickstart-skill/issues">
+<a href="https://github.com/TurboDocx/quickstart/issues">
 <img src="https://cdn-icons-png.flaticon.com/512/733/733553.png" width="40"/><br/>
 <strong>GitHub Issues</strong>
 </a>
