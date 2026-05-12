@@ -216,5 +216,116 @@ const options = {
 - **SVG images** — install `sharp` for maximum compatibility (converts SVG to PNG for Word 2007+). Without sharp, SVGs use native embedding (Office 2019+ only)
 - **TWIP units** — page sizes and margins use TWIP (1 inch = 1440 TWIP, 1 cm = 567 TWIP)
 - **Image URLs** — remote images are downloaded automatically; for CORS-restricted images, use base64 data URIs
-- **Server-side only** — use in Node.js; browser usage is not supported
 - **TypeScript** — full type definitions included in the package
+
+## Browser Usage
+
+> **Prefer server-side if possible.** Server-side generation is faster, has no ~2.4 MB bundle, requires no polyfills, and keeps `sharp` available for SVG → PNG conversion. Only use the browser path if the project is truly static or the user has explicitly asked for client-side generation.
+
+This library runs in browsers via the bundled standalone build. It is not server-side only. There are three distribution files produced by `npm run build`:
+
+| File | Format | Size | Use case |
+|------|--------|------|----------|
+| `dist/html-to-docx.esm.js` | ES Module | ~1.6 MB | Modern bundlers (Webpack, Vite, Rollup) — deps external |
+| `dist/html-to-docx.umd.js` | UMD | ~1.6 MB | Node.js, AMD, manual dep management |
+| `dist/html-to-docx.browser.js` | IIFE | ~2.4 MB | Direct `<script>` / CDN — **all deps bundled** |
+
+`package.json` already wires these up as `main` / `module` / `browser`, so bundlers pick the right one automatically.
+
+### Path 1 — Bundler (Vite, Webpack, Rollup, Next.js client component, etc.)
+
+Install normally and import. The bundler picks the ESM build:
+
+```typescript
+import HTMLtoDOCX from '@turbodocx/html-to-docx';
+
+async function downloadDocx(html: string) {
+  const result = await HTMLtoDOCX(html);
+  // In browser: result is a Blob. In Node: Buffer/ArrayBuffer.
+  const blob = result instanceof Blob
+    ? result
+    : new Blob([result], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'document.docx';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+```
+
+### Path 2 — Static HTML page (no bundler, `<script>` tag)
+
+Use the IIFE bundle. **Polyfills for `global`, `process`, and `Buffer` must be set before the script loads** — some dependencies check for them synchronously during init:
+
+```html
+<!DOCTYPE html>
+<html>
+<head><title>HTML to DOCX</title></head>
+<body>
+  <script>
+    if (typeof global === 'undefined') window.global = window;
+    if (typeof process === 'undefined') window.process = { env: {} };
+    if (typeof Buffer === 'undefined') {
+      window.Buffer = {
+        from: function (data, encoding) {
+          if (typeof data === 'string') {
+            if (encoding === 'base64') {
+              var binary = atob(data);
+              var bytes = new Uint8Array(binary.length);
+              for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+              return bytes;
+            }
+            return new TextEncoder().encode(data);
+          }
+          return new Uint8Array(data);
+        },
+        isBuffer: function () { return false; }
+      };
+    }
+  </script>
+
+  <script src="path/to/html-to-docx.browser.js"></script>
+
+  <script>
+    async function generateDocument() {
+      // Note: the IIFE bundle exposes a global named HTMLToDOCX (capitalized).
+      const result = await HTMLToDOCX('<h1>Hello</h1><p>From the browser.</p>', null, {
+        title: 'My Document',
+        creator: 'Browser App'
+      });
+
+      const blob = result instanceof Blob
+        ? result
+        : new Blob([result], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'document.docx';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+  </script>
+
+  <button onclick="generateDocument()">Generate DOCX</button>
+</body>
+</html>
+```
+
+### Building the browser bundle from source
+
+The browser bundle ships in the npm package's `dist/` directory, so most users don't need to build it. If you're working from a cloned repo or want a custom build:
+
+```bash
+npm run build               # all three outputs (ESM + UMD + Browser)
+npm run build:browser       # browser IIFE only (dev)
+npm run build:browser:prod  # browser IIFE only (minified, production)
+```
+
+### Browser limitations
+
+- **`sharp` not available** — SVG images embed natively (requires Office 2019+). For broader compatibility, pre-convert SVGs to PNG before passing to the library.
+- **CORS** — Remote `<img src="https://...">` URLs must be CORS-enabled, or use base64 data URIs.
+- **No filesystem** — Output is returned as `Blob` / `ArrayBuffer`. Trigger a download via `URL.createObjectURL` or upload directly.

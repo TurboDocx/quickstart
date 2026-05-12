@@ -24,7 +24,7 @@ An [Agent Skills](https://agentskills.io) plugin with two skills:
 - **`/turbodocx-sdk`** — Install the TurboDocx SDK and generate working integration code for **TurboSign** (digital signatures) and **TurboPartner** (partner management) in one command. Supports JS/TS, Python, Go, PHP, and Java.
 - **`/turbodocx-html-to-docx`** — Set up `@turbodocx/html-to-docx` to convert HTML to Word documents in Node.js/TypeScript projects.
 
-Works with any tool that supports the Agent Skills standard: Claude Code, GitHub Copilot, Cursor, OpenAI Codex CLI, Gemini CLI, and others.
+Works with any tool that supports the Agent Skills standard: Claude Code, GitHub Copilot, Cursor, OpenCode, OpenAI Codex CLI, Gemini CLI, and others.
 
 ---
 
@@ -42,7 +42,7 @@ Works with any tool that supports the Agent Skills standard: Claude Code, GitHub
 
 ## Install
 
-### `npx skills add` (Claude Code, Copilot, Cursor, Codex CLI, Gemini CLI)
+### `npx skills add` (Claude Code, Copilot, Cursor, OpenCode, Codex CLI, Gemini CLI)
 
 Auto-detects your installed agents and drops the skills into the right config directory. Works anywhere the [Agent Skills](https://agentskills.io) standard is supported.
 

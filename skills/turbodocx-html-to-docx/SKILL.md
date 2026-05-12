@@ -9,22 +9,32 @@ license: MIT
 
 # HTML to DOCX Setup
 
-This skill adds `@turbodocx/html-to-docx` to a Node.js/TypeScript project — a zero-dependency library that converts HTML strings to Word documents without Puppeteer, Chrome, or LibreOffice.
+This skill adds `@turbodocx/html-to-docx` to a JavaScript/TypeScript project — a zero-dependency library that converts HTML strings to Word documents without Puppeteer, Chrome, or LibreOffice. It runs in Node.js **and** in the browser (via the bundled IIFE/ESM builds).
 
-## Phase 1: Verify JavaScript/TypeScript Project
+> **Prefer server-side when possible.** Running this server-side is faster, avoids the ~2.4 MB browser bundle, sidesteps polyfill requirements, and keeps `sharp` (for SVG → PNG conversion) available. Default to a server-side integration whenever the project has any backend (Express/Fastify/Next.js API route/etc.) and only fall back to the browser bundle when the project is genuinely static or the user explicitly asks for client-side generation.
 
-Use Glob to check for `package.json` in the project root.
+## Phase 1: Detect the Project Type
 
-- If found: proceed. Also check for `tsconfig.json` to determine if TypeScript is in use.
-- If not found: tell the user this library is Node.js/TypeScript only and stop.
+Use Glob to check what kind of project this is:
 
-Detect the package manager from lockfiles:
-- `pnpm-lock.yaml` → pnpm
-- `yarn.lock` → yarn
-- `bun.lockb` → bun
-- `package-lock.json` or none → npm
+1. **Node.js / npm-based project** — `package.json` exists in the root. **This is the preferred path.**
+   - Also check for `tsconfig.json` to determine if TypeScript is in use.
+   - Detect the package manager from lockfiles:
+     - `pnpm-lock.yaml` → pnpm
+     - `yarn.lock` → yarn
+     - `bun.lockb` → bun
+     - `package-lock.json` or none → npm
+   - Check `package.json` for `"type": "module"` to determine ESM vs CommonJS imports.
+   - If the project has both a server runtime and a client (e.g., Next.js, Remix, Nuxt, SvelteKit), default to the server route/handler/action path — do not put document generation in a client component unless the user explicitly asks.
+   - Proceed to **Phase 2 (npm install path)**.
 
-Check `package.json` for `"type": "module"` to determine ESM vs CommonJS imports.
+2. **Browser-only project** — no `package.json`, but HTML files exist (`*.html`) or the user has explicitly said they want to use this in a static page / CDN setup. Before committing to this path, briefly confirm with the user that they don't have a backend they'd rather run this in — server-side is preferred. If they confirm browser is required:
+   - Skip npm install entirely. The library ships a self-contained browser bundle (`dist/html-to-docx.browser.js`, ~2.4 MB IIFE) with all dependencies inlined.
+   - Read the **Browser Usage** section in `references/usage.md` for the polyfill snippet, the `HTMLToDOCX(...)` global, and the limitations (no `sharp`, CORS-restricted remote images, no filesystem).
+   - Drop in a `<script src="...">` referencing either a hosted copy or a CDN build, and generate a minimal working example tailored to the user's page.
+   - Skip Phases 2-4 below; the browser path is install-less.
+
+3. **Neither** — no `package.json` and no HTML files. Ask the user which environment they're targeting (Node.js, bundler, or static HTML) before proceeding, and recommend server-side as the default.
 
 ## Phase 2: Install the Package
 
