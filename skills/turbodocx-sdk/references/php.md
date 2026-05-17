@@ -96,6 +96,75 @@ $pdfBytes = TurboSign::download($documentId);
 file_put_contents('signed.pdf', $pdfBytes);
 ```
 
+### createSignatureReviewLink
+
+Prepares the document with recipients and fields but **does not send signature emails** — use this to preview field placement before sending.
+
+```php
+use TurboDocx\Types\Requests\CreateSignatureReviewLinkRequest;
+
+$result = TurboSign::createSignatureReviewLink(
+    new CreateSignatureReviewLinkRequest(
+        file: file_get_contents('nda.pdf'),
+        documentName: 'NDA - Acme',
+        recipients: [
+            new Recipient('John Doe', 'john@example.com', 1),
+        ],
+        fields: [
+            new Field(
+                type: SignatureFieldType::SIGNATURE,
+                recipientEmail: 'john@example.com',
+                page: 1,
+                x: 100,
+                y: 500,
+                width: 200,
+                height: 50,
+            ),
+        ],
+    )
+);
+
+echo "Document ID: {$result->documentId}\n";
+echo "Preview URL: {$result->previewUrl}\n";  // open to review field placement
+// Each recipient also has a signUrl for their personal signing link
+foreach ($result->recipients as $recipient) {
+    echo "  {$recipient->name}: {$recipient->signUrl}\n";
+}
+```
+
+### void
+
+```php
+$voided = TurboSign::void($documentId, 'Counterparty requested changes');
+echo "Status: {$voided->status}\n";    // 'voided'
+echo "Voided at: {$voided->voidedAt}\n";
+```
+
+`reason` is **required**.
+
+### resend
+
+```php
+// $recipientIds are UUIDs — fetch from sendSignature/createSignatureReviewLink response or getAuditTrail
+$result = TurboSign::resend($documentId, [$recipientId1, $recipientId2]);
+echo "Resent to {$result->recipientCount} recipients\n";
+
+// Pass an empty array to resend to all pending recipients
+$result = TurboSign::resend($documentId, []);
+```
+
+### getAuditTrail
+
+```php
+$audit = TurboSign::getAuditTrail($documentId);
+echo "Document: {$audit->document->name}\n";
+
+foreach ($audit->auditTrail as $entry) {
+    $userEmail = $entry->user?->email ?? '';
+    echo "{$entry->timestamp}  {$entry->actionType}  {$userEmail}\n";
+}
+```
+
 ## TurboPartner Configuration
 
 ```php
@@ -250,8 +319,8 @@ try {
 | `TurboSign::createSignatureReviewLink($request)` | Preview without emails |
 | `TurboSign::getStatus($documentId)` | Get document + recipient status |
 | `TurboSign::download($documentId)` | Download signed PDF as string |
-| `TurboSign::voidDocument($documentId)` | Cancel a signature request |
-| `TurboSign::resendEmail($documentId, $email)` | Resend signature email |
+| `TurboSign::void($documentId, $reason)` | Cancel a signature request (reason required) |
+| `TurboSign::resend($documentId, $recipientIds)` | Resend signature email to recipient UUIDs |
 | `TurboSign::getAuditTrail($documentId)` | Get complete audit trail |
 | `TurboPartner::createOrganization($request)` | Provision a new customer org |
 | `TurboPartner::listOrganizations(...)` | List managed organizations |
@@ -263,5 +332,9 @@ try {
 - **PHP 8.1+ required** for named arguments and enum support
 - **`senderEmail` is required** — configure globally or pass per-call
 - **PHP SDK uses static methods** — configure once, call on the class
-- **`TDXP-` prefix required** for partner API keys
+- **Partner API keys are distinct** from regular API keys — using the wrong one returns `AuthenticationException`
 - **Laravel config**: add TurboSign::configure() in a service provider's `boot()` method for clean initialization
+- **`signUrl`** — each `RecipientResponse` in the `sendSignature`/`createSignatureReviewLink` response has a `signUrl` property: the personal signing link for that recipient. `createSignatureReviewLink` also returns a top-level `previewUrl` for document-level preview.
+- **`resend` takes recipient UUIDs** (array of strings), not email addresses — fetch them from the send/review response or `getAuditTrail`. Pass an empty array to resend to all pending recipients.
+
+**Full API reference:** https://docs.turbodocx.com/docs

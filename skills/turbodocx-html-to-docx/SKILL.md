@@ -3,7 +3,7 @@ name: turbodocx-html-to-docx
 description: Set up @turbodocx/html-to-docx to convert HTML to Microsoft Word (.docx) documents in a Node.js project. Use this skill when the user wants to generate DOCX files from HTML, add document generation to their app, convert HTML templates to Word documents, or integrate TurboDocx html-to-docx into their project. Also trigger for mentions of HTML-to-Word, HTML-to-DOCX, document generation, report generation from HTML, or any request involving the @turbodocx/html-to-docx package.
 metadata:
   author: TurboDocx
-  version: "1.1.0"
+  version: "1.2.0"
 license: MIT
 ---
 
@@ -106,5 +106,5 @@ Print a summary:
 - Files created and modified
 - Package installed
 - How to use (example curl command for endpoints, or how to run the script)
-- Link to docs: https://docs.turbodocx.com
+- Link to docs: https://docs.turbodocx.com/docs
 - Key options they can customize (page size, orientation, margins, fonts, headers/footers)

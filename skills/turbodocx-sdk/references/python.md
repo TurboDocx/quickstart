@@ -90,6 +90,65 @@ with open("signed.pdf", "wb") as f:
     f.write(pdf_bytes)
 ```
 
+### create_signature_review_link
+
+Prepares the document with recipients and fields but **does not send signature emails** — use this to preview field placement before sending.
+
+```python
+result = await TurboSign.create_signature_review_link(
+    file=pdf_bytes,
+    document_name="NDA - Acme",
+    recipients=[
+        {"name": "John Doe", "email": "john@example.com", "signingOrder": 1},
+    ],
+    fields=[
+        {
+            "type": "signature",
+            "page": 1,
+            "x": 100,
+            "y": 500,
+            "width": 200,
+            "height": 50,
+            "recipientEmail": "john@example.com",
+        },
+    ],
+)
+
+print(f"Document ID: {result['documentId']}")
+print(f"Preview URL: {result['previewUrl']}")  # open to review field placement
+# Each recipient also has a signUrl for their personal signing link
+for r in result.get("recipients", []):
+    print(f"  {r['name']}: {r.get('signUrl')}")
+```
+
+### void_document
+
+```python
+voided = await TurboSign.void_document(document_id, "Counterparty requested changes")
+print(f"Status: {voided['status']}")    # 'voided'
+print(f"Voided at: {voided['voidedAt']}")
+```
+
+`reason` is **required**.
+
+### resend_email
+
+```python
+# recipient_ids are UUIDs — fetch from send_signature/create_signature_review_link response or get_audit_trail
+result = await TurboSign.resend_email(document_id, ["recipient-uuid-1", "recipient-uuid-2"])
+print(f"Resent to {result['recipientCount']} recipients")
+```
+
+### get_audit_trail
+
+```python
+audit = await TurboSign.get_audit_trail(document_id)
+print(f"Document: {audit['document']['name']}")
+
+for entry in audit["auditTrail"]:
+    print(f"{entry['timestamp']}  {entry['actionType']}  {entry.get('user', {}).get('email', '')}")
+```
+
 ## TurboPartner Configuration
 
 ```python
@@ -224,8 +283,8 @@ except TurboDocxError as e:
 | `TurboSign.create_signature_review_link(...)` | Preview without sending emails |
 | `TurboSign.get_status(document_id)` | Get document + recipient status |
 | `TurboSign.download(document_id)` | Download signed PDF as bytes |
-| `TurboSign.void_document(document_id)` | Cancel a signature request |
-| `TurboSign.resend_email(document_id, email)` | Resend signature email |
+| `TurboSign.void_document(document_id, reason)` | Cancel a signature request (reason required) |
+| `TurboSign.resend_email(document_id, recipient_ids)` | Resend signature email to recipient UUIDs |
 | `TurboSign.get_audit_trail(document_id)` | Get complete audit trail |
 | `TurboPartner.create_organization(...)` | Provision a new customer org |
 | `TurboPartner.list_organizations(...)` | List managed organizations |
@@ -238,3 +297,7 @@ except TurboDocxError as e:
 - **`sender_email` is required** — configure it globally or pass per-call
 - **Flask needs asyncio.run()** wrapping since Flask routes are synchronous by default
 - **File input** accepts: `bytes`, file path string, URL string, deliverable ID, or template ID
+- **`signUrl`** — each recipient dict in the `send_signature`/`create_signature_review_link` response includes a `signUrl` field: the personal signing link for that recipient. `create_signature_review_link` also returns a top-level `previewUrl` for document-level preview.
+- **`resend_email` takes recipient UUIDs**, not email addresses — fetch them from the `send_signature` or `create_signature_review_link` response recipients, or from `get_audit_trail`.
+
+**Full API reference:** https://docs.turbodocx.com/docs

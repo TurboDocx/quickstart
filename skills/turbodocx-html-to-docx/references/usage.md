@@ -23,13 +23,13 @@ const HTMLtoDOCX = require('@turbodocx/html-to-docx');
 ```typescript
 async function HTMLtoDOCX(
   htmlString: string,              // Required: HTML content to convert
-  headerHTMLString?: string,       // Optional: HTML for page header
+  headerHTMLString?: string | null, // Optional: HTML for page header
   documentOptions?: DocumentOptions, // Optional: configuration
-  footerHTMLString?: string        // Optional: HTML for page footer
-): Promise<Buffer>
+  footerHTMLString?: string | null  // Optional: HTML for page footer
+): Promise<Buffer | ArrayBuffer | Blob>
 ```
 
-Returns a `Buffer` containing the .docx file bytes.
+Returns `Buffer` in Node.js, `Blob` in browsers. Both can be persisted or streamed — see Browser Usage section for the browser path.
 
 ## Basic Usage
 
@@ -103,6 +103,7 @@ const options = {
     left: 1800,
     header: 720,
     footer: 720,
+    gutter: 0,     // binding gutter (added to inner margin for double-sided printing)
   },
 };
 ```
@@ -123,19 +124,29 @@ const options = {
 
 ### Heading Styles
 
+All heading styles are nested under the `heading` key. Each level supports `font`, `fontSize`, `bold`, `spacing`, `keepLines`, `keepNext`, and `outlineLevel`.
+
 ```typescript
 const options = {
-  heading1: {
-    font: 'Arial',
-    fontSize: 32,     // 16pt
-    bold: true,
-    spacing: { before: 240, after: 120 },
-  },
-  heading2: {
-    font: 'Arial',
-    fontSize: 28,     // 14pt
-    bold: true,
-    spacing: { before: 200, after: 100 },
+  heading: {
+    heading1: {
+      font: 'Arial',
+      fontSize: 32,     // 16pt
+      bold: true,
+      spacing: { before: 240, after: 120 },
+      keepLines: true,  // keep all lines on same page
+      keepNext: true,   // keep with the following paragraph
+    },
+    heading2: {
+      font: 'Arial',
+      fontSize: 28,     // 14pt
+      bold: true,
+      spacing: { before: 200, after: 100 },
+    },
+    heading3: { font: 'Arial', fontSize: 24, bold: true },
+    heading4: { font: 'Arial', fontSize: 22, bold: true },
+    heading5: { font: 'Arial', fontSize: 20, bold: false },
+    heading6: { font: 'Arial', fontSize: 18, bold: false },
   },
 };
 ```
@@ -148,11 +159,37 @@ const footerHtml = '<p style="text-align: center">Confidential</p>';
 
 const options = {
   header: true,
+  headerType: 'default',  // 'default' | 'first' | 'even'
   footer: true,
-  pageNumber: true,  // Adds page numbers to footer
+  footerType: 'default',  // 'default' | 'first' | 'even'
+  pageNumber: true,        // Adds page numbers to footer
+  skipFirstHeaderFooter: true,  // omit header/footer on first page
 };
 
 const buffer = await HTMLtoDOCX(html, headerHtml, options, footerHtml);
+```
+
+### Line Numbers
+
+```typescript
+const options = {
+  lineNumber: true,
+  lineNumberOptions: {
+    start: 1,
+    countBy: 1,
+    restart: 'newPage',  // 'continuous' | 'newPage' | 'newSection'
+  },
+};
+```
+
+### List Numbering
+
+```typescript
+const options = {
+  numbering: {
+    defaultOrderedListStyleType: 'decimal',  // controls <ol> list style
+  },
+};
 ```
 
 ### Document Metadata
@@ -164,6 +201,10 @@ const options = {
   creator: 'Report Generator',
   keywords: ['finance', 'quarterly'],
   description: 'Auto-generated financial report',
+  lastModifiedBy: 'Report Generator',
+  revision: 1,
+  createdAt: new Date(),
+  modifiedAt: new Date(),
 };
 ```
 
@@ -184,19 +225,24 @@ const options = {
 const options = {
   imageProcessing: {
     maxRetries: 2,
-    downloadTimeout: 5000,
-    maxImageSize: 10485760,     // 10MB
-    svgHandling: 'convert',    // 'convert' (needs sharp) | 'native' (Office 2019+)
+    downloadTimeout: 5000,       // ms before giving up on a remote image
+    maxImageSize: 10485760,      // 10MB — skip images larger than this
+    svgHandling: 'convert',      // 'convert' (needs sharp) | 'native' (Office 2019+) | 'auto' (convert if sharp available, else native)
+  },
+  preprocessing: {
+    skipHTMLMinify: false,       // set true if minification breaks your HTML
   },
 };
 ```
 
-### RTL Language Support
+### RTL / Complex Script Languages
 
 ```typescript
 const options = {
   direction: 'rtl',
   lang: 'ar-SA',
+  complexScriptFontSize: 24,  // font size for Arabic, Hebrew, CJK scripts (half-points)
+  decodeUnicode: true,         // decode HTML entities in the source HTML
 };
 ```
 
@@ -213,10 +259,16 @@ const options = {
 
 - **Async function** — always `await` the result
 - **No API keys needed** — this is a purely local library
-- **SVG images** — install `sharp` for maximum compatibility (converts SVG to PNG for Word 2007+). Without sharp, SVGs use native embedding (Office 2019+ only)
+- **SVG images** — install `sharp` for maximum compatibility (converts SVG to PNG for Word 2007+). Without sharp, SVGs use native embedding (Office 2019+ only). Use `svgHandling: 'auto'` to pick automatically.
 - **TWIP units** — page sizes and margins use TWIP (1 inch = 1440 TWIP, 1 cm = 567 TWIP)
 - **Image URLs** — remote images are downloaded automatically; for CORS-restricted images, use base64 data URIs
 - **TypeScript** — full type definitions included in the package
+- **Return type varies by runtime** — Node.js returns `Buffer`, browsers return `Blob`. Both can be persisted, streamed, or uploaded directly.
+- **Heading styles** — all heading levels are nested under the `heading` key: `{ heading: { heading1: {...}, heading2: {...} } }` — not at the top level of options.
+- **HTML minification** — the library minifies your HTML before processing; if this breaks layout, set `preprocessing: { skipHTMLMinify: true }`.
+- **`null` vs `undefined`** — pass `null` explicitly for headerHTMLString/footerHTMLString when you want to skip them and still pass options as the third argument.
+
+**Full API reference:** https://docs.turbodocx.com/docs
 
 ## Browser Usage
 

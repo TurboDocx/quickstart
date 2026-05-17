@@ -98,6 +98,84 @@ if err != nil {
 os.WriteFile("signed.pdf", pdf, 0644)
 ```
 
+### CreateSignatureReviewLink
+
+Prepares the document with recipients and fields but **does not send signature emails** — use this to preview field placement before sending.
+
+```go
+review, err := client.TurboSign.CreateSignatureReviewLink(ctx, &turbodocx.CreateSignatureReviewLinkRequest{
+    File:         pdfFile,
+    FileName:     "nda.pdf",
+    DocumentName: "NDA - Acme",
+    Recipients: []turbodocx.Recipient{
+        {Name: "John Doe", Email: "john@example.com", SigningOrder: 1},
+    },
+    Fields: []turbodocx.Field{
+        {
+            Type:           "signature",
+            RecipientEmail: "john@example.com",
+            Page:           1,
+            X:              100,
+            Y:              500,
+            Width:          200,
+            Height:         50,
+        },
+    },
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+fmt.Printf("Document ID: %s\n", review.DocumentID)
+fmt.Printf("Preview URL: %s\n", review.PreviewURL)  // open to review field placement
+// Each recipient also has a SignURL for their personal signing link
+for _, r := range review.Recipients {
+    fmt.Printf("  %s: %s\n", r.Name, r.SignURL)
+}
+```
+
+### VoidDocument
+
+```go
+voided, err := client.TurboSign.VoidDocument(ctx, documentID, "Counterparty requested changes")
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("Status: %s\n", voided.Status)    // "voided"
+fmt.Printf("Voided at: %s\n", voided.VoidedAt)
+```
+
+`reason` is **required**.
+
+### ResendEmail
+
+```go
+// recipientIDs are UUIDs — fetch from SendSignature/CreateSignatureReviewLink response or GetAuditTrail
+result, err := client.TurboSign.ResendEmail(ctx, documentID, []string{"recipient-uuid-1", "recipient-uuid-2"})
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("Resent to %d recipients\n", result.RecipientCount)
+```
+
+### GetAuditTrail
+
+```go
+audit, err := client.TurboSign.GetAuditTrail(ctx, documentID)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("Document: %s\n", audit.Document.Name)
+
+for _, entry := range audit.AuditTrail {
+    userEmail := ""
+    if entry.User != nil {
+        userEmail = entry.User.Email
+    }
+    fmt.Printf("%s  %s  %s\n", entry.Timestamp, entry.ActionType, userEmail)
+}
+```
+
 ## TurboPartner Configuration
 
 ```go
@@ -254,8 +332,8 @@ if err != nil {
 | `client.TurboSign.CreateSignatureReviewLink(ctx, req)` | Preview without emails |
 | `client.TurboSign.GetStatus(ctx, id)` | Get document + recipient status |
 | `client.TurboSign.Download(ctx, id)` | Download signed PDF as []byte |
-| `client.TurboSign.VoidDocument(ctx, id)` | Cancel a signature request |
-| `client.TurboSign.ResendEmail(ctx, id, email)` | Resend signature email |
+| `client.TurboSign.VoidDocument(ctx, id, reason)` | Cancel a signature request (reason required) |
+| `client.TurboSign.ResendEmail(ctx, id, recipientIDs)` | Resend signature email to recipient UUIDs |
 | `client.TurboSign.GetAuditTrail(ctx, id)` | Get complete audit trail |
 | `partner.CreateOrganization(ctx, req)` | Provision a new customer org |
 | `partner.ListOrganizations(ctx, req)` | List managed organizations |
@@ -269,3 +347,7 @@ if err != nil {
 - **Context is required** for all API calls — pass `context.Background()` or request context
 - **Helper functions** `turbodocx.IntPtr()`, `turbodocx.BoolPtr()`, `turbodocx.StringPtr()` for optional pointer fields
 - **File input** accepts: `[]byte`, file path string, or URL string
+- **`SignURL`** — each `Recipient` in the `SendSignature`/`CreateSignatureReviewLink` response has a `SignURL` field: the personal signing link for that recipient. `CreateSignatureReviewLink` also returns a top-level `PreviewURL` for document-level preview.
+- **`ResendEmail` takes recipient UUIDs** (`[]string`), not email addresses — fetch them from the send/review response recipients or from `GetAuditTrail`.
+
+**Full API reference:** https://docs.turbodocx.com/docs
