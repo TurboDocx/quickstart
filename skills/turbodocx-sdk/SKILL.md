@@ -3,7 +3,7 @@ name: turbodocx-sdk
 description: Install TurboDocx SDK and generate integration code for TurboSign (digital signatures), Deliverable (template-based document generation), and/or TurboPartner (partner management). Use when the user wants to add e-signatures, document signing, generate documents from templates with variable substitution, partner organization management, or any TurboDocx/TurboSign/TurboPartner/Deliverable functionality to their project. Supports JavaScript, TypeScript, Python, Go, PHP, and Java.
 metadata:
   author: TurboDocx
-  version: "1.2.0"
+  version: "1.3.0"
 license: MIT
 ---
 
@@ -237,7 +237,7 @@ Next Steps:
 2. Update .env with your credentials
 3. Start your server and test the endpoints
 
-Documentation: https://docs.turbodocx.com
+Documentation: https://docs.turbodocx.com/docs
 Support: https://discord.gg/NYKwz4BcpX
 ```
 

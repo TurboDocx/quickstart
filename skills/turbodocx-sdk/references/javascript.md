@@ -663,3 +663,5 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode` and `code` p
 - **API key values are only returned on creation** for both `createOrganizationApiKey` and `createPartnerApiKey`. Store `created.data.key` immediately — subsequent lookups omit it.
 - **Updating tags via `updateDeliverableInfo` replaces the full set** — fetch existing tags first if you want to add one.
 - **TypeScript users** get full type definitions out of the box — no `@types/` package needed.
+
+**Full API reference:** https://docs.turbodocx.com/docs

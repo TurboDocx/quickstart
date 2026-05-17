@@ -93,6 +93,69 @@ byte[] pdf = client.turboSign().download(documentId);
 Files.write(Paths.get("signed.pdf"), pdf);
 ```
 
+### createSignatureReviewLink
+
+Prepares the document with recipients and fields but **does not send signature emails** — use this to preview field placement before sending.
+
+```java
+CreateSignatureReviewLinkResponse review = client.turboSign().createSignatureReviewLink(
+    new CreateSignatureReviewLinkRequest.Builder()
+        .file(pdfFile)
+        .fileName("nda.pdf")
+        .documentName("NDA - Acme")
+        .recipients(Arrays.asList(
+            new Recipient("John Doe", "john@example.com", 1)
+        ))
+        .fields(Arrays.asList(
+            new Field.Builder()
+                .type("signature")
+                .recipientEmail("john@example.com")
+                .page(1)
+                .x(100).y(500).width(200).height(50)
+                .build()
+        ))
+        .build()
+);
+
+System.out.println("Document ID: " + review.getDocumentId());
+System.out.println("Preview URL: " + review.getPreviewUrl()); // open to review field placement
+// Each recipient also has a signUrl for their personal signing link
+for (RecipientResponse r : review.getRecipients()) {
+    System.out.println("  " + r.getName() + ": " + r.getSignUrl());
+}
+```
+
+### voidDocument
+
+```java
+VoidDocumentResponse voided = client.turboSign().voidDocument(documentId, "Counterparty requested changes");
+System.out.println("Status: " + voided.getStatus());    // "voided"
+System.out.println("Voided at: " + voided.getVoidedAt());
+```
+
+`reason` is **required**.
+
+### resendEmail
+
+```java
+// recipientIds are UUIDs — fetch from sendSignature/createSignatureReviewLink response or getAuditTrail
+List<String> recipientIds = Arrays.asList("recipient-uuid-1", "recipient-uuid-2");
+ResendEmailResponse result = client.turboSign().resendEmail(documentId, recipientIds);
+System.out.println("Resent to " + result.getRecipientCount() + " recipients");
+```
+
+### getAuditTrail
+
+```java
+AuditTrailResponse audit = client.turboSign().getAuditTrail(documentId);
+System.out.println("Document: " + audit.getDocument().getName());
+
+for (AuditTrailEntry entry : audit.getAuditTrail()) {
+    String userEmail = entry.getUser() != null ? entry.getUser().getEmail() : "";
+    System.out.println(entry.getTimestamp() + "  " + entry.getActionType() + "  " + userEmail);
+}
+```
+
 ## TurboPartner Configuration
 
 ```java
@@ -263,7 +326,7 @@ try {
 | `client.turboSign().getStatus(id)` | Get document + recipient status |
 | `client.turboSign().download(id)` | Download signed PDF as byte[] |
 | `client.turboSign().voidDocument(id)` | Cancel a signature request |
-| `client.turboSign().resendEmail(id, email)` | Resend signature email |
+| `client.turboSign().resendEmail(id, recipientIds)` | Resend signature email to recipient UUIDs |
 | `client.turboSign().getAuditTrail(id)` | Get complete audit trail |
 | `partner.turboPartner().createOrganization(req)` | Provision a new customer org |
 | `partner.turboPartner().listOrganizations(page, limit)` | List managed organizations |
@@ -278,3 +341,7 @@ try {
 - **Spring Boot auto-scans** controllers in sub-packages — ensure your controller is under the base package
 - **Partner API keys are distinct** from regular API keys — using the wrong one returns `AuthenticationException`
 - **File input** accepts: `byte[]`, file path `String`, URL `String`, or `InputStream`
+- **`signUrl`** — each `RecipientResponse` in the `sendSignature`/`createSignatureReviewLink` response has a `getSignUrl()` method: the personal signing link for that recipient. `CreateSignatureReviewLinkResponse` also has `getPreviewUrl()` for document-level preview.
+- **`resendEmail` takes recipient UUIDs** (`List<String>`), not email addresses — fetch them from the send/review response or `getAuditTrail`.
+
+**Full API reference:** https://docs.turbodocx.com/docs
