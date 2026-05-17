@@ -205,6 +205,171 @@ foreach ($orgs->data as $org) {
 }
 ```
 
+## TurboWebhooks Configuration
+
+TurboWebhooks subscribes a single per-org HTTPS endpoint (locked to the name `signature`) to TurboDocx events such as `signature.document.completed` and `signature.document.voided`. The SDK is intentionally one-webhook-per-org to mirror the dashboard's Signature Webhooks page.
+
+```php
+use TurboDocx\TurboWebhooks;
+use TurboDocx\Config\HttpClientConfig;
+
+TurboWebhooks::configure(new HttpClientConfig(
+    apiKey: $_ENV['TURBODOCX_API_KEY'],   // admin TDX- key
+    orgId: $_ENV['TURBODOCX_ORG_ID'],
+    skipSenderValidation: true,           // webhooks don't send email
+));
+```
+
+The webhook routes require the organization administrator role. A non-admin TDX- key will return `AuthorizationException` (HTTP 403).
+
+## TurboWebhooks Usage
+
+### createWebhook
+
+```php
+$created = TurboWebhooks::createWebhook(
+    urls: ['https://your-server.example.com/webhooks/turbodocx'],  // must be HTTPS
+    events: ['signature.document.completed', 'signature.document.voided'],
+);
+
+// Returned secret is shown ONCE — store it server-side immediately.
+$webhookId = $created['id'];
+$secret    = $created['secret'];
+```
+
+Throws `ConflictException` (409) if the signature webhook already exists for the org. Throws `ValidationException` (400) for non-HTTPS URLs.
+
+### getWebhook
+
+```php
+$webhook = TurboWebhooks::getWebhook();
+// $webhook['urls'], $webhook['events'], $webhook['isActive']
+// $webhook['deliveryStats']['totalDeliveries'], ['successfulDeliveries'], ...
+```
+
+### updateWebhook
+
+```php
+TurboWebhooks::updateWebhook(
+    urls: ['https://your-server.example.com/webhooks/turbodocx'],
+    events: ['signature.document.completed'],
+    isActive: true,
+);
+```
+
+All three parameters are optional — pass only what you want to change.
+
+### deleteWebhook
+
+```php
+TurboWebhooks::deleteWebhook();  // soft-delete + delivery history wiped
+```
+
+### testWebhook
+
+```php
+$result = TurboWebhooks::testWebhook(
+    eventType: 'signature.document.completed',
+    payload: ['documentId' => '...', 'documentName' => '...'],
+);
+// $result['summary']: { total, successful, failed, errors: string[] }
+// $result['deliveries']: WebhookDelivery[]
+```
+
+Per-URL failure messages live in `summary.errors`. Use this from a CI smoke test before flipping a new receiver into production.
+
+### regenerateWebhookSecret
+
+```php
+$rotated = TurboWebhooks::regenerateWebhookSecret();
+// $rotated['secret'] — shown ONCE; old signatures fail immediately after rotation
+```
+
+### listWebhookDeliveries
+
+```php
+$page = TurboWebhooks::listWebhookDeliveries(
+    limit: 20,
+    offset: 0,
+    eventType: 'signature.document.completed',
+    isDelivered: false,
+    httpStatus: 500,
+);
+// $page['results']: WebhookDelivery[]; $page['totalRecords']
+```
+
+### replayWebhookDelivery
+
+```php
+$newDelivery = TurboWebhooks::replayWebhookDelivery($deliveryId);
+// Full WebhookDelivery row returned — id, httpStatus, attemptCount, etc.
+```
+
+### getWebhookStats
+
+```php
+$stats = TurboWebhooks::getWebhookStats(days: 30);
+// $stats['summary']['successRate'], ['avgResponseTime'], etc.
+// $stats['eventBreakdown']: per-event totals
+```
+
+### Verifying inbound webhook signatures
+
+When TurboDocx POSTs to your receiver, verify the `X-TurboDocx-Signature` header before trusting the payload. The helper enforces a 5-minute timestamp tolerance and uses constant-time comparison.
+
+```php
+use function TurboDocx\Utils\verifyWebhookSignature;
+
+// In your webhook receiver (Laravel, Symfony, plain PHP, etc.)
+$rawBody         = file_get_contents('php://input');               // raw bytes — do NOT json_decode first
+$signatureHeader = $_SERVER['HTTP_X_TURBODOCX_SIGNATURE'] ?? '';
+$timestampHeader = $_SERVER['HTTP_X_TURBODOCX_TIMESTAMP'] ?? '';
+$secret          = $_ENV['TURBODOCX_WEBHOOK_SECRET'];              // the secret you saved from createWebhook
+
+if (!verifyWebhookSignature($rawBody, $signatureHeader, $timestampHeader, $secret)) {
+    http_response_code(401);
+    exit;
+}
+
+$event = json_decode($rawBody, true);
+// process $event['eventType'], $event['data'], ...
+```
+
+**Canonical end-to-end PHP example:** [`packages/php-sdk/examples/turbowebhooks-crud.php`](https://github.com/TurboDocx/SDK/blob/main/packages/php-sdk/examples/turbowebhooks-crud.php) walks through create → conflict → get → update → test-fire → rotate → list → replay → delete + every error branch.
+
+### TurboWebhooks error handling
+
+```php
+use TurboDocx\Exceptions\TurboDocxException;
+use TurboDocx\Exceptions\AuthenticationException;
+use TurboDocx\Exceptions\AuthorizationException;
+use TurboDocx\Exceptions\ValidationException;
+use TurboDocx\Exceptions\ConflictException;
+use TurboDocx\Exceptions\NotFoundException;
+use TurboDocx\Exceptions\RateLimitException;
+use TurboDocx\Exceptions\NetworkException;
+
+try {
+    TurboWebhooks::createWebhook(urls: $urls, events: $events);
+} catch (ConflictException $e) {
+    // 409 — signature webhook already exists for this org. Update or delete it.
+} catch (ValidationException $e) {
+    // 400 — typically a non-HTTPS URL or empty events array.
+} catch (AuthorizationException $e) {
+    // 403 — TDX- key lacks the administrator role.
+} catch (AuthenticationException $e) {
+    // 401 — bad / revoked API key.
+} catch (NotFoundException $e) {
+    // 404 — read/update/delete against a webhook that does not exist.
+} catch (RateLimitException $e) {
+    // 429 — back off and retry.
+} catch (NetworkException $e) {
+    // No status — the request never reached the server.
+} catch (TurboDocxException $e) {
+    // Any other typed SDK error (e.g. raw 5xx).
+}
+```
+
 ## Laravel Integration Example
 
 ```php
@@ -326,6 +491,16 @@ try {
 | `TurboPartner::listOrganizations(...)` | List managed organizations |
 | `TurboPartner::getOrganization($orgId)` | Get org details |
 | `TurboPartner::updateEntitlements($orgId, $features)` | Update org entitlements |
+| `TurboWebhooks::createWebhook($urls, $events)` | Subscribe the org to events (HTTPS URLs only) |
+| `TurboWebhooks::getWebhook()` | Get the org's signature webhook + delivery stats |
+| `TurboWebhooks::updateWebhook(...)` | Patch URLs / events / isActive |
+| `TurboWebhooks::deleteWebhook()` | Soft-delete the webhook |
+| `TurboWebhooks::testWebhook($eventType, $payload)` | Fire a test delivery to all URLs |
+| `TurboWebhooks::regenerateWebhookSecret()` | Rotate the HMAC secret (shown once) |
+| `TurboWebhooks::listWebhookDeliveries(...)` | Page through delivery history with filters |
+| `TurboWebhooks::replayWebhookDelivery($id)` | Manually retry a past delivery |
+| `TurboWebhooks::getWebhookStats($days)` | Aggregate stats over a sliding window |
+| `\TurboDocx\Utils\verifyWebhookSignature(...)` | Free function — verify inbound `X-TurboDocx-Signature` |
 
 ## Gotchas
 
@@ -336,5 +511,10 @@ try {
 - **Laravel config**: add TurboSign::configure() in a service provider's `boot()` method for clean initialization
 - **`signUrl`** — each `RecipientResponse` in the `sendSignature`/`createSignatureReviewLink` response has a `signUrl` property: the personal signing link for that recipient. `createSignatureReviewLink` also returns a top-level `previewUrl` for document-level preview.
 - **`resend` takes recipient UUIDs** (array of strings), not email addresses — fetch them from the send/review response or `getAuditTrail`. Pass an empty array to resend to all pending recipients.
+- **TurboWebhooks is one-per-org** — every call hits the fixed `signature` webhook. Trying to create it twice returns `ConflictException` (409); update or delete the existing one instead.
+- **TurboWebhooks requires admin** — the routes are gated by `requireOrgRole(administrator)`. A non-admin TDX- key throws `AuthorizationException` (403).
+- **`createWebhook` URLs must be HTTPS** — non-HTTPS receivers return `ValidationException` (400). For local development, expose your receiver via an HTTPS tunnel (ngrok, cloudflared) and use the tunnel URL.
+- **Save the secret immediately** — `createWebhook` and `regenerateWebhookSecret` return the HMAC secret ONCE. There is no endpoint to retrieve it later. If you lose it, `regenerateWebhookSecret` mints a new one (and invalidates the old).
+- **Signature verification** — never `json_decode` the request body before passing it to `verifyWebhookSignature()`. The HMAC is over the raw bytes; re-encoded JSON will not match.
 
 **Full API reference:** https://docs.turbodocx.com/docs
