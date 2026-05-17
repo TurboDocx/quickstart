@@ -560,26 +560,37 @@ import { verifyWebhookSignature } from '@turbodocx/sdk';
 
 const app = express();
 
-// IMPORTANT: use express.raw — the signature is computed over raw bytes.
-// express.json() will mangle whitespace and break verification.
-app.post(
+// CRITICAL: mount express.raw FOR THE WEBHOOK PATH BEFORE any global
+// express.json(). Express body-parsers set req._body=true on the first
+// parse and later parsers no-op. If app.use(express.json()) runs first,
+// the route-level express.raw() below silently becomes a no-op and
+// req.body is a parsed object instead of a Buffer — verification then
+// always fails.
+app.use(
   '/webhooks/turbodocx',
   express.raw({ type: 'application/json' }),
-  (req, res) => {
-    const signature = req.header('x-turbodocx-signature') ?? '';
-    const timestamp = req.header('x-turbodocx-timestamp') ?? '';
-    const secret = process.env.TURBODOCX_WEBHOOK_SECRET!;
-
-    if (!verifyWebhookSignature(req.body, signature, timestamp, secret)) {
-      return res.status(401).send('Invalid signature');
-    }
-
-    const event = JSON.parse(req.body.toString('utf8'));
-    // process event.eventType, event.data, ...
-    res.status(200).send('ok');
-  },
 );
+
+// Now safe to install JSON parsing for the rest of the app.
+app.use(express.json());
+
+app.post('/webhooks/turbodocx', (req, res) => {
+  const signature = req.header('x-turbodocx-signature') ?? '';
+  const timestamp = req.header('x-turbodocx-timestamp') ?? '';
+  const secret = process.env.TURBODOCX_WEBHOOK_SECRET!;
+
+  // req.body is a Buffer because express.raw ran first for this path.
+  if (!verifyWebhookSignature(req.body, signature, timestamp, secret)) {
+    return res.status(401).send('Invalid signature');
+  }
+
+  const event = JSON.parse(req.body.toString('utf8'));
+  // process event.eventType, event.data, ...
+  res.status(200).send('ok');
+});
 ```
+
+If your app already calls `app.use(express.json())` globally, move it to AFTER the `app.use('/webhooks/turbodocx', express.raw(...))` line shown above — order matters.
 
 **Canonical end-to-end JavaScript example:** [`packages/js-sdk/examples/turbowebhooks-crud.ts`](https://github.com/TurboDocx/SDK/blob/main/packages/js-sdk/examples/turbowebhooks-crud.ts) walks through create → conflict → get → update → test-fire → rotate → list → delete + every error branch.
 
@@ -854,6 +865,7 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode` and `code` p
 - **Webhook secrets are shown ONCE** — capture `created.secret` from `createWebhook` and `rotated.secret` from `regenerateWebhookSecret` immediately. They are never returned again by `getWebhook` or any other endpoint.
 - **Webhook URLs must be HTTPS.** Non-HTTPS URLs return 400 `ValidationError` from the backend.
 - **Use `express.raw({ type: 'application/json' })` on your receiver route, not `express.json()`.** Signature verification is computed over the raw bytes; a JSON re-stringify will not match.
+- **Middleware ORDER matters.** Mount `express.raw()` for the webhook path BEFORE any global `app.use(express.json())`. Express body-parsers set `req._body=true` on the first parse and later parsers silently no-op — if `express.json()` is global and runs first for `/webhooks`, the route-level `express.raw()` becomes a no-op and `req.body` ends up as a parsed object, not a Buffer. Verification will then always fail. The correct pattern is `app.use('/webhooks/turbodocx', express.raw({ type: 'application/json' }))` BEFORE `app.use(express.json())`.
 - **`verifyWebhookSignature` is a free function**, not a method on `TurboWebhooks` — import it directly from `@turbodocx/sdk`. It has no `apiKey`/`orgId` dependency.
 
 **Full API reference:** https://docs.turbodocx.com/docs
