@@ -445,6 +445,175 @@ for (const entry of logs.data.results) {
 
 ---
 
+## TurboWebhooks
+
+TurboWebhooks subscribes a single per-org HTTPS endpoint (locked to the name `signature`) to TurboDocx events such as `signature.document.completed` and `signature.document.voided`. The SDK is intentionally one-webhook-per-org to mirror the dashboard's Signature Webhooks page.
+
+### TurboWebhooks.configure
+
+```typescript
+import { TurboWebhooks } from '@turbodocx/sdk';
+
+TurboWebhooks.configure({
+  apiKey: process.env.TURBODOCX_API_KEY!,   // admin TDX- key
+  orgId: process.env.TURBODOCX_ORG_ID!,
+});
+```
+
+`skipSenderValidation: true` is hardcoded inside `configure()` because webhooks don't send email — only TurboSign needs `senderEmail`. The webhook routes require the organization administrator role; a non-admin TDX- key returns `AuthorizationError` (HTTP 403).
+
+### createWebhook
+
+```typescript
+const created = await TurboWebhooks.createWebhook({
+  urls: ['https://your-server.example.com/webhooks/turbodocx'],  // must be HTTPS
+  events: ['signature.document.completed', 'signature.document.voided'],
+});
+
+// Returned secret is shown ONCE — store it server-side immediately.
+const { id, secret } = created;
+```
+
+Throws `ConflictError` (409) if the signature webhook already exists for the org. Throws `ValidationError` (400) for non-HTTPS URLs.
+
+### getWebhook
+
+```typescript
+const webhook = await TurboWebhooks.getWebhook();
+// webhook.urls, webhook.events, webhook.isActive
+// webhook.deliveryStats.{totalDeliveries, successfulDeliveries, failedDeliveries, pendingRetries}
+```
+
+### updateWebhook
+
+```typescript
+await TurboWebhooks.updateWebhook({
+  urls: ['https://your-server.example.com/webhooks/turbodocx'],
+  events: ['signature.document.completed'],
+  isActive: true,
+});
+```
+
+All three fields are optional — pass only what you want to change.
+
+### deleteWebhook
+
+```typescript
+await TurboWebhooks.deleteWebhook();  // soft-delete + delivery history wiped
+```
+
+### testWebhook
+
+```typescript
+const result = await TurboWebhooks.testWebhook({
+  eventType: 'signature.document.completed',
+  payload: { documentId: '...', documentName: '...' },
+});
+// result.summary: { total, successful, failed, errors: string[] }
+// result.deliveries: WebhookDelivery[]
+```
+
+Per-URL failure messages live in `summary.errors`. Use this from a CI smoke test before flipping a new receiver into production.
+
+### regenerateWebhookSecret
+
+```typescript
+const rotated = await TurboWebhooks.regenerateWebhookSecret();
+// rotated.secret — shown ONCE; old signatures fail immediately after rotation
+```
+
+### listWebhookDeliveries
+
+```typescript
+const page = await TurboWebhooks.listWebhookDeliveries({
+  limit: 20,
+  offset: 0,
+  eventType: 'signature.document.completed',
+  isDelivered: false,
+  httpStatus: 500,
+});
+// page.results: WebhookDelivery[]; page.totalRecords
+```
+
+### replayWebhookDelivery
+
+```typescript
+const newDelivery = await TurboWebhooks.replayWebhookDelivery(deliveryId);
+// Full WebhookDelivery row returned — id, httpStatus, attemptCount, etc.
+```
+
+### getWebhookStats
+
+```typescript
+const stats = await TurboWebhooks.getWebhookStats({ days: 30 });
+// stats.summary.{successRate, avgResponseTime, ...}
+// stats.eventBreakdown — per-event totals
+```
+
+### Verifying inbound webhook signatures
+
+When TurboDocx POSTs to your receiver, verify the `X-TurboDocx-Signature` header before trusting the payload. The helper enforces a 5-minute timestamp tolerance and uses constant-time comparison.
+
+```typescript
+import express from 'express';
+import { verifyWebhookSignature } from '@turbodocx/sdk';
+
+const app = express();
+
+// IMPORTANT: use express.raw — the signature is computed over raw bytes.
+// express.json() will mangle whitespace and break verification.
+app.post(
+  '/webhooks/turbodocx',
+  express.raw({ type: 'application/json' }),
+  (req, res) => {
+    const signature = req.header('x-turbodocx-signature') ?? '';
+    const timestamp = req.header('x-turbodocx-timestamp') ?? '';
+    const secret = process.env.TURBODOCX_WEBHOOK_SECRET!;
+
+    if (!verifyWebhookSignature(req.body, signature, timestamp, secret)) {
+      return res.status(401).send('Invalid signature');
+    }
+
+    const event = JSON.parse(req.body.toString('utf8'));
+    // process event.eventType, event.data, ...
+    res.status(200).send('ok');
+  },
+);
+```
+
+**Canonical end-to-end JavaScript example:** [`packages/js-sdk/examples/turbowebhooks-crud.ts`](https://github.com/TurboDocx/SDK/blob/main/packages/js-sdk/examples/turbowebhooks-crud.ts) walks through create → conflict → get → update → test-fire → rotate → list → delete + every error branch.
+
+### TurboWebhooks error handling
+
+```typescript
+import {
+  TurboDocxError,
+  AuthenticationError,
+  AuthorizationError,
+  ValidationError,
+  ConflictError,
+  NotFoundError,
+  RateLimitError,
+  NetworkError,
+} from '@turbodocx/sdk';
+
+try {
+  await TurboWebhooks.createWebhook({ urls, events });
+} catch (e) {
+  if (e instanceof ConflictError)        /* 409 — already exists; update or delete */;
+  else if (e instanceof ValidationError) /* 400 — non-HTTPS URL or empty events    */;
+  else if (e instanceof AuthorizationError) /* 403 — TDX- key lacks administrator role */;
+  else if (e instanceof AuthenticationError) /* 401 — bad / revoked API key          */;
+  else if (e instanceof NotFoundError)   /* 404 — webhook does not exist            */;
+  else if (e instanceof RateLimitError)  /* 429 — back off and retry                */;
+  else if (e instanceof NetworkError)    /* never reached the server                */;
+  else if (e instanceof TurboDocxError)  /* other typed SDK error (e.g. 5xx)        */;
+  else                                    throw e;
+}
+```
+
+---
+
 ## Express Integration Example
 
 ```typescript
@@ -649,6 +818,23 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode` and `code` p
 |--------|-------------|
 | `TurboPartner.getPartnerAuditLogs(request?)` | Filter by action, resource, success, date range |
 
+### TurboWebhooks
+
+| Method | Description |
+|--------|-------------|
+| `TurboWebhooks.configure(config)` | Set apiKey, orgId (skipSenderValidation is hardcoded) |
+| `TurboWebhooks.createWebhook({ urls, events })` | Subscribe the org to events (HTTPS URLs only) |
+| `TurboWebhooks.getWebhook()` | Get the org's signature webhook + delivery stats |
+| `TurboWebhooks.updateWebhook(patch)` | Patch urls / events / isActive |
+| `TurboWebhooks.deleteWebhook()` | Soft-delete the webhook |
+| `TurboWebhooks.testWebhook({ eventType, payload })` | Fire a test delivery; surfaces per-URL errors |
+| `TurboWebhooks.notifyWebhook({ eventType, payload })` | Manual notify; same handler as `testWebhook` |
+| `TurboWebhooks.regenerateWebhookSecret()` | Rotate the HMAC secret (shown ONCE) |
+| `TurboWebhooks.listWebhookDeliveries(filters?)` | Paginated delivery history with filters |
+| `TurboWebhooks.replayWebhookDelivery(deliveryId)` | Retry a past delivery; returns the new delivery row |
+| `TurboWebhooks.getWebhookStats({ days? })` | Aggregate stats over a sliding window |
+| `verifyWebhookSignature(rawBody, sigHeader, tsHeader, secret, opts?)` | Free function; verifies inbound deliveries |
+
 ---
 
 ## Gotchas
@@ -663,5 +849,11 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode` and `code` p
 - **API key values are only returned on creation** for both `createOrganizationApiKey` and `createPartnerApiKey`. Store `created.data.key` immediately — subsequent lookups omit it.
 - **Updating tags via `updateDeliverableInfo` replaces the full set** — fetch existing tags first if you want to add one.
 - **TypeScript users** get full type definitions out of the box — no `@types/` package needed.
+- **TurboWebhooks requires an admin TDX- key.** The backend route gate is `requireOrgRole(administrator)` — a non-admin key returns 403 `AuthorizationError`.
+- **One webhook per org, fixed name `signature`.** The SDK is hardcoded to `/api/webhooks/signature` to stay in sync with the dashboard's Signature Webhooks page. There is no `listWebhooks` by design. For multi-webhook management call the REST API directly.
+- **Webhook secrets are shown ONCE** — capture `created.secret` from `createWebhook` and `rotated.secret` from `regenerateWebhookSecret` immediately. They are never returned again by `getWebhook` or any other endpoint.
+- **Webhook URLs must be HTTPS.** Non-HTTPS URLs return 400 `ValidationError` from the backend.
+- **Use `express.raw({ type: 'application/json' })` on your receiver route, not `express.json()`.** Signature verification is computed over the raw bytes; a JSON re-stringify will not match.
+- **`verifyWebhookSignature` is a free function**, not a method on `TurboWebhooks` — import it directly from `@turbodocx/sdk`. It has no `apiKey`/`orgId` dependency.
 
 **Full API reference:** https://docs.turbodocx.com/docs
