@@ -249,6 +249,111 @@
       ]
     },
     {
+      "id": 19,
+      "prompt": "Set up TurboDocx webhooks in my Express app so I can receive real-time signature.document.completed events instead of polling. I need (1) an endpoint that receives the webhook POST and verifies the X-TurboDocx-Signature header, and (2) an admin endpoint that registers the signature webhook with TurboDocx so my receiver URL gets called.",
+      "expected_output": "Creates a TurboWebhooks config (admin-scoped, NO senderEmail), an unauthenticated POST /webhooks/turbodocx receiver that reads the RAW body and calls verifyWebhookSignature before trusting the payload, and an admin endpoint that calls TurboWebhooks.createWebhook and surfaces the secret (shown once). Adds .env with TURBODOCX_API_KEY, TURBODOCX_ORG_ID, TURBODOCX_WEBHOOK_SECRET — no sender email, no partner vars.",
+      "files": ["package.json", "tsconfig.json", "src/index.ts", "package-lock.json"],
+      "assertions": [
+        {"name": "config-file-created", "type": "file_exists", "description": "A TurboWebhooks config/client file was created"},
+        {"name": "config-uses-webhooks-configure", "type": "file_contains", "description": "Config file calls TurboWebhooks.configure (or imports and configures the TurboWebhooks module) with apiKey and orgId — NOT TurboSign.configure"},
+        {"name": "no-sender-email-in-config", "type": "file_not_contains", "description": "TurboWebhooks.configure is NOT called with senderEmail/senderName — webhook routes don't send email and the SDK skips that validation"},
+        {"name": "receiver-route-created", "type": "file_exists", "description": "An HTTP route file was created for the inbound webhook receiver (e.g. POST /webhooks/turbodocx)"},
+        {"name": "uses-raw-body", "type": "file_contains", "description": "Receiver route uses express.raw({ type: 'application/json' }) middleware (or otherwise captures the raw request body as a Buffer) — required because the HMAC is computed over exact bytes"},
+        {"name": "calls-verifyWebhookSignature", "type": "file_contains", "description": "Receiver calls verifyWebhookSignature (the free function imported from @turbodocx/sdk) with the raw body, X-TurboDocx-Signature header, X-TurboDocx-Timestamp header, and the secret"},
+        {"name": "no-json-parse-before-verify", "type": "file_not_contains", "description": "Code does NOT use express.json() / JSON.parse / req.body as a parsed object BEFORE verifying the signature — that would lose whitespace and break HMAC"},
+        {"name": "calls-createWebhook", "type": "file_contains", "description": "An admin endpoint calls TurboWebhooks.createWebhook with HTTPS urls and an events array"},
+        {"name": "surfaces-secret-once", "type": "file_contains", "description": "Response from the create endpoint exposes the secret field (shown ONCE — must be captured by the caller)"},
+        {"name": "routes-wired", "type": "file_contains", "description": "Main app file (src/index.ts) was modified to register the webhook receiver and admin routes"},
+        {"name": "env-has-webhook-vars", "type": "file_contains", "description": ".env contains TURBODOCX_API_KEY, TURBODOCX_ORG_ID, and TURBODOCX_WEBHOOK_SECRET"},
+        {"name": "no-sender-env-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL (TurboWebhooks does not send mail — this is a common confusion with TurboSign)"},
+        {"name": "no-partner-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY"},
+        {"name": "gitignore-has-env", "type": "file_contains", "description": ".gitignore includes .env"}
+      ]
+    },
+    {
+      "id": 20,
+      "prompt": "Add TurboDocx webhook support to my FastAPI app. I need an endpoint that receives signature.document.completed deliveries from TurboDocx and verifies the X-TurboDocx-Signature header, plus a way to register the webhook on startup.",
+      "expected_output": "Creates a TurboWebhooks Python config (admin-scoped, NO sender email), a FastAPI route that reads the raw request body and calls verify_webhook_signature, and an endpoint or startup helper that calls TurboWebhooks.create_webhook. Adds .env with TURBODOCX_API_KEY, TURBODOCX_ORG_ID, TURBODOCX_WEBHOOK_SECRET.",
+      "files": ["pyproject.toml", "app/main.py", "app/routers/__init__.py"],
+      "assertions": [
+        {"name": "config-file-created", "type": "file_exists", "description": "A TurboWebhooks config file was created"},
+        {"name": "config-uses-webhooks-configure", "type": "file_contains", "description": "Config file calls TurboWebhooks.configure with api_key and org_id"},
+        {"name": "no-sender-email-in-config", "type": "file_not_contains", "description": "TurboWebhooks.configure is NOT called with sender_email/sender_name"},
+        {"name": "receiver-route-created", "type": "file_exists", "description": "A FastAPI router file was created for the inbound webhook receiver"},
+        {"name": "uses-raw-body", "type": "file_contains", "description": "Receiver reads the raw request body via `await request.body()` (returns bytes) — NOT a parsed Pydantic model or `await request.json()`"},
+        {"name": "calls-verify-webhook-signature", "type": "file_contains", "description": "Receiver calls verify_webhook_signature from the turbodocx package with the raw body bytes, X-TurboDocx-Signature header, X-TurboDocx-Timestamp header, and the secret"},
+        {"name": "no-pydantic-before-verify", "type": "file_not_contains", "description": "Receiver signature does NOT take a Pydantic BaseModel / parsed dict parameter BEFORE verification — that would let FastAPI re-serialize and break HMAC"},
+        {"name": "calls-create-webhook", "type": "file_contains", "description": "Code calls TurboWebhooks.create_webhook with urls (HTTPS) and events"},
+        {"name": "router-wired", "type": "file_contains", "description": "app/main.py was modified to include the new webhook router"},
+        {"name": "env-has-webhook-vars", "type": "file_contains", "description": ".env contains TURBODOCX_API_KEY, TURBODOCX_ORG_ID, and TURBODOCX_WEBHOOK_SECRET"},
+        {"name": "no-sender-env-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL"},
+        {"name": "no-partner-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY"}
+      ]
+    },
+    {
+      "id": 21,
+      "prompt": "Wire up TurboDocx signature webhooks in my Laravel app. I need a public POST route to receive event deliveries (with HMAC verification on the X-TurboDocx-Signature header) and an admin endpoint that registers the org's signature webhook.",
+      "expected_output": "Creates a TurboWebhooks PHP config/service (admin-scoped, no sender email), a Laravel controller for the webhook receiver that reads $request->getContent() (raw body string) and calls verifyWebhookSignature, plus a registration endpoint that calls TurboWebhooks::createWebhook and returns the secret. Adds .env with TURBODOCX_API_KEY, TURBODOCX_ORG_ID, TURBODOCX_WEBHOOK_SECRET.",
+      "files": ["composer.json", "routes/api.php", "routes/web.php", "app/Http/Controllers/Controller.php", "app/Providers/AppServiceProvider.php", "bootstrap/app.php"],
+      "assertions": [
+        {"name": "config-file-created", "type": "file_exists", "description": "A TurboWebhooks config or service file was created"},
+        {"name": "config-uses-webhooks-configure", "type": "file_contains", "description": "Config file calls TurboWebhooks::configure (or TurboWebhooks::configureFromCredentials) with apiKey and orgId"},
+        {"name": "no-sender-email-in-config", "type": "file_not_contains", "description": "TurboWebhooks configure call does NOT pass senderEmail/senderName"},
+        {"name": "controller-created", "type": "file_exists", "description": "A Laravel controller was created for the webhook receiver"},
+        {"name": "uses-raw-body", "type": "file_contains", "description": "Receiver reads the raw body via $request->getContent() — NOT $request->json() / $request->all() / $request->validate(), which would parse and re-serialize"},
+        {"name": "calls-verifyWebhookSignature", "type": "file_contains", "description": "Receiver calls TurboWebhooks::verifyWebhookSignature (or verifyWebhookSignature helper) with the raw body, X-TurboDocx-Signature header, X-TurboDocx-Timestamp header, and the secret"},
+        {"name": "calls-createWebhook", "type": "file_contains", "description": "Code calls TurboWebhooks::createWebhook with urls and events"},
+        {"name": "routes-defined", "type": "file_contains", "description": "Webhook receiver and admin routes are registered in routes/api.php using Route::post"},
+        {"name": "uses-laravel-patterns", "type": "file_contains", "description": "Generated code uses Laravel patterns (Controller class, Request injection, response()->json())"},
+        {"name": "env-has-webhook-vars", "type": "file_contains", "description": ".env contains TURBODOCX_API_KEY, TURBODOCX_ORG_ID, and TURBODOCX_WEBHOOK_SECRET"},
+        {"name": "no-sender-env-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL"},
+        {"name": "no-partner-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY"}
+      ]
+    },
+    {
+      "id": 22,
+      "prompt": "Add TurboDocx signature webhooks to my Go service (using net/http or Gin). I need a handler that receives the webhook POST and verifies the X-TurboDocx-Signature header, plus a CLI/admin path to register the signature webhook with TurboDocx.",
+      "expected_output": "Creates a Go config building a *WebhooksClient with NewWebhooksClientWithConfig (admin-scoped, NO SenderEmail), a handler that calls io.ReadAll(r.Body) and turbodocx.VerifyWebhookSignature before trusting the payload, and an admin call to wh.CreateWebhook that captures the Secret. Adds .env with TURBODOCX_API_KEY, TURBODOCX_ORG_ID, TURBODOCX_WEBHOOK_SECRET.",
+      "files": ["go.mod", "cmd/server/main.go", "internal/handlers/.gitkeep"],
+      "assertions": [
+        {"name": "config-file-created", "type": "file_exists", "description": "A Go config/client file was created for TurboWebhooks"},
+        {"name": "config-uses-NewWebhooksClientWithConfig", "type": "file_contains", "description": "Config file calls turbodocx.NewWebhooksClientWithConfig — NOT NewClientWithConfig (which is for TurboSign and requires SenderEmail)"},
+        {"name": "no-sender-email-in-config", "type": "file_not_contains", "description": "Config does NOT pass SenderEmail/SenderName to the webhooks client (the webhooks constructor specifically skips that validation)"},
+        {"name": "handler-file-created", "type": "file_exists", "description": "A handler file was created for the inbound webhook receiver"},
+        {"name": "uses-raw-body", "type": "file_contains", "description": "Handler reads the raw body via io.ReadAll(r.Body) — NOT json.NewDecoder(r.Body).Decode(...) before verification"},
+        {"name": "calls-VerifyWebhookSignature", "type": "file_contains", "description": "Handler calls turbodocx.VerifyWebhookSignature (the free function) with the raw body, signature header, timestamp header, secret, and options"},
+        {"name": "no-decode-before-verify", "type": "file_not_contains", "description": "Code does NOT call json.NewDecoder(r.Body).Decode(...) or json.Unmarshal on r.Body BEFORE VerifyWebhookSignature — that loses whitespace and breaks HMAC"},
+        {"name": "calls-CreateWebhook", "type": "file_contains", "description": "Code calls wh.CreateWebhook with a CreateWebhookRequest containing HTTPS URLs and events"},
+        {"name": "captures-secret", "type": "file_contains", "description": "Code surfaces or prints created.Secret (shown ONCE — must be captured)"},
+        {"name": "main-wired", "type": "file_contains", "description": "cmd/server/main.go was modified to register the webhook handler"},
+        {"name": "env-has-webhook-vars", "type": "file_contains", "description": ".env contains TURBODOCX_API_KEY, TURBODOCX_ORG_ID, and TURBODOCX_WEBHOOK_SECRET"},
+        {"name": "no-sender-env-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL"},
+        {"name": "no-partner-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY"}
+      ]
+    },
+    {
+      "id": 23,
+      "prompt": "Hook up TurboDocx signature webhooks in my Spring Boot app. I need a controller that receives the inbound POST and verifies the X-TurboDocx-Signature header before trusting the payload, plus a Spring service that can register the webhook with TurboDocx on demand.",
+      "expected_output": "Creates a TurboWebhooks Spring service that uses TurboDocxClient.Builder.buildWebhooksClient() (no senderEmail), a @RestController whose handler binds @RequestBody byte[] rawBody and calls WebhookSignatureVerifier.verify, and a register endpoint/service method that calls webhooks.createWebhook and returns the secret. Adds application.properties (or .env) with TURBODOCX_API_KEY / TURBODOCX_ORG_ID / TURBODOCX_WEBHOOK_SECRET.",
+      "files": ["pom.xml", "src/main/java/com/example/app/Application.java", "src/main/java/com/example/app/HealthController.java", "src/main/resources/application.properties"],
+      "assertions": [
+        {"name": "config-file-created", "type": "file_exists", "description": "A TurboWebhooks Spring service/config file was created (e.g. TurboWebhooksService.java or TurboDocxWebhooksConfig.java)"},
+        {"name": "config-uses-buildWebhooksClient", "type": "file_contains", "description": "Config uses new TurboDocxClient.Builder()...buildWebhooksClient() — NOT .build() (which requires senderEmail for TurboSign)"},
+        {"name": "no-sender-email-in-config", "type": "file_not_contains", "description": "Config does NOT call .senderEmail(...) on the builder when constructing the webhooks client"},
+        {"name": "controller-created", "type": "file_exists", "description": "A Spring @RestController was created for the inbound webhook receiver"},
+        {"name": "uses-raw-body", "type": "file_contains", "description": "Receiver handler binds @RequestBody byte[] (or HttpServletRequest with getInputStream().readAllBytes()) — NOT a parsed Map/DTO @RequestBody"},
+        {"name": "calls-WebhookSignatureVerifier-verify", "type": "file_contains", "description": "Receiver calls WebhookSignatureVerifier.verify(rawBody, signatureHeader, timestampHeader, secret) — the static method on the final utility class"},
+        {"name": "no-map-or-dto-binding", "type": "file_not_contains", "description": "Receiver does NOT bind @RequestBody Map<String, Object> or @RequestBody SomeDto before verification — Jackson would re-serialize and break HMAC"},
+        {"name": "calls-createWebhook", "type": "file_contains", "description": "A register endpoint or service method calls webhooks.createWebhook with HTTPS urls and an events list"},
+        {"name": "surfaces-secret", "type": "file_contains", "description": "Response or returned value exposes the secret field from the createWebhook JsonObject (shown ONCE)"},
+        {"name": "uses-spring-annotations", "type": "file_contains", "description": "Generated code uses Spring annotations (@RestController, @PostMapping, @RequestHeader, @Bean or @Service)"},
+        {"name": "env-has-webhook-vars", "type": "file_contains", "description": "application.properties or .env contains TURBODOCX_API_KEY, TURBODOCX_ORG_ID, and TURBODOCX_WEBHOOK_SECRET (or turbodocx.api-key / turbodocx.org-id / turbodocx.webhook.secret equivalents)"},
+        {"name": "no-sender-env-vars", "type": "file_not_contains", "description": "Config does NOT contain TURBODOCX_SENDER_EMAIL / turbodocx.sender-email (TurboWebhooks does not send mail)"},
+        {"name": "no-partner-vars", "type": "file_not_contains", "description": "Config does NOT contain TURBODOCX_PARTNER_API_KEY"},
+        {"name": "follows-java-conventions", "type": "file_exists", "description": "Files placed in proper Java package directory structure (src/main/java/...)"}
+      ]
+    },
+    {
       "id": 10,
       "skill_name": "turbodocx-html-to-docx",
       "prompt": "Add an endpoint to my Express app that converts HTML to DOCX documents. I want to POST HTML and get back a downloadable .docx file.",
