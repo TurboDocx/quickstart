@@ -297,6 +297,180 @@ func (h *SignatureHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
+## TurboWebhooks
+
+TurboWebhooks subscribes a single per-org HTTPS endpoint (locked to the name `signature`) to TurboDocx events such as `signature.document.completed` and `signature.document.voided`. The SDK is intentionally one-webhook-per-org to mirror the dashboard's Signature Webhooks page.
+
+### Configuration
+
+`NewWebhooksClientWithConfig` does NOT require `SenderEmail` — webhook routes don't send signature emails.
+
+```go
+wh, err := turbodocx.NewWebhooksClientWithConfig(turbodocx.ClientConfig{
+    APIKey:  os.Getenv("TURBODOCX_API_KEY"),   // must be an admin TDX- key
+    OrgID:   os.Getenv("TURBODOCX_ORG_ID"),
+    BaseURL: os.Getenv("TURBODOCX_BASE_URL"),  // optional, defaults to api.turbodocx.com
+})
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+### CreateWebhook
+
+```go
+created, err := wh.CreateWebhook(ctx, turbodocx.CreateWebhookRequest{
+    URLs:   []string{"https://your-server.example.com/webhooks/turbodocx"},
+    Events: []string{"signature.document.completed", "signature.document.voided"},
+})
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("id: %s\n", created.ID)
+fmt.Printf("secret: %s\n", created.Secret) // shown ONCE — save immediately
+```
+
+### GetWebhook
+
+Returns the webhook record plus aggregate `deliveryStats` and the server-provided event catalog. The shape is returned as `map[string]interface{}` so new fields surface without an SDK upgrade.
+
+```go
+webhook, err := wh.GetWebhook(ctx)
+```
+
+### UpdateWebhook
+
+Patch any subset of fields. Use `turbodocx.BoolPtr(false)` to toggle `IsActive`.
+
+```go
+updated, err := wh.UpdateWebhook(ctx, turbodocx.UpdateWebhookRequest{
+    URLs:     []string{"https://new-server.example.com/hook"},
+    IsActive: turbodocx.BoolPtr(false),
+})
+```
+
+### DeleteWebhook
+
+```go
+_, err := wh.DeleteWebhook(ctx) // soft-delete; delivery history wiped
+```
+
+### TestWebhook / NotifyWebhook
+
+`TestWebhook` and `NotifyWebhook` route through the same backend handler — prefer `TestWebhook` in new code. The response carries a `summary` with `successful` / `failed` counts and a per-URL `errors` list when any delivery fails.
+
+```go
+result, err := wh.TestWebhook(ctx, turbodocx.TestWebhookRequest{
+    EventType: "signature.document.completed",
+    Payload: map[string]interface{}{
+        "documentId":   "00000000-0000-0000-0000-000000000000",
+        "documentName": "Smoke test",
+    },
+})
+```
+
+### RegenerateWebhookSecret
+
+```go
+rotated, err := wh.RegenerateWebhookSecret(ctx)
+newSecret := rotated["secret"] // shown ONCE
+```
+
+Rotating immediately invalidates old signatures.
+
+### ListWebhookDeliveries
+
+Pointer-typed filters — leave any field nil to skip it.
+
+```go
+limit := 50
+delivered := true
+page, err := wh.ListWebhookDeliveries(ctx, turbodocx.ListDeliveriesRequest{
+    Limit:       &limit,
+    EventType:   "signature.document.completed",
+    IsDelivered: &delivered,
+})
+```
+
+### ReplayWebhookDelivery
+
+```go
+replayed, err := wh.ReplayWebhookDelivery(ctx, deliveryID)
+```
+
+### GetWebhookStats
+
+```go
+stats, err := wh.GetWebhookStats(ctx, 30) // sliding window; pass 0 for backend default
+```
+
+### Verifying inbound webhook signatures (net/http)
+
+When TurboDocx POSTs to your receiver, verify the `X-TurboDocx-Signature` header before trusting the payload. The helper enforces a 5-minute timestamp tolerance and uses `hmac.Equal` for constant-time comparison.
+
+```go
+package handlers
+
+import (
+    "io"
+    "net/http"
+    "os"
+
+    turbodocx "github.com/TurboDocx/SDK/packages/go-sdk"
+)
+
+func TurboDocxWebhook(w http.ResponseWriter, r *http.Request) {
+    // IMPORTANT: read raw bytes — the signature is computed over them.
+    // Decoding to a struct first will lose whitespace and break verification.
+    rawBody, err := io.ReadAll(r.Body)
+    if err != nil {
+        http.Error(w, "read failed", http.StatusBadRequest)
+        return
+    }
+    defer r.Body.Close()
+
+    signature := r.Header.Get("X-TurboDocx-Signature")
+    timestamp := r.Header.Get("X-TurboDocx-Timestamp")
+    secret := os.Getenv("TURBODOCX_WEBHOOK_SECRET")
+
+    if !turbodocx.VerifyWebhookSignature(rawBody, signature, timestamp, secret, nil) {
+        http.Error(w, "invalid signature", http.StatusUnauthorized)
+        return
+    }
+
+    // Now safe to json.Unmarshal(rawBody, &event) and dispatch on event.eventType.
+    w.WriteHeader(http.StatusOK)
+}
+```
+
+**Canonical end-to-end Go example:** [`packages/go-sdk/examples/turbowebhooks_crud.go`](https://github.com/TurboDocx/SDK/blob/main/packages/go-sdk/examples/turbowebhooks_crud.go) walks through create → conflict → get → update → test-fire → rotate → list → delete + every error branch.
+
+### TurboWebhooks error handling
+
+```go
+import "errors"
+
+_, err := wh.CreateWebhook(ctx, req)
+if err != nil {
+    var conflict *turbodocx.ConflictError
+    var valErr  *turbodocx.ValidationError
+    var authz   *turbodocx.AuthorizationError
+    var auth    *turbodocx.AuthenticationError
+    var nf      *turbodocx.NotFoundError
+    var rate    *turbodocx.RateLimitError
+    var net     *turbodocx.NetworkError
+    switch {
+    case errors.As(err, &conflict): // 409 — already exists; update or delete
+    case errors.As(err, &valErr):   // 400 — non-HTTPS URL or empty events
+    case errors.As(err, &authz):    // 403 — TDX- key lacks administrator role
+    case errors.As(err, &auth):     // 401 — bad / revoked API key
+    case errors.As(err, &nf):       // 404 — webhook does not exist
+    case errors.As(err, &rate):     // 429 — back off and retry
+    case errors.As(err, &net):      // never reached the server
+    }
+}
+```
+
 ## Error Handling
 
 ```go
@@ -339,6 +513,18 @@ if err != nil {
 | `partner.ListOrganizations(ctx, req)` | List managed organizations |
 | `partner.GetOrganization(ctx, id)` | Get org details |
 | `partner.UpdateEntitlements(ctx, id, features)` | Update org entitlements |
+| `turbodocx.NewWebhooksClientWithConfig(cfg)` | Construct an admin-scoped webhook client (no SenderEmail required) |
+| `wh.CreateWebhook(ctx, req)` | Subscribe the org to events (HTTPS URLs only) |
+| `wh.GetWebhook(ctx)` | Get the org's signature webhook + delivery stats |
+| `wh.UpdateWebhook(ctx, req)` | Patch URLs / events / isActive |
+| `wh.DeleteWebhook(ctx)` | Soft-delete the webhook |
+| `wh.TestWebhook(ctx, req)` | Fire a test delivery; surfaces per-URL errors |
+| `wh.NotifyWebhook(ctx, req)` | Manual notify; same backend handler as TestWebhook |
+| `wh.RegenerateWebhookSecret(ctx)` | Rotate the HMAC secret (shown ONCE) |
+| `wh.ListWebhookDeliveries(ctx, req)` | Paginated delivery history with filters |
+| `wh.ReplayWebhookDelivery(ctx, deliveryID)` | Retry a past delivery; returns the new delivery row |
+| `wh.GetWebhookStats(ctx, days)` | Aggregate stats over a sliding window (0 = backend default) |
+| `turbodocx.VerifyWebhookSignature(rawBody, sigHeader, tsHeader, secret, opts)` | Free function; verifies inbound deliveries |
 
 ## Gotchas
 
@@ -349,5 +535,12 @@ if err != nil {
 - **File input** accepts: `[]byte`, file path string, or URL string
 - **`SignURL`** — each `Recipient` in the `SendSignature`/`CreateSignatureReviewLink` response has a `SignURL` field: the personal signing link for that recipient. `CreateSignatureReviewLink` also returns a top-level `PreviewURL` for document-level preview.
 - **`ResendEmail` takes recipient UUIDs** (`[]string`), not email addresses — fetch them from the send/review response recipients or from `GetAuditTrail`.
+- **TurboWebhooks requires an admin TDX- key.** The backend route gate is `requireOrgRole(administrator)` — a non-admin key returns `*turbodocx.AuthorizationError` (HTTP 403). Discriminate with `errors.As`.
+- **One webhook per org, fixed name `signature`.** The SDK is hardcoded to `/api/webhooks/signature` to stay in sync with the dashboard's Signature Webhooks page. There is no `ListWebhooks` by design. For multi-webhook management call the REST API directly.
+- **Webhook secrets are shown ONCE** — capture `created.Secret` from `CreateWebhook` and `rotated["secret"]` from `RegenerateWebhookSecret` immediately. They are never returned again by `GetWebhook` or any other endpoint.
+- **Webhook URLs must be HTTPS.** Non-HTTPS URLs return `*turbodocx.ValidationError` (HTTP 400) from the backend.
+- **Read the raw request body in your receiver, not the decoded JSON.** Use `io.ReadAll(r.Body)`. `VerifyWebhookSignature` is computed over the raw bytes; a re-marshal will not match.
+- **`VerifyWebhookSignature` is a free function**, not a method on a client — it has no `APIKey` / `OrgID` dependency. Pass `nil` for `opts` to use the default 300-second tolerance.
+- **`ConflictError` (HTTP 409)** — returned by `CreateWebhook` when a webhook with the same name already exists for the org. Discriminate it with `errors.As(err, new(*turbodocx.ConflictError))`.
 
 **Full API reference:** https://docs.turbodocx.com/docs
