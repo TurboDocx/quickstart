@@ -60,7 +60,7 @@ Both products share the same credentials (`TURBODOCX_API_KEY` + `TURBODOCX_ORG_I
 
 **TurboWebhooks is an opt-in add-on** to TurboSign — it subscribes a single per-org HTTPS endpoint (locked to the name `signature`) to events like `signature.document.completed`. Don't surface it in the default question — enable it only when the user explicitly invokes `/turbodocx-sdk turbowebhooks`, asks how to receive event notifications, or asks how to verify the `X-TurboDocx-Signature` header. Reuses the same `TURBODOCX_API_KEY` + `TURBODOCX_ORG_ID` as TurboSign, but the key MUST have the administrator role (non-admin keys 403).
 
-**Language coverage for TurboWebhooks:** PHP and JavaScript/TypeScript are fully covered today; Python, Go, and Java entries land in subsequent updates. If the detected language is one of the pending ones, surface this in the summary and point the user at the SDK README for that language until the corresponding reference section ships.
+**Language coverage for TurboWebhooks:** PHP, JavaScript/TypeScript, and Python are fully covered today; Go and Java entries land in subsequent updates. If the detected language is one of the pending ones, surface this in the summary and point the user at the SDK README for that language until the corresponding reference section ships.
 
 ---
 
@@ -255,7 +255,7 @@ Support arguments to skip product selection:
 - `/turbodocx-sdk deliverable` — Deliverable only
 - `/turbodocx-sdk turbosign+deliverable` — generate-then-sign workflow
 - `/turbodocx-sdk turbopartner` — TurboPartner only (partner-portal use case; requires partner credentials)
-- `/turbodocx-sdk turbowebhooks` — TurboWebhooks only (subscribe to signature events; PHP + JS/TS supported, other languages pending)
+- `/turbodocx-sdk turbowebhooks` — TurboWebhooks only (subscribe to signature events; PHP, JS/TS, and Python supported, Go and Java pending)
 
 For backwards compatibility, `/turbodocx-sdk both` is treated as TurboSign + Deliverable.
 
