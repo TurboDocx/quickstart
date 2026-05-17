@@ -294,6 +294,183 @@ public class SignatureController {
 }
 ```
 
+## TurboWebhooks
+
+TurboWebhooks subscribes a single per-org HTTPS endpoint (locked to the name `signature`) to TurboDocx events such as `signature.document.completed` and `signature.document.voided`. The SDK is intentionally one-webhook-per-org to mirror the dashboard's Signature Webhooks page.
+
+### Configuration
+
+`buildWebhooksClient()` does NOT require `senderEmail` — webhook routes don't send signature emails. It returns a `TurboWebhooks` instance directly (no `.turboWebhooks()` accessor on the parent client).
+
+```java
+import com.turbodocx.TurboDocxClient;
+import com.turbodocx.TurboWebhooks;
+
+TurboWebhooks webhooks = new TurboDocxClient.Builder()
+    .apiKey(System.getenv("TURBODOCX_API_KEY"))   // must be an admin TDX- key
+    .orgId(System.getenv("TURBODOCX_ORG_ID"))
+    .baseUrl(System.getenv("TURBODOCX_BASE_URL")) // optional, defaults to api.turbodocx.com
+    .buildWebhooksClient();
+```
+
+### createWebhook
+
+```java
+import com.google.gson.JsonObject;
+import java.util.Arrays;
+
+JsonObject created = webhooks.createWebhook(
+    Arrays.asList("https://your-server.example.com/webhooks/turbodocx"),
+    Arrays.asList("signature.document.completed", "signature.document.voided")
+);
+System.out.println("id: "     + created.get("id").getAsString());
+System.out.println("secret: " + created.get("secret").getAsString()); // shown ONCE — save immediately
+```
+
+### getWebhook
+
+Returns the webhook record plus aggregate `deliveryStats` and the server-provided event catalog. All TurboWebhooks methods return `JsonObject` so new fields surface without an SDK upgrade.
+
+```java
+JsonObject webhook = webhooks.getWebhook();
+```
+
+### updateWebhook
+
+Patch any subset of fields. Pass `null` for fields you don't want to change. Renaming is not supported.
+
+```java
+JsonObject updated = webhooks.updateWebhook(
+    Arrays.asList("https://new-server.example.com/hook"),  // urls
+    null,                                                   // events (unchanged)
+    Boolean.FALSE                                           // isActive
+);
+```
+
+### deleteWebhook
+
+```java
+JsonObject deleted = webhooks.deleteWebhook(); // soft-delete; delivery history wiped
+```
+
+### testWebhook / notifyWebhook
+
+`testWebhook` and `notifyWebhook` route through the same backend handler — prefer `testWebhook` in new code. The response carries a `summary` with `successful` / `failed` counts and a per-URL `errors` list when any delivery fails.
+
+```java
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+Map<String, Object> payload = new LinkedHashMap<>();
+payload.put("documentId",   "00000000-0000-0000-0000-000000000000");
+payload.put("documentName", "Smoke test");
+
+JsonObject result = webhooks.testWebhook("signature.document.completed", payload);
+```
+
+### regenerateWebhookSecret
+
+```java
+JsonObject rotated = webhooks.regenerateWebhookSecret();
+String newSecret = rotated.get("secret").getAsString(); // shown ONCE
+```
+
+Rotating immediately invalidates old signatures.
+
+### listWebhookDeliveries
+
+Pass `null` for any filter you don't want to apply. The no-arg overload skips all filters.
+
+```java
+JsonObject page = webhooks.listWebhookDeliveries(
+    50,                              // limit
+    null,                            // offset
+    "signature.document.completed",  // eventType
+    Boolean.TRUE,                    // isDelivered
+    null                             // httpStatus
+);
+```
+
+### replayWebhookDelivery
+
+```java
+JsonObject replayed = webhooks.replayWebhookDelivery(deliveryId);
+```
+
+### getWebhookStats
+
+```java
+JsonObject stats = webhooks.getWebhookStats(30); // sliding window in days; pass null for backend default
+```
+
+### Verifying inbound webhook signatures (Spring Boot)
+
+When TurboDocx POSTs to your receiver, verify the `X-TurboDocx-Signature` header before trusting the payload. Java has no free functions — the helper is exposed as `WebhookSignatureVerifier.verify(...)`, a static method on a final utility class. It enforces a 5-minute timestamp tolerance and uses `MessageDigest.isEqual` for constant-time comparison.
+
+```java
+package com.example.webhooks;
+
+import com.turbodocx.WebhookSignatureVerifier;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+public class TurboDocxWebhookController {
+
+    @Value("${turbodocx.webhook.secret}")
+    private String secret;
+
+    // IMPORTANT: bind to byte[], not a parsed @RequestBody Map / DTO.
+    // The signature is computed over raw bytes — Jackson would re-serialize
+    // and lose whitespace, which breaks verification.
+    @PostMapping(value = "/webhooks/turbodocx", consumes = "application/json")
+    public ResponseEntity<Void> receive(
+            @RequestBody byte[] rawBody,
+            @RequestHeader("X-TurboDocx-Signature") String signature,
+            @RequestHeader("X-TurboDocx-Timestamp") String timestamp) {
+
+        if (!WebhookSignatureVerifier.verify(rawBody, signature, timestamp, secret)) {
+            return ResponseEntity.status(401).build();
+        }
+
+        // Now safe to parse rawBody as JSON and dispatch on event.eventType.
+        return ResponseEntity.ok().build();
+    }
+}
+```
+
+For a plain Servlet receiver, read the body with `request.getInputStream().readAllBytes()` instead of `@RequestBody byte[]`; everything else stays the same.
+
+**Canonical end-to-end Java example:** [`packages/java-sdk/examples/TurboWebhooksCrud.java`](https://github.com/TurboDocx/SDK/blob/main/packages/java-sdk/examples/TurboWebhooksCrud.java) walks through create → conflict → get → update → test-fire → rotate → list → delete + every error branch.
+
+### TurboWebhooks error handling
+
+```java
+import com.turbodocx.TurboDocxException;
+
+try {
+    webhooks.createWebhook(urls, events);
+} catch (TurboDocxException.ConflictException e) {
+    // 409 — webhook with that name already exists; update or delete
+} catch (TurboDocxException.ValidationException e) {
+    // 400 — non-HTTPS URL or empty events
+} catch (TurboDocxException.AuthorizationException e) {
+    // 403 — TDX- key lacks administrator role
+} catch (TurboDocxException.AuthenticationException e) {
+    // 401 — bad / revoked API key
+} catch (TurboDocxException.NotFoundException e) {
+    // 404 — webhook does not exist
+} catch (TurboDocxException.RateLimitException e) {
+    // 429 — back off and retry
+} catch (TurboDocxException.NetworkException e) {
+    // never reached the server
+}
+```
+
 ## Error Handling
 
 ```java
@@ -332,6 +509,18 @@ try {
 | `partner.turboPartner().listOrganizations(page, limit)` | List managed organizations |
 | `partner.turboPartner().getOrganization(id)` | Get org details |
 | `partner.turboPartner().updateEntitlements(id, features)` | Update org entitlements |
+| `new TurboDocxClient.Builder()...buildWebhooksClient()` | Construct an admin-scoped `TurboWebhooks` (no `senderEmail` required) |
+| `webhooks.createWebhook(urls, events)` | Subscribe the org to events (HTTPS URLs only) |
+| `webhooks.getWebhook()` | Get the org's signature webhook + delivery stats |
+| `webhooks.updateWebhook(urls, events, isActive)` | Patch URLs / events / isActive (pass `null` to skip) |
+| `webhooks.deleteWebhook()` | Soft-delete the webhook |
+| `webhooks.testWebhook(eventType, payload)` | Fire a test delivery; surfaces per-URL errors |
+| `webhooks.notifyWebhook(eventType, payload)` | Manual notify; same backend handler as testWebhook |
+| `webhooks.regenerateWebhookSecret()` | Rotate the HMAC secret (shown ONCE) |
+| `webhooks.listWebhookDeliveries(limit, offset, eventType, isDelivered, httpStatus)` | Paginated delivery history with filters |
+| `webhooks.replayWebhookDelivery(deliveryId)` | Retry a past delivery; returns the new delivery row |
+| `webhooks.getWebhookStats(days)` | Aggregate stats over a sliding window (`null` = backend default) |
+| `WebhookSignatureVerifier.verify(rawBody, sigHeader, tsHeader, secret)` | Static utility; verifies inbound deliveries |
 
 ## Gotchas
 
@@ -343,5 +532,12 @@ try {
 - **File input** accepts: `byte[]`, file path `String`, URL `String`, or `InputStream`
 - **`signUrl`** — each `RecipientResponse` in the `sendSignature`/`createSignatureReviewLink` response has a `getSignUrl()` method: the personal signing link for that recipient. `CreateSignatureReviewLinkResponse` also has `getPreviewUrl()` for document-level preview.
 - **`resendEmail` takes recipient UUIDs** (`List<String>`), not email addresses — fetch them from the send/review response or `getAuditTrail`.
+- **TurboWebhooks needs an admin TDX- key** — the backend route gate is `requireOrgRole(administrator)`. Non-admin keys return `AuthorizationException` (403).
+- **`WebhookSignatureVerifier` is a static utility** (final class, private constructor) — Java has no free functions, so call it as `WebhookSignatureVerifier.verify(...)`. Semantically equivalent to the free-function form in JS / Py / Go / PHP.
+- **Read raw bytes for signature verification.** In Spring, bind to `@RequestBody byte[] rawBody` — never `Map`/DTO. Jackson would re-serialize and whitespace mismatch breaks HMAC. In Servlets, use `request.getInputStream().readAllBytes()`.
+- **One webhook per org, fixed name `signature`.** There is no `listWebhooks` method by design — the SDK stays in sync with the dashboard's Signature Webhooks page. Use the REST API directly for multi-webhook setups.
+- **Webhook secrets are shown ONCE** — capture `created.get("secret").getAsString()` immediately. `regenerateWebhookSecret()` returns a new one and invalidates the old immediately.
+- **HTTPS-only URLs** — `http://` returns `ValidationException` (400).
+- **Catch `ConflictException` (409) on `createWebhook`** — the signature webhook may already exist from a previous run; update or delete instead.
 
 **Full API reference:** https://docs.turbodocx.com/docs
