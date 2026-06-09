@@ -1,0 +1,16 @@
+{
+  "$schema": "https://skills.sh/schemas/skills.sh.schema.json",
+  "notGrouped": "bottom",
+  "groupings": [
+    {
+      "title": "E-Signatures & SDK",
+      "description": "Add e-signatures, document signing, and TurboSign workflows, generate documents from templates, and manage partner organizations with the TurboDocx SDK across JavaScript, Python, Go, PHP, and Java.",
+      "skills": ["turbodocx-sdk"]
+    },
+    {
+      "title": "HTML to Word",
+      "description": "Convert HTML to Microsoft Word (.docx) documents in Node.js and the browser with @turbodocx/html-to-docx — no Puppeteer, Chrome, or LibreOffice required.",
+      "skills": ["turbodocx-html-to-docx"]
+    }
+  ]
+}
