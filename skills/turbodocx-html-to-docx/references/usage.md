@@ -272,28 +272,32 @@ const options = {
 
 ## Browser Usage
 
-> **Prefer server-side if possible.** Server-side generation is faster, has no ~2.4 MB bundle, requires no polyfills, and keeps `sharp` available for SVG → PNG conversion. Only use the browser path if the project is truly static or the user has explicitly asked for client-side generation.
+> **Prefer server-side if possible.** Server-side generation is faster, keeps the browser build out of your client bundle, and keeps `sharp` available for SVG → PNG conversion. Only use the browser path if the project is truly static or the user has explicitly asked for client-side generation.
 
-This library runs in browsers via the bundled standalone build. It is not server-side only. There are three distribution files produced by `npm run build`:
+This library runs in browsers via a self-contained, polyfilled build — it is not server-side only. `npm run build` produces four distribution files:
 
 | File | Format | Size | Use case |
 |------|--------|------|----------|
-| `dist/html-to-docx.esm.js` | ES Module | ~1.6 MB | Modern bundlers (Webpack, Vite, Rollup) — deps external |
-| `dist/html-to-docx.umd.js` | UMD | ~1.6 MB | Node.js, AMD, manual dep management |
-| `dist/html-to-docx.browser.js` | IIFE | ~2.4 MB | Direct `<script>` / CDN — **all deps bundled** |
+| `dist/html-to-docx.esm.js` | ES Module | ~1.6 MB | Node.js ESM / server-side bundling — deps external |
+| `dist/html-to-docx.umd.js` | UMD | ~1.6 MB | Node.js `require`, AMD |
+| `dist/html-to-docx.browser.esm.js` | ES Module | ~1.6 MB | Browser bundlers — **all deps bundled + polyfilled** |
+| `dist/html-to-docx.browser.js` | IIFE | ~1.6 MB | Direct `<script>` / CDN — **all deps bundled** |
 
-`package.json` already wires these up as `main` / `module` / `browser`, so bundlers pick the right one automatically.
+The package's `exports` map points each environment at the right file automatically: browser bundlers resolve the `browser` condition to `html-to-docx.browser.esm.js`, Node resolves `import`/`require` to the esm/umd builds, and the `<script>` path uses the IIFE directly. So consumers never choose manually.
+
+> The browser ESM build + `exports` map ship in newer versions of `@turbodocx/html-to-docx`. Older versions expose only the legacy `main`/`module`/`browser` fields; most bundlers still resolve a working build from those (the IIFE is self-contained), but strict-ESM toolchains (e.g. Vite 8+) can fail to load the IIFE with *"does not provide an export named 'default'"*, and a bundler that picks the externalized `esm` build may hit missing Node globals. The browser ESM build + `exports` map remove those edge cases so a plain `import` works everywhere with no alias or polyfill. If a user is pinned to an older version and hits one of these, upgrading is the fix.
 
 ### Path 1 — Bundler (Vite, Webpack, Rollup, Next.js client component, etc.)
 
-Install normally and import. The bundler picks the ESM build:
+Install normally and import — no bundler config, no polyfills. The `browser` export condition resolves a self-contained ESM build with Node polyfills already inlined:
 
 ```typescript
 import HTMLtoDOCX from '@turbodocx/html-to-docx';
 
 async function downloadDocx(html: string) {
   const result = await HTMLtoDOCX(html);
-  // In browser: result is a Blob. In Node: Buffer/ArrayBuffer.
+  // In the browser the library returns a Blob. (Coerce defensively in case a
+  // future build returns an ArrayBuffer/Buffer.)
   const blob = result instanceof Blob
     ? result
     : new Blob([result], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
@@ -303,9 +307,12 @@ async function downloadDocx(html: string) {
   a.href = url;
   a.download = 'document.docx';
   a.click();
-  URL.revokeObjectURL(url);
+  // Revoke on the next tick so the browser has started the download first.
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 ```
+
+In Next.js / SSR frameworks, do this inside a Client Component (`"use client"`) and trigger it on a user action — ideally via a dynamic `await import('@turbodocx/html-to-docx')` in the handler so the ~1.6 MB build is code-split out of your first-load JS and never runs during server rendering. See the runnable `example/nextjs-example` in the html-to-docx repo for a complete app.
 
 ### Path 2 — Static HTML page (no bundler, `<script>` tag)
 
@@ -357,7 +364,7 @@ Use the IIFE bundle. **Polyfills for `global`, `process`, and `Buffer` must be s
       a.href = url;
       a.download = 'document.docx';
       a.click();
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(url), 0);
     }
   </script>
 
