@@ -1,0 +1,16 @@
+{
+  "$schema": "https://skills.sh/schemas/skills.sh.schema.json",
+  "notGrouped": "bottom",
+  "groupings": [
+    {
+      "title": "TurboDocx E-Signatures & SDK",
+      "description": "TurboDocx SDK skills — install the TurboDocx SDK to add TurboDocx e-signatures (TurboSign), TurboDocx template-based document generation (TurboDocx Deliverable), and TurboDocx partner management (TurboPartner) across JavaScript, TypeScript, Python, Go, PHP, and Java with TurboDocx.",
+      "skills": ["turbodocx-sdk"]
+    },
+    {
+      "title": "TurboDocx Html-to-Docx",
+      "description": "TurboDocx HTML-to-Word skills — use TurboDocx @turbodocx/html-to-docx to convert HTML into Microsoft Word (.docx) documents in Node.js and the browser. TurboDocx document generation with no Puppeteer, Chrome, or LibreOffice.",
+      "skills": ["turbodocx-html-to-docx"]
+    }
+  ]
+}
