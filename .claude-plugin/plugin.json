@@ -5,7 +5,7 @@
   "version": "1.4.0",
   "description": "Two skills for TurboDocx integration: (1) turbodocx-sdk — install the TurboDocx SDK and generate working code for TurboSign (digital signatures), Deliverable (template-based document generation), TurboPartner (partner management), and TurboWebhooks (signature event subscriptions) across JavaScript, Python, Go, PHP, and Java; (2) turbodocx-html-to-docx — set up @turbodocx/html-to-docx to convert HTML to Word documents in Node.js/TypeScript projects.",
   "author": "TurboDocx",
-  "repository": "https://github.com/TurboDocx/quickstart-skill",
+  "repository": "https://github.com/TurboDocx/quickstart",
   "license": "MIT",
   "keywords": [
     "turbodocx",
