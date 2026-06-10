@@ -27,10 +27,10 @@ Add `import 'dotenv/config'` at the top of your entry point file.
 
 ```typescript
 // ESM (package.json "type": "module" or TypeScript)
-import { TurboSign, TurboPartner, Deliverable } from '@turbodocx/sdk';
+import { TurboSign, TurboPartner, Deliverable, TurboWebhooks, TurboQuote } from '@turbodocx/sdk';
 
 // CommonJS
-const { TurboSign, TurboPartner, Deliverable } = require('@turbodocx/sdk');
+const { TurboSign, TurboPartner, Deliverable, TurboWebhooks, TurboQuote } = require('@turbodocx/sdk');
 ```
 
 Only import what you use — for a project that only sends signatures, import only `TurboSign`.
@@ -625,6 +625,163 @@ try {
 
 ---
 
+## TurboQuote
+
+Sales quoting operations: build a product catalog, assemble quotes with line items and bundles, apply price books, and send quotes to customers. Includes full CRUD for quotes, products, bundles, price books, companies, contacts, templates, and types.
+
+### TurboQuote.configure
+
+```typescript
+import { TurboQuote } from '@turbodocx/sdk';
+
+TurboQuote.configure({
+  apiKey: process.env.TURBODOCX_API_KEY!,  // required (or accessToken)
+  orgId: process.env.TURBODOCX_ORG_ID!,   // required — backend returns 401 if missing
+});
+```
+
+No `senderEmail` needed — TurboQuote never sends signature emails. `orgId` is technically optional in the config type but the backend rejects requests without it; always provide it.
+
+### createQuote
+
+```typescript
+const quote = await TurboQuote.createQuote({
+  name: 'Professional Services — Q3 2026',
+  companyId: 'company-uuid',
+  contactId: 'contact-uuid',
+  currency: 'USD',
+  validUntil: '2026-09-30',
+  notes: 'Volume discount applied',
+});
+
+console.log(quote.id);           // string
+console.log(quote.quoteNumber);  // human-readable number e.g. 'Q-0042'
+console.log(quote.status);       // 'draft'
+```
+
+Response: a `Quote` object. Numeric fields such as `subtotal`, `grandTotal`, and `taxRate` are returned as JavaScript `number` (the SDK's response normalizer coerces the backend's decimal strings automatically).
+
+### addLineItems
+
+```typescript
+// Single item (auto-wrapped to array)
+const items = await TurboQuote.addLineItems(quote.id, {
+  productId: 'product-uuid',
+  productName: 'Consulting Service',
+  unitPrice: 500,
+  billingFrequency: 'monthly',  // 'monthly' | 'quarterly' | 'annual' | 'one-time'
+  quantity: 3,
+  discountType: 'percent',      // 'percent' | 'amount'
+  discountPercent: 10,
+});
+
+console.log(items[0].id);         // LineItem UUID
+console.log(items[0].finalPrice); // number — already normalised
+
+// Multiple items at once
+const bulkItems = await TurboQuote.addLineItems(quote.id, [
+  { productName: 'Setup Fee', unitPrice: 1500, billingFrequency: 'one-time', quantity: 1 },
+  { productName: 'License',   unitPrice: 200,  billingFrequency: 'monthly',  quantity: 10 },
+]);
+```
+
+### addBundleLineItems
+
+```typescript
+const bundleItems = await TurboQuote.addBundleLineItems(quote.id, {
+  bundleId: 'bundle-uuid',
+  quantity: 2,
+});
+console.log(bundleItems[0].id);
+```
+
+### sendQuote
+
+```typescript
+const sent = await TurboQuote.sendQuote(quote.id);
+console.log(sent.message);       // 'Quote sent successfully'
+console.log(sent.quote.status);  // 'sent'
+```
+
+### downloadQuotePdf
+
+```typescript
+import { writeFile } from 'node:fs/promises';
+
+const pdf = await TurboQuote.downloadQuotePdf(quote.id);
+await writeFile('quote.pdf', Buffer.from(pdf));  // pdf is ArrayBuffer
+```
+
+### Catalog management (products, bundles, price books)
+
+```typescript
+// Products
+const product = await TurboQuote.createProduct({
+  name: 'Enterprise License',
+  listPrice: 1200,
+  billingFrequency: 'annual',
+  showInCatalog: true,
+});
+console.log(product.id);
+
+// Bundles
+const bundle = await TurboQuote.createBundle({
+  name: 'Starter Pack',
+  items: [{ productId: product.id, quantity: 1 }],
+});
+
+// Price books
+const priceBook = await TurboQuote.createPriceBook({ name: 'Enterprise Pricing' });
+const applied = await TurboQuote.applyPriceBook(quote.id, priceBook.id);
+console.log(applied.updatedCount, applied.skippedCount);
+```
+
+### Convenience: createAndSend
+
+```typescript
+// Create a quote, add line items, and send in one call
+const result = await TurboQuote.createAndSend({
+  // Quote fields
+  name: 'Q3 Renewal',
+  companyId: 'company-uuid',
+  contactId: 'contact-uuid',
+  currency: 'USD',
+  // Line items
+  items: [
+    { productName: 'Support Plan', unitPrice: 800, billingFrequency: 'annual', quantity: 1 },
+  ],
+  // Send options (passed to the underlying sendQuote call)
+  send: {},
+});
+console.log(result.quote.status); // 'sent'
+```
+
+### TurboQuote error handling
+
+```typescript
+import {
+  TurboDocxError,
+  AuthenticationError,
+  AuthorizationError,
+  ValidationError,
+  NotFoundError,
+  RateLimitError,
+} from '@turbodocx/sdk';
+
+try {
+  await TurboQuote.sendQuote(quoteId);
+} catch (e) {
+  if (e instanceof ValidationError)    /* 400 — bad field value, missing required field */;
+  else if (e instanceof AuthenticationError) /* 401 — bad / missing API key or orgId    */;
+  else if (e instanceof NotFoundError) /* 404 — quote or resource not found             */;
+  else if (e instanceof RateLimitError) /* 429 — back off and retry                     */;
+  else if (e instanceof TurboDocxError) /* other typed SDK error                        */;
+  else throw e;
+}
+```
+
+---
+
 ## Express Integration Example
 
 ```typescript
@@ -846,6 +1003,102 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode` and `code` p
 | `TurboWebhooks.getWebhookStats({ days? })` | Aggregate stats over a sliding window |
 | `verifyWebhookSignature(rawBody, sigHeader, tsHeader, secret, opts?)` | Free function; verifies inbound deliveries |
 
+### TurboQuote — Quotes
+
+| Method | Description |
+|--------|-------------|
+| `TurboQuote.configure(config)` | Set apiKey, orgId (no senderEmail needed) |
+| `TurboQuote.listQuotes(options?)` | Paginated list with filters; includes totals/stats |
+| `TurboQuote.createQuote(request)` | Create a new draft quote |
+| `TurboQuote.getQuote(id)` | Get quote details (statusInfo merged in) |
+| `TurboQuote.updateQuote(id, request)` | PATCH quote fields; pass explicit `null` to clear nullable fields |
+| `TurboQuote.deleteQuote(id)` | Delete a quote |
+| `TurboQuote.duplicateQuote(id)` | Clone a quote to a new draft |
+| `TurboQuote.sendQuote(id, request?)` | Email quote to customer; returns `{ quote, message }` |
+| `TurboQuote.sendQuoteWithDeliverable(id, request)` | Send with attached TurboDocx deliverable; returns `{ quote, message, documentId }` |
+| `TurboQuote.declineQuote(id, { reason })` | Mark as declined |
+| `TurboQuote.voidQuote(id, { reason })` | Void a sent quote |
+| `TurboQuote.handleExpiredQuote(id, request)` | Handle an expired-sent quote (extend, re-send, or void) |
+| `TurboQuote.applyPriceBook(quoteId, priceBookId)` | Apply price-book pricing to all matching line items |
+| `TurboQuote.removePriceBook(quoteId)` | Detach price book from quote |
+| `TurboQuote.downloadQuotePdf(id)` | Download rendered quote PDF as `ArrayBuffer` |
+| `TurboQuote.createAndSend(request)` | Convenience: create quote + add items + send in one call |
+
+### TurboQuote — Line Items
+
+| Method | Description |
+|--------|-------------|
+| `TurboQuote.listLineItems(quoteId, options?)` | List line items for a quote |
+| `TurboQuote.addLineItems(quoteId, items)` | Add one or more product line items (auto-wraps single object to array) |
+| `TurboQuote.addBundleLineItems(quoteId, items)` | Add bundle line items |
+| `TurboQuote.updateLineItem(quoteId, itemId, request)` | PATCH a single line item |
+| `TurboQuote.removeLineItem(quoteId, itemId)` | Delete a line item |
+
+### TurboQuote — Products
+
+| Method | Description |
+|--------|-------------|
+| `TurboQuote.listProducts(options?)` | Paginated product catalog |
+| `TurboQuote.createProduct(request)` | Create a product (uses multipart when `images` array is provided) |
+| `TurboQuote.getProduct(id)` | Get a single product |
+| `TurboQuote.updateProduct(id, request)` | PATCH a product; multipart when images included |
+| `TurboQuote.deleteProduct(id)` | Delete a product |
+| `TurboQuote.duplicateProduct(id)` | Clone a product |
+| `TurboQuote.getProductPrimaryImages(productIds)` | Batch-fetch primary images; returns `{ [productId]: image \| null }` |
+
+### TurboQuote — Bundles
+
+| Method | Description |
+|--------|-------------|
+| `TurboQuote.listBundles(options?)` | Paginated bundle catalog |
+| `TurboQuote.createBundle(request)` | Create a bundle |
+| `TurboQuote.getBundle(id)` | Get a single bundle |
+| `TurboQuote.updateBundle(id, request)` | PATCH a bundle |
+| `TurboQuote.deleteBundle(id)` | Delete a bundle |
+| `TurboQuote.duplicateBundle(id)` | Clone a bundle |
+
+### TurboQuote — Price Books
+
+| Method | Description |
+|--------|-------------|
+| `TurboQuote.listPriceBooks(options?)` | Paginated price book list |
+| `TurboQuote.createPriceBook(request)` | Create a price book |
+| `TurboQuote.getPriceBook(id)` | Get a single price book |
+| `TurboQuote.updatePriceBook(id, request)` | PATCH a price book |
+| `TurboQuote.deletePriceBook(id)` | Delete a price book |
+| `TurboQuote.duplicatePriceBook(id)` | Clone a price book |
+| `TurboQuote.listPriceBookProducts(id, options?)` | List products attached to a price book |
+
+### TurboQuote — Companies and Contacts
+
+| Method | Description |
+|--------|-------------|
+| `TurboQuote.listCompanies(options?)` | Paginated company list |
+| `TurboQuote.createCompany(request)` | Create a company (`contacts` array with at least one entry required) |
+| `TurboQuote.getCompany(id)` | Get a single company |
+| `TurboQuote.updateCompany(id, request)` | PATCH a company |
+| `TurboQuote.deleteCompany(id)` | Delete a company |
+| `TurboQuote.listCompanyContacts(companyId, options?)` | List contacts belonging to a company |
+| `TurboQuote.listContacts(options?)` | Paginated contact list across all companies |
+| `TurboQuote.createContact(request)` | Create a standalone contact |
+| `TurboQuote.updateContact(id, request)` | PATCH a contact |
+| `TurboQuote.deleteContact(id)` | Delete a contact |
+
+### TurboQuote — Templates and Types
+
+| Method | Description |
+|--------|-------------|
+| `TurboQuote.listTemplates(options?)` | List all quote templates |
+| `TurboQuote.getTemplate()` | Get the org's singleton default template (`/v1/quote-template`) |
+| `TurboQuote.getTemplateById(id)` | Get a specific template by ID |
+| `TurboQuote.createTemplate(request)` | Create a quote template |
+| `TurboQuote.updateTemplate(id, request)` | PATCH a template |
+| `TurboQuote.deleteTemplate(id)` | Delete a template |
+| `TurboQuote.listTypes(options?)` | List quote types/categories |
+| `TurboQuote.createType(request)` | Create a quote type |
+| `TurboQuote.updateType(id, request)` | PATCH a type name |
+| `TurboQuote.deleteType(id)` | Delete a type |
+
 ---
 
 ## Gotchas
@@ -867,5 +1120,12 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode` and `code` p
 - **Use `express.raw({ type: 'application/json' })` on your receiver route, not `express.json()`.** Signature verification is computed over the raw bytes; a JSON re-stringify will not match.
 - **Middleware ORDER matters.** Mount `express.raw()` for the webhook path BEFORE any global `app.use(express.json())`. Express body-parsers set `req._body=true` on the first parse and later parsers silently no-op — if `express.json()` is global and runs first for `/webhooks`, the route-level `express.raw()` becomes a no-op and `req.body` ends up as a parsed object, not a Buffer. Verification will then always fail. The correct pattern is `app.use('/webhooks/turbodocx', express.raw({ type: 'application/json' }))` BEFORE `app.use(express.json())`.
 - **`verifyWebhookSignature` is a free function**, not a method on `TurboWebhooks` — import it directly from `@turbodocx/sdk`. It has no `apiKey`/`orgId` dependency.
+
+- **TurboQuote decimal fields come back as `number`, not strings.** The SDK's response normalizer coerces the backend's decimal strings (`listPrice`, `unitPrice`, `grandTotal`, `taxRate`, `discountPercent`, etc.) to JavaScript numbers before returning — do not parse them with `parseFloat`.
+- **`PATCH` with explicit `null` clears nullable fields.** For `updateQuote`, `updateLineItem`, `updateProduct`, and similar PATCH methods, passing `{ priceBookId: null }` sends `null` in the request body and the backend clears the field. Omitting the key entirely leaves it unchanged. This is intentional for fields like `validUntil`, `taxRate`, `priceBookId`.
+- **`discountType` is `'percent' | 'amount'`** on line items. When using `'percent'`, set `discountPercent` (0–100). When using `'amount'`, set the flat discount value. Mixing both in the same item produces a 400 `ValidationError`.
+- **`addLineItems` auto-wraps a single object to an array.** You can pass either one `AddLineItemRequest` or `AddLineItemRequest[]` — the SDK normalizes it. The return is always `LineItem[]`.
+- **`createCompany` requires at least one contact.** Pass a `contacts` array with at least one entry or the backend returns 400.
+- **No `getContact` or `getType` methods.** The backend has no `GET /v1/contacts/:id` or `GET /v1/types/:id` routes — this is intentional, not an SDK gap.
 
 **Full API reference:** https://docs.turbodocx.com/docs
