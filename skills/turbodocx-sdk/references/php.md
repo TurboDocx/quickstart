@@ -471,20 +471,26 @@ $product = TurboQuote::createProduct(new CreateProductRequest(
     name: 'Annual SaaS License',
     listPrice: 999.00,
     billingFrequency: 'annual',
+    categoryId: 'category-uuid',
     showInCatalog: true,
 ));
 
 // Create a bundle
 $bundle = TurboQuote::createBundle(new CreateBundleRequest(
     name: 'Starter Pack',
+    categoryId: 'category-uuid',
     items: [
         ['productId' => $product->id, 'quantity' => 1],
     ],
 ));
 
-// Create a price book and apply it to a quote
+// Create a price book and apply it to a quote.
+// priceBookTypeId comes from a createType with categoryType 'pricebook_type';
+// name, priceBookTypeId, validFrom, and discountPercent are all required.
 $priceBook = TurboQuote::createPriceBook(new CreatePriceBookRequest(
     name: 'Partner Tier A',
+    priceBookTypeId: 'pricebook-type-uuid',
+    validFrom: '2026-01-01',
     discountPercent: 15.0,
 ));
 

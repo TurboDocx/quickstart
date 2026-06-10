@@ -554,9 +554,13 @@ CreateBundleRequest bundle = new CreateBundleRequest();
 bundle.setName("Starter Pack");
 Bundle b = tq.createBundle(bundle);
 
-// Create and apply a pricebook
+// Create and apply a pricebook — name, priceBookTypeId, validFrom, and discountPercent are all required.
+// priceBookTypeId comes from a createType(...) with categoryType PRICEBOOK_TYPE.
 CreatePriceBookRequest pb = new CreatePriceBookRequest();
 pb.setName("Partner Pricing");
+pb.setPriceBookTypeId(priceBookTypeId);
+pb.setValidFrom("2025-01-01");
+pb.setDiscountPercent(15.0);
 PriceBook priceBook = tq.createPriceBook(pb);
 
 ApplyPriceBookResponse applied = tq.applyPriceBook(quote.getId(), priceBook.getId());

@@ -444,8 +444,10 @@ print(f"Quote ID: {quote['id']}")   # quote dict (result unwrapped)
 ### add_line_items
 
 ```python
-# Single item dict is auto-wrapped to array
+# Single item dict is auto-wrapped to array.
+# Custom/ad-hoc line item (no catalog product): productId must be present and explicitly None.
 items = await TurboQuote.add_line_items(quote["id"], {
+    "productId": None,
     "productName": "Platform License",
     "unitPrice": 500.00,
     "billingFrequency": "monthly",   # 'monthly'|'quarterly'|'annual'|'one-time'
@@ -483,8 +485,15 @@ product = await TurboQuote.create_product({
     "showInCatalog": True,
 })
 
-# Create a price book and apply to a quote
-price_book = await TurboQuote.create_price_book({"name": "Partner Pricing"})
+# Create a price book and apply to a quote.
+# All four fields are REQUIRED: name, priceBookTypeId, validFrom, discountPercent.
+# priceBookTypeId comes from a create_type with categoryType "pricebook_type".
+price_book = await TurboQuote.create_price_book({
+    "name": "Partner Pricing",
+    "priceBookTypeId": "pricebook-type-uuid",
+    "validFrom": "2026-01-01",
+    "discountPercent": 15,
+})
 result = await TurboQuote.apply_price_book(quote["id"], price_book["id"])
 # result: {"quote": ..., "message": ..., "updatedCount": int, "skippedCount": int}
 ```
@@ -499,7 +508,7 @@ result = await TurboQuote.create_and_send({
     "contactId": "contact-uuid",
     "currency": "USD",
     "items": [
-        {"productName": "Starter Plan", "unitPrice": 99.00, "billingFrequency": "monthly", "quantity": 1},
+        {"productId": None, "productName": "Starter Plan", "unitPrice": 99.00, "billingFrequency": "monthly", "quantity": 1},
     ],
 })
 print(result["quote"]["status"])  # 'sent'

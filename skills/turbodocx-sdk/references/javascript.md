@@ -651,7 +651,6 @@ const quote = await TurboQuote.createQuote({
   contactId: 'contact-uuid',
   currency: 'USD',
   validUntil: '2026-09-30',
-  notes: 'Volume discount applied',
 });
 
 console.log(quote.id);           // string
@@ -678,10 +677,10 @@ const items = await TurboQuote.addLineItems(quote.id, {
 console.log(items[0].id);         // LineItem UUID
 console.log(items[0].finalPrice); // number — already normalised
 
-// Multiple items at once
+// Multiple items at once — custom (no-product) items require productId: null explicitly
 const bulkItems = await TurboQuote.addLineItems(quote.id, [
-  { productName: 'Setup Fee', unitPrice: 1500, billingFrequency: 'one-time', quantity: 1 },
-  { productName: 'License',   unitPrice: 200,  billingFrequency: 'monthly',  quantity: 10 },
+  { productId: null, productName: 'Setup Fee', unitPrice: 1500, billingFrequency: 'one-time', quantity: 1 },
+  { productId: null, productName: 'License',   unitPrice: 200,  billingFrequency: 'monthly',  quantity: 10 },
 ]);
 ```
 
@@ -690,6 +689,7 @@ const bulkItems = await TurboQuote.addLineItems(quote.id, [
 ```typescript
 const bundleItems = await TurboQuote.addBundleLineItems(quote.id, {
   bundleId: 'bundle-uuid',
+  bundleName: 'Starter Bundle',
   quantity: 2,
 });
 console.log(bundleItems[0].id);
@@ -720,6 +720,7 @@ const product = await TurboQuote.createProduct({
   name: 'Enterprise License',
   listPrice: 1200,
   billingFrequency: 'annual',
+  categoryId: 'category-uuid',  // required — from a createType({ categoryType: 'product_category' })
   showInCatalog: true,
 });
 console.log(product.id);
@@ -727,11 +728,17 @@ console.log(product.id);
 // Bundles
 const bundle = await TurboQuote.createBundle({
   name: 'Starter Pack',
-  items: [{ productId: product.id, quantity: 1 }],
+  categoryId: 'bundle-category-uuid',  // required — from a createType({ categoryType: 'bundle_category' })
+  items: [{ productId: product.id, unitPrice: 1200, billingFrequency: 'annual', quantity: 1 }],
 });
 
-// Price books
-const priceBook = await TurboQuote.createPriceBook({ name: 'Enterprise Pricing' });
+// Price books — name + priceBookTypeId + validFrom + discountPercent are ALL required on create
+const priceBook = await TurboQuote.createPriceBook({
+  name: 'Enterprise Pricing',
+  priceBookTypeId: 'pricebook-type-uuid',  // from a createType({ categoryType: 'pricebook_type' })
+  validFrom: '2026-01-01',
+  discountPercent: 15,
+});
 const applied = await TurboQuote.applyPriceBook(quote.id, priceBook.id);
 console.log(applied.updatedCount, applied.skippedCount);
 ```
@@ -746,9 +753,9 @@ const result = await TurboQuote.createAndSend({
   companyId: 'company-uuid',
   contactId: 'contact-uuid',
   currency: 'USD',
-  // Line items
+  // Line items (custom no-product item needs productId: null explicitly)
   items: [
-    { productName: 'Support Plan', unitPrice: 800, billingFrequency: 'annual', quantity: 1 },
+    { productId: null, productName: 'Support Plan', unitPrice: 800, billingFrequency: 'annual', quantity: 1 },
   ],
   // Send options (passed to the underlying sendQuote call)
   send: {},
