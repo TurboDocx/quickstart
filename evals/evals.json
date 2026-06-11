@@ -250,7 +250,7 @@
         {
           "name": "uses-route-handlers",
           "type": "file_contains",
-          "description": "API routes export named functions (GET, POST) — Next.js App Router pattern, not pages/api style"
+          "description": "API routes export named functions (GET, POST) \u2014 Next.js App Router pattern, not pages/api style"
         },
         {
           "name": "no-app-wiring",
@@ -598,7 +598,7 @@
         {
           "name": "uses-route-handlers",
           "type": "file_contains",
-          "description": "API routes export named functions (POST) — Next.js App Router pattern"
+          "description": "API routes export named functions (POST) \u2014 Next.js App Router pattern"
         },
         {
           "name": "env-has-shared-vars",
@@ -636,7 +636,7 @@
         {
           "name": "uses-void-correct-name",
           "type": "file_contains",
-          "description": "Route handler calls TurboSign.void (the correct method name) — NOT TurboSign.voidDocument"
+          "description": "Route handler calls TurboSign.void (the correct method name) \u2014 NOT TurboSign.voidDocument"
         },
         {
           "name": "passes-reason-arg",
@@ -646,12 +646,12 @@
         {
           "name": "uses-resend-correct-name",
           "type": "file_contains",
-          "description": "Route handler calls TurboSign.resend (the correct method name) — NOT TurboSign.resendEmail"
+          "description": "Route handler calls TurboSign.resend (the correct method name) \u2014 NOT TurboSign.resendEmail"
         },
         {
           "name": "passes-recipient-ids-array",
           "type": "file_contains",
-          "description": "TurboSign.resend is called with an array of recipient IDs/UUIDs — NOT a single recipient email string"
+          "description": "TurboSign.resend is called with an array of recipient IDs/UUIDs \u2014 NOT a single recipient email string"
         },
         {
           "name": "no-obsolete-names",
@@ -694,12 +694,12 @@
         {
           "name": "handles-blob-correctly",
           "type": "file_contains",
-          "description": "Code calls .arrayBuffer() on the result (or otherwise correctly handles Blob — does NOT treat result as a Node Buffer directly which would be wrong)"
+          "description": "Code calls .arrayBuffer() on the result (or otherwise correctly handles Blob \u2014 does NOT treat result as a Node Buffer directly which would be wrong)"
         },
         {
           "name": "no-direct-buffer-assumption",
           "type": "file_not_contains",
-          "description": "Code does NOT directly do `const buffer: Buffer = await TurboSign.download(...)` or `(await TurboSign.download(...)).pipe(...)` — these patterns assume Buffer/stream and would fail at runtime since download returns Blob"
+          "description": "Code does NOT directly do `const buffer: Buffer = await TurboSign.download(...)` or `(await TurboSign.download(...)).pipe(...)` \u2014 these patterns assume Buffer/stream and would fail at runtime since download returns Blob"
         },
         {
           "name": "sets-pdf-content-type",
@@ -731,7 +731,7 @@
     {
       "id": 18,
       "prompt": "I'm a TurboDocx partner building an admin dashboard for my customers' onboarding. I need three things in my Express app: (1) provision a new customer organization, (2) invite a user to that newly-created org with a 'contributor' role, and (3) issue an org-scoped API key for the new org. Set everything up.",
-      "expected_output": "Creates TurboPartner config + endpoints for createOrganization, addUserToOrganization, createOrganizationApiKey — and surfaces the API key value (only returned once) in the response",
+      "expected_output": "Creates TurboPartner config + endpoints for createOrganization, addUserToOrganization, createOrganizationApiKey \u2014 and surfaces the API key value (only returned once) in the response",
       "files": [
         "package.json",
         "tsconfig.json",
@@ -767,7 +767,7 @@
         {
           "name": "surfaces-api-key-value",
           "type": "file_contains",
-          "description": "Response returns or surfaces the key field from the createOrganizationApiKey response (.data.key) — this is critical because the full key value is only returned on creation"
+          "description": "Response returns or surfaces the key field from the createOrganizationApiKey response (.data.key) \u2014 this is critical because the full key value is only returned on creation"
         },
         {
           "name": "routes-wired",
@@ -815,7 +815,7 @@
         {
           "name": "separate-from-send",
           "type": "file_contains",
-          "description": "Preview endpoint exists at a different path than the send endpoint (e.g. /review and /send) — the user wants two-step flow"
+          "description": "Preview endpoint exists at a different path than the send endpoint (e.g. /review and /send) \u2014 the user wants two-step flow"
         },
         {
           "name": "uses-sendSignature-for-final",
@@ -842,7 +842,7 @@
     {
       "id": 19,
       "prompt": "Set up TurboDocx webhooks in my Express app so I can receive real-time signature.document.completed events instead of polling. I need (1) an endpoint that receives the webhook POST and verifies the X-TurboDocx-Signature header, and (2) an admin endpoint that registers the signature webhook with TurboDocx so my receiver URL gets called.",
-      "expected_output": "Creates a TurboWebhooks config (admin-scoped, NO senderEmail), an unauthenticated POST /webhooks/turbodocx receiver that reads the RAW body and calls verifyWebhookSignature before trusting the payload, and an admin endpoint that calls TurboWebhooks.createWebhook and surfaces the secret (shown once). Adds .env with TURBODOCX_API_KEY, TURBODOCX_ORG_ID, TURBODOCX_WEBHOOK_SECRET — no sender email, no partner vars.",
+      "expected_output": "Creates a TurboWebhooks config (admin-scoped, NO senderEmail), an unauthenticated POST /webhooks/turbodocx receiver that reads the RAW body and calls verifyWebhookSignature before trusting the payload, and an admin endpoint that calls TurboWebhooks.createWebhook and surfaces the secret (shown once). Adds .env with TURBODOCX_API_KEY, TURBODOCX_ORG_ID, TURBODOCX_WEBHOOK_SECRET \u2014 no sender email, no partner vars.",
       "files": [
         "package.json",
         "tsconfig.json",
@@ -858,12 +858,12 @@
         {
           "name": "config-uses-webhooks-configure",
           "type": "file_contains",
-          "description": "Config file calls TurboWebhooks.configure (or imports and configures the TurboWebhooks module) with apiKey and orgId — NOT TurboSign.configure"
+          "description": "Config file calls TurboWebhooks.configure (or imports and configures the TurboWebhooks module) with apiKey and orgId \u2014 NOT TurboSign.configure"
         },
         {
           "name": "no-sender-email-in-config",
           "type": "file_not_contains",
-          "description": "TurboWebhooks.configure is NOT called with senderEmail/senderName — webhook routes don't send email and the SDK skips that validation"
+          "description": "TurboWebhooks.configure is NOT called with senderEmail/senderName \u2014 webhook routes don't send email and the SDK skips that validation"
         },
         {
           "name": "receiver-route-created",
@@ -873,7 +873,7 @@
         {
           "name": "uses-raw-body",
           "type": "file_contains",
-          "description": "Receiver route uses express.raw({ type: 'application/json' }) middleware (or otherwise captures the raw request body as a Buffer) — required because the HMAC is computed over exact bytes"
+          "description": "Receiver route uses express.raw({ type: 'application/json' }) middleware (or otherwise captures the raw request body as a Buffer) \u2014 required because the HMAC is computed over exact bytes"
         },
         {
           "name": "calls-verifyWebhookSignature",
@@ -883,7 +883,7 @@
         {
           "name": "no-json-parse-before-verify",
           "type": "file_not_contains",
-          "description": "Code does NOT use express.json() / JSON.parse / req.body as a parsed object BEFORE verifying the signature — that would lose whitespace and break HMAC"
+          "description": "Code does NOT use express.json() / JSON.parse / req.body as a parsed object BEFORE verifying the signature \u2014 that would lose whitespace and break HMAC"
         },
         {
           "name": "calls-createWebhook",
@@ -893,7 +893,7 @@
         {
           "name": "surfaces-secret-once",
           "type": "file_contains",
-          "description": "Response from the create endpoint exposes the secret field (shown ONCE — must be captured by the caller)"
+          "description": "Response from the create endpoint exposes the secret field (shown ONCE \u2014 must be captured by the caller)"
         },
         {
           "name": "routes-wired",
@@ -908,7 +908,7 @@
         {
           "name": "no-sender-env-vars",
           "type": "file_not_contains",
-          "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL (TurboWebhooks does not send mail — this is a common confusion with TurboSign)"
+          "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL (TurboWebhooks does not send mail \u2014 this is a common confusion with TurboSign)"
         },
         {
           "name": "no-partner-vars",
@@ -955,7 +955,7 @@
         {
           "name": "uses-raw-body",
           "type": "file_contains",
-          "description": "Receiver reads the raw request body via `await request.body()` (returns bytes) — NOT a parsed Pydantic model or `await request.json()`"
+          "description": "Receiver reads the raw request body via `await request.body()` (returns bytes) \u2014 NOT a parsed Pydantic model or `await request.json()`"
         },
         {
           "name": "calls-verify-webhook-signature",
@@ -965,7 +965,7 @@
         {
           "name": "no-pydantic-before-verify",
           "type": "file_not_contains",
-          "description": "Receiver signature does NOT take a Pydantic BaseModel / parsed dict parameter BEFORE verification — that would let FastAPI re-serialize and break HMAC"
+          "description": "Receiver signature does NOT take a Pydantic BaseModel / parsed dict parameter BEFORE verification \u2014 that would let FastAPI re-serialize and break HMAC"
         },
         {
           "name": "calls-create-webhook",
@@ -1030,7 +1030,7 @@
         {
           "name": "uses-raw-body",
           "type": "file_contains",
-          "description": "Receiver reads the raw body via $request->getContent() — NOT $request->json() / $request->all() / $request->validate(), which would parse and re-serialize"
+          "description": "Receiver reads the raw body via $request->getContent() \u2014 NOT $request->json() / $request->all() / $request->validate(), which would parse and re-serialize"
         },
         {
           "name": "calls-verifyWebhookSignature",
@@ -1087,7 +1087,7 @@
         {
           "name": "config-uses-NewWebhooksClientWithConfig",
           "type": "file_contains",
-          "description": "Config file calls turbodocx.NewWebhooksClientWithConfig — NOT NewClientWithConfig (which is for TurboSign and requires SenderEmail)"
+          "description": "Config file calls turbodocx.NewWebhooksClientWithConfig \u2014 NOT NewClientWithConfig (which is for TurboSign and requires SenderEmail)"
         },
         {
           "name": "no-sender-email-in-config",
@@ -1102,7 +1102,7 @@
         {
           "name": "uses-raw-body",
           "type": "file_contains",
-          "description": "Handler reads the raw body via io.ReadAll(r.Body) — NOT json.NewDecoder(r.Body).Decode(...) before verification"
+          "description": "Handler reads the raw body via io.ReadAll(r.Body) \u2014 NOT json.NewDecoder(r.Body).Decode(...) before verification"
         },
         {
           "name": "calls-VerifyWebhookSignature",
@@ -1112,7 +1112,7 @@
         {
           "name": "no-decode-before-verify",
           "type": "file_not_contains",
-          "description": "Code does NOT call json.NewDecoder(r.Body).Decode(...) or json.Unmarshal on r.Body BEFORE VerifyWebhookSignature — that loses whitespace and breaks HMAC"
+          "description": "Code does NOT call json.NewDecoder(r.Body).Decode(...) or json.Unmarshal on r.Body BEFORE VerifyWebhookSignature \u2014 that loses whitespace and breaks HMAC"
         },
         {
           "name": "calls-CreateWebhook",
@@ -1122,7 +1122,7 @@
         {
           "name": "captures-secret",
           "type": "file_contains",
-          "description": "Code surfaces or prints created.Secret (shown ONCE — must be captured)"
+          "description": "Code surfaces or prints created.Secret (shown ONCE \u2014 must be captured)"
         },
         {
           "name": "main-wired",
@@ -1165,7 +1165,7 @@
         {
           "name": "config-uses-buildWebhooksClient",
           "type": "file_contains",
-          "description": "Config uses new TurboDocxClient.Builder()...buildWebhooksClient() — NOT .build() (which requires senderEmail for TurboSign)"
+          "description": "Config uses new TurboDocxClient.Builder()...buildWebhooksClient() \u2014 NOT .build() (which requires senderEmail for TurboSign)"
         },
         {
           "name": "no-sender-email-in-config",
@@ -1180,17 +1180,17 @@
         {
           "name": "uses-raw-body",
           "type": "file_contains",
-          "description": "Receiver handler binds @RequestBody byte[] (or HttpServletRequest with getInputStream().readAllBytes()) — NOT a parsed Map/DTO @RequestBody"
+          "description": "Receiver handler binds @RequestBody byte[] (or HttpServletRequest with getInputStream().readAllBytes()) \u2014 NOT a parsed Map/DTO @RequestBody"
         },
         {
           "name": "calls-WebhookSignatureVerifier-verify",
           "type": "file_contains",
-          "description": "Receiver calls WebhookSignatureVerifier.verify(rawBody, signatureHeader, timestampHeader, secret) — the static method on the final utility class"
+          "description": "Receiver calls WebhookSignatureVerifier.verify(rawBody, signatureHeader, timestampHeader, secret) \u2014 the static method on the final utility class"
         },
         {
           "name": "no-map-or-dto-binding",
           "type": "file_not_contains",
-          "description": "Receiver does NOT bind @RequestBody Map<String, Object> or @RequestBody SomeDto before verification — Jackson would re-serialize and break HMAC"
+          "description": "Receiver does NOT bind @RequestBody Map<String, Object> or @RequestBody SomeDto before verification \u2014 Jackson would re-serialize and break HMAC"
         },
         {
           "name": "calls-createWebhook",
@@ -1392,7 +1392,7 @@
     {
       "id": 24,
       "prompt": "Add TurboQuote to my Express app so I can create a sales quote, add product line items, and send it to a customer for review. I want an endpoint that takes a company/contact + a list of products and returns the sent quote.",
-      "expected_output": "Creates a TurboQuote config (apiKey + orgId, NO senderEmail), a route/handler that creates a quote, adds product line items, and sends it for review (plus optionally downloads the quote PDF), wires it into the app, and adds .env with TURBODOCX_API_KEY + TURBODOCX_ORG_ID only — no sender email, no partner vars. Uses only real TurboQuote methods (JavaScript/TypeScript naming); no workflow/approval calls.",
+      "expected_output": "Creates a TurboQuote config (apiKey + orgId, NO senderEmail), a route/handler that creates a quote, adds product line items, and sends it for review (plus optionally downloads the quote PDF), wires it into the app, and adds .env with TURBODOCX_API_KEY + TURBODOCX_ORG_ID only \u2014 no sender email, no partner vars. Uses only real TurboQuote methods (JavaScript/TypeScript naming); no workflow/approval calls.",
       "files": [
         "package.json",
         "tsconfig.json",
@@ -1408,12 +1408,12 @@
         {
           "name": "config-uses-turboquote",
           "type": "file_contains",
-          "description": "Config file calls TurboQuote.configure with apiKey and orgId — NOT TurboSign.configure"
+          "description": "Config file calls TurboQuote.configure with apiKey and orgId \u2014 NOT TurboSign.configure"
         },
         {
           "name": "no-sender-email-in-config",
           "type": "file_not_contains",
-          "description": "TurboQuote is configured WITHOUT senderEmail/senderName — quotes are not signature emails and the SDK skips that validation"
+          "description": "TurboQuote is configured WITHOUT senderEmail/senderName \u2014 quotes are not signature emails and the SDK skips that validation"
         },
         {
           "name": "quote-route-created",
@@ -1438,7 +1438,7 @@
         {
           "name": "no-sender-env-vars",
           "type": "file_not_contains",
-          "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL (TurboQuote does not send mail — common confusion with TurboSign)"
+          "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL (TurboQuote does not send mail \u2014 common confusion with TurboSign)"
         },
         {
           "name": "no-partner-vars",
@@ -1448,7 +1448,7 @@
         {
           "name": "no-workflow-approval",
           "type": "file_not_contains",
-          "description": "Code does NOT reference workflow/approval methods (createWorkflow, approveQuote, etc.) — these are not part of the TurboQuote SDK"
+          "description": "Code does NOT reference workflow/approval methods (createWorkflow, approveQuote, etc.) \u2014 these are not part of the TurboQuote SDK"
         },
         {
           "name": "gitignore-has-env",
@@ -1460,7 +1460,7 @@
     {
       "id": 25,
       "prompt": "Add TurboQuote support to my FastAPI app. I need an endpoint that creates a quote for a company and contact, adds line items for some products, and sends the quote.",
-      "expected_output": "Creates a TurboQuote config (apiKey + orgId, NO senderEmail), a route/handler that creates a quote, adds product line items, and sends it for review (plus optionally downloads the quote PDF), wires it into the app, and adds .env with TURBODOCX_API_KEY + TURBODOCX_ORG_ID only — no sender email, no partner vars. Uses only real TurboQuote methods (Python (snake_case) naming); no workflow/approval calls.",
+      "expected_output": "Creates a TurboQuote config (apiKey + orgId, NO senderEmail), a route/handler that creates a quote, adds product line items, and sends it for review (plus optionally downloads the quote PDF), wires it into the app, and adds .env with TURBODOCX_API_KEY + TURBODOCX_ORG_ID only \u2014 no sender email, no partner vars. Uses only real TurboQuote methods (Python (snake_case) naming); no workflow/approval calls.",
       "files": [
         "pyproject.toml",
         "app/main.py",
@@ -1475,12 +1475,12 @@
         {
           "name": "config-uses-turboquote",
           "type": "file_contains",
-          "description": "Config calls TurboQuote.configure with api_key and org_id — NOT TurboSign.configure"
+          "description": "Config calls TurboQuote.configure with api_key and org_id \u2014 NOT TurboSign.configure"
         },
         {
           "name": "no-sender-email-in-config",
           "type": "file_not_contains",
-          "description": "TurboQuote is configured WITHOUT senderEmail/senderName — quotes are not signature emails and the SDK skips that validation"
+          "description": "TurboQuote is configured WITHOUT senderEmail/senderName \u2014 quotes are not signature emails and the SDK skips that validation"
         },
         {
           "name": "quote-route-created",
@@ -1505,7 +1505,7 @@
         {
           "name": "no-sender-env-vars",
           "type": "file_not_contains",
-          "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL (TurboQuote does not send mail — common confusion with TurboSign)"
+          "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL (TurboQuote does not send mail \u2014 common confusion with TurboSign)"
         },
         {
           "name": "no-partner-vars",
@@ -1515,7 +1515,7 @@
         {
           "name": "no-workflow-approval",
           "type": "file_not_contains",
-          "description": "Code does NOT reference workflow/approval methods (createWorkflow, approveQuote, etc.) — these are not part of the TurboQuote SDK"
+          "description": "Code does NOT reference workflow/approval methods (createWorkflow, approveQuote, etc.) \u2014 these are not part of the TurboQuote SDK"
         },
         {
           "name": "gitignore-has-env",
@@ -1527,7 +1527,7 @@
     {
       "id": 26,
       "prompt": "Wire up TurboQuote in my Laravel app: a controller endpoint that creates a quote, adds product line items, and sends it for review.",
-      "expected_output": "Creates a TurboQuote config (apiKey + orgId, NO senderEmail), a route/handler that creates a quote, adds product line items, and sends it for review (plus optionally downloads the quote PDF), wires it into the app, and adds .env with TURBODOCX_API_KEY + TURBODOCX_ORG_ID only — no sender email, no partner vars. Uses only real TurboQuote methods (PHP naming); no workflow/approval calls.",
+      "expected_output": "Creates a TurboQuote config (apiKey + orgId, NO senderEmail), a route/handler that creates a quote, adds product line items, and sends it for review (plus optionally downloads the quote PDF), wires it into the app, and adds .env with TURBODOCX_API_KEY + TURBODOCX_ORG_ID only \u2014 no sender email, no partner vars. Uses only real TurboQuote methods (PHP naming); no workflow/approval calls.",
       "files": [
         "composer.json",
         "routes/api.php",
@@ -1545,12 +1545,12 @@
         {
           "name": "config-uses-turboquote",
           "type": "file_contains",
-          "description": "Config uses the TurboQuote module / QuoteClientConfig with apiKey and orgId — NOT TurboSign"
+          "description": "Config uses the TurboQuote module / QuoteClientConfig with apiKey and orgId \u2014 NOT TurboSign"
         },
         {
           "name": "no-sender-email-in-config",
           "type": "file_not_contains",
-          "description": "TurboQuote is configured WITHOUT senderEmail/senderName — quotes are not signature emails and the SDK skips that validation"
+          "description": "TurboQuote is configured WITHOUT senderEmail/senderName \u2014 quotes are not signature emails and the SDK skips that validation"
         },
         {
           "name": "quote-route-created",
@@ -1575,7 +1575,7 @@
         {
           "name": "no-sender-env-vars",
           "type": "file_not_contains",
-          "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL (TurboQuote does not send mail — common confusion with TurboSign)"
+          "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL (TurboQuote does not send mail \u2014 common confusion with TurboSign)"
         },
         {
           "name": "no-partner-vars",
@@ -1585,7 +1585,7 @@
         {
           "name": "no-workflow-approval",
           "type": "file_not_contains",
-          "description": "Code does NOT reference workflow/approval methods (createWorkflow, approveQuote, etc.) — these are not part of the TurboQuote SDK"
+          "description": "Code does NOT reference workflow/approval methods (createWorkflow, approveQuote, etc.) \u2014 these are not part of the TurboQuote SDK"
         },
         {
           "name": "gitignore-has-env",
@@ -1597,7 +1597,7 @@
     {
       "id": 27,
       "prompt": "Add TurboQuote to my Go service (net/http). I want a handler that creates a quote for a company/contact, adds line items, and sends it.",
-      "expected_output": "Creates a TurboQuote config (apiKey + orgId, NO senderEmail), a route/handler that creates a quote, adds product line items, and sends it for review (plus optionally downloads the quote PDF), wires it into the app, and adds .env with TURBODOCX_API_KEY + TURBODOCX_ORG_ID only — no sender email, no partner vars. Uses only real TurboQuote methods (Go (PascalCase exported) naming); no workflow/approval calls.",
+      "expected_output": "Creates a TurboQuote config (apiKey + orgId, NO senderEmail), a route/handler that creates a quote, adds product line items, and sends it for review (plus optionally downloads the quote PDF), wires it into the app, and adds .env with TURBODOCX_API_KEY + TURBODOCX_ORG_ID only \u2014 no sender email, no partner vars. Uses only real TurboQuote methods (Go (PascalCase exported) naming); no workflow/approval calls.",
       "files": [
         "go.mod",
         "cmd/server/main.go",
@@ -1612,12 +1612,12 @@
         {
           "name": "config-uses-turboquote",
           "type": "file_contains",
-          "description": "Config creates the quote client (NewQuoteClient / quote client with APIKey + OrgID) — NOT the TurboSign client"
+          "description": "Config creates the quote client (NewQuoteClient / quote client with APIKey + OrgID) \u2014 NOT the TurboSign client"
         },
         {
           "name": "no-sender-email-in-config",
           "type": "file_not_contains",
-          "description": "TurboQuote is configured WITHOUT senderEmail/senderName — quotes are not signature emails and the SDK skips that validation"
+          "description": "TurboQuote is configured WITHOUT senderEmail/senderName \u2014 quotes are not signature emails and the SDK skips that validation"
         },
         {
           "name": "quote-route-created",
@@ -1642,7 +1642,7 @@
         {
           "name": "no-sender-env-vars",
           "type": "file_not_contains",
-          "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL (TurboQuote does not send mail — common confusion with TurboSign)"
+          "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL (TurboQuote does not send mail \u2014 common confusion with TurboSign)"
         },
         {
           "name": "no-partner-vars",
@@ -1652,7 +1652,7 @@
         {
           "name": "no-workflow-approval",
           "type": "file_not_contains",
-          "description": "Code does NOT reference workflow/approval methods (createWorkflow, approveQuote, etc.) — these are not part of the TurboQuote SDK"
+          "description": "Code does NOT reference workflow/approval methods (createWorkflow, approveQuote, etc.) \u2014 these are not part of the TurboQuote SDK"
         },
         {
           "name": "gitignore-has-env",
@@ -1664,7 +1664,7 @@
     {
       "id": 28,
       "prompt": "Hook up TurboQuote in my Spring Boot app: a REST controller that creates a quote, adds product line items, and sends it for review.",
-      "expected_output": "Creates a TurboQuote config (apiKey + orgId, NO senderEmail), a route/handler that creates a quote, adds product line items, and sends it for review (plus optionally downloads the quote PDF), wires it into the app, and adds .env with TURBODOCX_API_KEY + TURBODOCX_ORG_ID only — no sender email, no partner vars. Uses only real TurboQuote methods (Java (camelCase) naming); no workflow/approval calls.",
+      "expected_output": "Creates a TurboQuote config (apiKey + orgId, NO senderEmail), a route/handler that creates a quote, adds product line items, and sends it for review (plus optionally downloads the quote PDF), wires it into the app, and adds .env with TURBODOCX_API_KEY + TURBODOCX_ORG_ID only \u2014 no sender email, no partner vars. Uses only real TurboQuote methods (Java (camelCase) naming); no workflow/approval calls.",
       "files": [
         "pom.xml",
         "src/main/java/com/example/app/Application.java",
@@ -1680,12 +1680,12 @@
         {
           "name": "config-uses-turboquote",
           "type": "file_contains",
-          "description": "Config builds the TurboQuote client (builder with apiKey + orgId, no senderEmail) — NOT TurboSign"
+          "description": "Config builds the TurboQuote client (builder with apiKey + orgId, no senderEmail) \u2014 NOT TurboSign"
         },
         {
           "name": "no-sender-email-in-config",
           "type": "file_not_contains",
-          "description": "TurboQuote is configured WITHOUT senderEmail/senderName — quotes are not signature emails and the SDK skips that validation"
+          "description": "TurboQuote is configured WITHOUT senderEmail/senderName \u2014 quotes are not signature emails and the SDK skips that validation"
         },
         {
           "name": "quote-route-created",
@@ -1710,7 +1710,7 @@
         {
           "name": "no-sender-env-vars",
           "type": "file_not_contains",
-          "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL (TurboQuote does not send mail — common confusion with TurboSign)"
+          "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL (TurboQuote does not send mail \u2014 common confusion with TurboSign)"
         },
         {
           "name": "no-partner-vars",
@@ -1720,12 +1720,212 @@
         {
           "name": "no-workflow-approval",
           "type": "file_not_contains",
-          "description": "Code does NOT reference workflow/approval methods (createWorkflow, approveQuote, etc.) — these are not part of the TurboQuote SDK"
+          "description": "Code does NOT reference workflow/approval methods (createWorkflow, approveQuote, etc.) \u2014 these are not part of the TurboQuote SDK"
         },
         {
           "name": "gitignore-has-env",
           "type": "file_contains",
           "description": ".gitignore includes .env"
+        }
+      ]
+    },
+    {
+      "id": 29,
+      "prompt": "Add TurboDocx digital signatures to my Rails app. I need endpoints to send a document for e-signature and to check a document's signature status.",
+      "expected_output": "Detects Ruby/Rails (Gemfile), adds gem \"turbodocx-sdk\" to the Gemfile, creates a TurboSign config (initializer) calling TurboDocxSdk::TurboSign.configure with api_key/org_id/sender_email, a Rails controller with send + status actions using snake_case methods (send_signature, get_status), routes in config/routes.rb, and .env with TURBODOCX_API_KEY + TURBODOCX_SENDER_EMAIL. No partner vars.",
+      "files": [
+        "Gemfile",
+        "config/application.rb",
+        "config/routes.rb",
+        "config.ru",
+        "app/controllers/application_controller.rb"
+      ],
+      "assertions": [
+        {
+          "name": "gem-added",
+          "type": "file_contains",
+          "description": "Gemfile contains the turbodocx-sdk gem"
+        },
+        {
+          "name": "config-file-created",
+          "type": "file_exists",
+          "description": "A TurboSign config/initializer file was created (e.g. config/initializers/turbodocx.rb)"
+        },
+        {
+          "name": "config-has-turbosign",
+          "type": "file_contains",
+          "description": "Config calls TurboDocxSdk::TurboSign.configure with api_key and sender_email"
+        },
+        {
+          "name": "uses-snake-case-methods",
+          "type": "file_contains",
+          "description": "Controller uses Ruby snake_case methods send_signature and get_status (NOT camelCase sendSignature/getStatus)"
+        },
+        {
+          "name": "controller-created",
+          "type": "file_exists",
+          "description": "A Rails controller file was created for signature endpoints"
+        },
+        {
+          "name": "routes-wired",
+          "type": "file_contains",
+          "description": "config/routes.rb was modified to register the signature routes (post/get)"
+        },
+        {
+          "name": "uses-ruby-extension",
+          "type": "file_exists",
+          "description": "Generated files use the .rb extension"
+        },
+        {
+          "name": "env-has-sign-vars",
+          "type": "file_contains",
+          "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_SENDER_EMAIL"
+        },
+        {
+          "name": "no-partner-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY (user only asked for TurboSign)"
+        },
+        {
+          "name": "no-camelcase-config",
+          "type": "file_not_contains",
+          "description": "Config does NOT use a PHP/JS-style HttpClientConfig object or camelCase keys (apiKey:) \u2014 Ruby configure takes snake_case keyword args"
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "prompt": "Wire up TurboDocx signature webhooks in my Rails app. I need a public POST route that receives event deliveries and verifies the X-TurboDocx-Signature header before trusting the payload, plus an admin endpoint that registers the org's signature webhook.",
+      "expected_output": "Creates a TurboWebhooks config (admin-scoped, NO sender_email) calling TurboDocxSdk::TurboWebhooks.configure, a Rails controller whose receiver action reads the RAW body via request.body.read and calls TurboDocxSdk.verify_webhook_signature (keyword args) before trusting the payload (and skips CSRF via skip_before_action :verify_authenticity_token), plus an admin action calling TurboDocxSdk::TurboWebhooks.create_webhook that surfaces the secret. Routes in config/routes.rb. .env with TURBODOCX_API_KEY, TURBODOCX_ORG_ID, TURBODOCX_WEBHOOK_SECRET \u2014 no sender email, no partner vars.",
+      "files": [
+        "Gemfile",
+        "config/application.rb",
+        "config/routes.rb",
+        "config.ru",
+        "app/controllers/application_controller.rb"
+      ],
+      "assertions": [
+        {
+          "name": "gem-added",
+          "type": "file_contains",
+          "description": "Gemfile contains the turbodocx-sdk gem"
+        },
+        {
+          "name": "config-uses-webhooks-configure",
+          "type": "file_contains",
+          "description": "Config calls TurboDocxSdk::TurboWebhooks.configure with api_key and org_id \u2014 NOT TurboSign.configure"
+        },
+        {
+          "name": "no-sender-email-in-config",
+          "type": "file_not_contains",
+          "description": "TurboWebhooks.configure is NOT called with sender_email/sender_name (webhook management does not send email)"
+        },
+        {
+          "name": "uses-raw-body",
+          "type": "file_contains",
+          "description": "Receiver reads the raw body via request.body.read \u2014 NOT params/JSON.parse(request.body) before verification"
+        },
+        {
+          "name": "calls-verify-webhook-signature",
+          "type": "file_contains",
+          "description": "Receiver calls TurboDocxSdk.verify_webhook_signature with payload:, signature_header:, timestamp_header:, secret: keyword args"
+        },
+        {
+          "name": "skips-csrf",
+          "type": "file_contains",
+          "description": "The webhook controller skips CSRF protection (skip_before_action :verify_authenticity_token or protect_from_forgery with: :null_session) since server-to-server POSTs carry no CSRF token"
+        },
+        {
+          "name": "no-parse-before-verify",
+          "type": "file_not_contains",
+          "description": "Code does NOT JSON.parse the body or bind a parsed params object BEFORE verifying the signature \u2014 that would break the HMAC over raw bytes"
+        },
+        {
+          "name": "calls-create-webhook",
+          "type": "file_contains",
+          "description": "An admin action calls TurboDocxSdk::TurboWebhooks.create_webhook with urls: (HTTPS) and events:"
+        },
+        {
+          "name": "surfaces-secret",
+          "type": "file_contains",
+          "description": "The create endpoint surfaces the secret field from the response (shown ONCE \u2014 must be captured)"
+        },
+        {
+          "name": "routes-wired",
+          "type": "file_contains",
+          "description": "config/routes.rb was modified to register the webhook receiver and admin routes"
+        },
+        {
+          "name": "env-has-webhook-vars",
+          "type": "file_contains",
+          "description": ".env contains TURBODOCX_API_KEY, TURBODOCX_ORG_ID, and TURBODOCX_WEBHOOK_SECRET"
+        },
+        {
+          "name": "no-sender-env-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL (TurboWebhooks does not send mail \u2014 common confusion with TurboSign)"
+        },
+        {
+          "name": "no-partner-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY"
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "prompt": "I have a Sinatra app and a contract template in TurboDocx. Set up TurboDocx so I can generate a document from the template with variable values and download the rendered PDF.",
+      "expected_output": "Detects Ruby/Sinatra, adds gem \"turbodocx-sdk\", creates a Deliverable config calling TurboDocxSdk::Deliverable.configure with api_key + org_id (NO sender_email), Sinatra routes that call generate_deliverable (templateId + variables) and download_pdf streaming application/pdf, and .env with TURBODOCX_API_KEY + TURBODOCX_ORG_ID only \u2014 no sender email, no partner vars.",
+      "files": [
+        "Gemfile",
+        "app.rb",
+        "config.ru"
+      ],
+      "assertions": [
+        {
+          "name": "gem-added",
+          "type": "file_contains",
+          "description": "Gemfile contains the turbodocx-sdk gem"
+        },
+        {
+          "name": "config-has-deliverable",
+          "type": "file_contains",
+          "description": "Code calls TurboDocxSdk::Deliverable.configure with api_key and org_id"
+        },
+        {
+          "name": "no-sender-config",
+          "type": "file_not_contains",
+          "description": "Deliverable.configure does NOT pass sender_email/sender_name (those are TurboSign-only)"
+        },
+        {
+          "name": "uses-generate-deliverable",
+          "type": "file_contains",
+          "description": "A route calls TurboDocxSdk::Deliverable.generate_deliverable with a templateId and variables"
+        },
+        {
+          "name": "uses-download-pdf",
+          "type": "file_contains",
+          "description": "A route calls TurboDocxSdk::Deliverable.download_pdf and streams it as application/pdf"
+        },
+        {
+          "name": "uses-sinatra-routes",
+          "type": "file_contains",
+          "description": "Generated code uses Sinatra route blocks (post/get '/...' do ... end), not Rails controllers"
+        },
+        {
+          "name": "env-has-shared-vars",
+          "type": "file_contains",
+          "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_ORG_ID"
+        },
+        {
+          "name": "no-sender-env-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL (Deliverable doesn't send mail)"
+        },
+        {
+          "name": "no-partner-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY"
         }
       ]
     }
