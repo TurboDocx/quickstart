@@ -1,17 +1,17 @@
 # Environment Variables Reference
 
-TurboSign and Deliverable share the same API key + org ID. TurboPartner uses a separate set of partner credentials.
+TurboSign, Deliverable, TurboWebhooks, and TurboQuote share the same API key + org ID. TurboPartner uses a separate set of partner credentials.
 
-## TurboSign + Deliverable Variables
+## TurboSign + Deliverable + TurboWebhooks + TurboQuote Variables
 
 | Variable | Required for | Description |
 |----------|----------|-------------|
-| `TURBODOCX_API_KEY` | TurboSign, Deliverable | API key from your TurboDocx dashboard |
-| `TURBODOCX_ORG_ID` | TurboSign, Deliverable | Organization UUID from your dashboard |
+| `TURBODOCX_API_KEY` | TurboSign, Deliverable, TurboWebhooks, TurboQuote | API key from your TurboDocx dashboard |
+| `TURBODOCX_ORG_ID` | TurboSign, Deliverable, TurboWebhooks, TurboQuote | Organization UUID from your dashboard |
 | `TURBODOCX_SENDER_EMAIL` | TurboSign only | Reply-to email for signature request emails. **Must be a verified email.** |
 | `TURBODOCX_SENDER_NAME` | No | Display name on signature emails (defaults to org name) |
 
-Deliverable does not send email, so it doesn't need the sender variables.
+Deliverable, TurboWebhooks, and TurboQuote do not send signature emails, so they don't need the sender variables — only `TURBODOCX_API_KEY` + `TURBODOCX_ORG_ID`.
 
 ## TurboPartner Variables
 

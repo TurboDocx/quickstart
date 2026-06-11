@@ -471,6 +471,155 @@ if err != nil {
 }
 ```
 
+## TurboQuote
+
+TurboQuote is TurboDocx's CPQ (Configure, Price, Quote) module — manage companies, contacts, products, bundles, price books, and quotes. Create a quote, attach line items, apply price-book discounts, send to a prospect, and download the PDF.
+
+### Configuration
+
+`NewQuoteClient` does NOT require `SenderEmail` — quote operations do not send signature emails. `OrgID` is optional in config but the backend returns 401 if it is missing (set `TURBODOCX_ORG_ID` or pass it explicitly).
+
+```go
+qc, err := turbodocx.NewQuoteClient(turbodocx.QuoteClientConfig{
+    APIKey: os.Getenv("TURBODOCX_API_KEY"),
+    OrgID:  os.Getenv("TURBODOCX_ORG_ID"),
+    // BaseURL: os.Getenv("TURBODOCX_BASE_URL"), // optional, defaults to api.turbodocx.com
+})
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+### CreateQuote
+
+```go
+quote, err := qc.CreateQuote(ctx, &turbodocx.CreateQuoteRequest{
+    Name:      "Acme Annual Subscription",
+    CompanyID: companyID,
+    ContactID: contactID,
+})
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("Quote ID: %s  Number: %s\n", quote.ID, quote.QuoteNumber)
+// quote.Status == "draft"
+```
+
+### AddLineItems / AddBundleLineItems
+
+`AddLineItems` is variadic — pass one struct or many; both routes send an array to the backend.
+
+```go
+qty := 3
+items, err := qc.AddLineItems(ctx, quote.ID, turbodocx.AddLineItemRequest{
+    ProductName:      "Professional License",
+    UnitPrice:        499.00,
+    BillingFrequency: "annual",
+    Quantity:         &qty,
+})
+if err != nil {
+    log.Fatal(err)
+}
+// Returns []LineItem — unitPrice, listPrice etc. are float64 (normalizer coerces strings)
+
+// Add a bundle instead:
+bundleItems, err := qc.AddBundleLineItems(ctx, quote.ID, turbodocx.AddBundleLineItemRequest{
+    BundleID: bundleID,
+    Quantity: &qty,
+})
+```
+
+### SendQuote
+
+```go
+sent, err := qc.SendQuote(ctx, quote.ID, nil) // nil uses quote defaults
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("Status: %s  Message: %s\n", sent.QuoteResult.Status, sent.Message)
+// sent.QuoteResult.Status == "sent"
+```
+
+### DownloadQuotePdf
+
+```go
+pdf, err := qc.DownloadQuotePdf(ctx, quote.ID)
+if err != nil {
+    log.Fatal(err)
+}
+os.WriteFile("quote.pdf", pdf, 0600)
+```
+
+### ApplyPriceBook
+
+```go
+applyResp, err := qc.ApplyPriceBook(ctx, quote.ID, priceBookID)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("Updated %d items, skipped %d\n", applyResp.UpdatedCount, applyResp.SkippedCount)
+// applyResp.QuoteResult is the updated Quote
+```
+
+### Product / Bundle / PriceBook catalog
+
+```go
+// List products (paginated)
+products, err := qc.ListProducts(ctx, nil)
+fmt.Printf("Total: %d\n", products.TotalRecords)
+
+// Create a product
+product, err := qc.CreateProduct(ctx, &turbodocx.CreateProductRequest{
+    Name:      "Enterprise Add-on",
+    ListPrice: 799.00,
+})
+
+// Duplicate a bundle
+dupe, err := qc.DuplicateBundle(ctx, bundleID)
+
+// List price-book products
+pbProducts, err := qc.ListPriceBookProducts(ctx, priceBookID, nil)
+```
+
+### CreateAndSend
+
+Convenience method: creates the quote, adds line items and bundle items, then sends — in 2–4 sequential API calls.
+
+```go
+result, err := qc.CreateAndSend(ctx, &turbodocx.CreateAndSendRequest{
+    Name:      "Acme - Q3 Deal",
+    CompanyID: companyID,
+    ContactID: contactID,
+    Items: []turbodocx.AddLineItemRequest{
+        {ProductName: "Starter Plan", UnitPrice: 99.00, BillingFrequency: "monthly"},
+    },
+})
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("Quote %s sent\n", result.Quote.QuoteNumber)
+```
+
+### TurboQuote error handling
+
+```go
+import "errors"
+
+_, err := qc.SendQuote(ctx, quoteID, nil)
+if err != nil {
+    var valErr  *turbodocx.ValidationError
+    var auth    *turbodocx.AuthenticationError
+    var nf      *turbodocx.NotFoundError
+    var rate    *turbodocx.RateLimitError
+    switch {
+    case errors.As(err, &valErr):  // 400 — e.g. quote not in a sendable status
+    case errors.As(err, &auth):    // 401 — bad / revoked API key or missing OrgID
+    case errors.As(err, &nf):      // 404 — quote does not exist
+    case errors.As(err, &rate):    // 429 — back off and retry
+    }
+}
+```
+
 ## Error Handling
 
 ```go
@@ -525,6 +674,67 @@ if err != nil {
 | `wh.ReplayWebhookDelivery(ctx, deliveryID)` | Retry a past delivery; returns the new delivery row |
 | `wh.GetWebhookStats(ctx, days)` | Aggregate stats over a sliding window (0 = backend default) |
 | `turbodocx.VerifyWebhookSignature(rawBody, sigHeader, tsHeader, secret, opts)` | Free function; verifies inbound deliveries |
+| `turbodocx.NewQuoteClient(cfg)` | Construct a TurboQuote client (no SenderEmail required) |
+| `qc.ListQuotes(ctx, opts)` | Paginated quote list with filters |
+| `qc.CreateQuote(ctx, req)` | Create a new quote (status: draft) |
+| `qc.GetQuote(ctx, id)` | Get quote + merged statusInfo |
+| `qc.UpdateQuote(ctx, id, req)` | Patch quote fields; use `ClearPriceBookID()` etc. to null-clear |
+| `qc.DeleteQuote(ctx, id)` | Delete a quote |
+| `qc.DuplicateQuote(ctx, id)` | Duplicate a quote |
+| `qc.ApplyPriceBook(ctx, quoteID, priceBookID)` | Apply price-book discounts; returns updatedCount / skippedCount |
+| `qc.RemovePriceBook(ctx, quoteID)` | Remove price-book association from a quote |
+| `qc.DownloadQuotePdf(ctx, id)` | Download quote as PDF ([]byte) |
+| `qc.SendQuote(ctx, id, req)` | Send quote to prospect (req may be nil) |
+| `qc.SendQuoteWithDeliverable(ctx, id, req)` | Send quote with a TurboDocx deliverable attachment |
+| `qc.DeclineQuote(ctx, id, req)` | Decline a sent quote (reason required) |
+| `qc.VoidQuote(ctx, id, req)` | Void a quote (reason required) |
+| `qc.HandleExpiredQuote(ctx, id, req)` | Resend, extend, or void an expired sent quote |
+| `qc.CreateAndSend(ctx, req)` | Convenience: create + add items + send in one call |
+| `qc.ListLineItems(ctx, quoteID, opts)` | List line items for a quote |
+| `qc.AddLineItems(ctx, quoteID, items...)` | Add one or more product line items (variadic) |
+| `qc.AddBundleLineItems(ctx, quoteID, items...)` | Add one or more bundle line items (variadic) |
+| `qc.UpdateLineItem(ctx, quoteID, itemID, req)` | Update a line item |
+| `qc.RemoveLineItem(ctx, quoteID, itemID)` | Remove a line item |
+| `qc.ListProducts(ctx, opts)` | Paginated product catalog |
+| `qc.CreateProduct(ctx, req)` | Create a product (multipart when images provided) |
+| `qc.GetProduct(ctx, id)` | Get a product by ID |
+| `qc.UpdateProduct(ctx, id, req)` | Update a product (multipart when images provided) |
+| `qc.DeleteProduct(ctx, id)` | Delete a product |
+| `qc.DuplicateProduct(ctx, id)` | Duplicate a product |
+| `qc.GetProductPrimaryImages(ctx, productIDs)` | Batch-fetch primary images by product ID |
+| `qc.ListPriceBooks(ctx, opts)` | Paginated price-book list |
+| `qc.CreatePriceBook(ctx, req)` | Create a price book |
+| `qc.GetPriceBook(ctx, id)` | Get a price book by ID |
+| `qc.UpdatePriceBook(ctx, id, req)` | Update a price book |
+| `qc.DeletePriceBook(ctx, id)` | Delete a price book |
+| `qc.DuplicatePriceBook(ctx, id)` | Duplicate a price book |
+| `qc.ListPriceBookProducts(ctx, id, opts)` | List products associated with a price book |
+| `qc.ListBundles(ctx, opts)` | Paginated bundle list |
+| `qc.CreateBundle(ctx, req)` | Create a bundle |
+| `qc.GetBundle(ctx, id)` | Get a bundle by ID |
+| `qc.UpdateBundle(ctx, id, req)` | Update a bundle |
+| `qc.DeleteBundle(ctx, id)` | Delete a bundle |
+| `qc.DuplicateBundle(ctx, id)` | Duplicate a bundle |
+| `qc.ListCompanies(ctx, opts)` | Paginated company list |
+| `qc.CreateCompany(ctx, req)` | Create a company (contacts required ≥ 1) |
+| `qc.GetCompany(ctx, id)` | Get a company by ID |
+| `qc.UpdateCompany(ctx, id, req)` | Update a company |
+| `qc.DeleteCompany(ctx, id)` | Delete a company |
+| `qc.ListCompanyContacts(ctx, companyID, opts)` | List contacts for a specific company |
+| `qc.ListContacts(ctx, opts)` | Paginated contact list |
+| `qc.CreateContact(ctx, req)` | Create a contact |
+| `qc.UpdateContact(ctx, id, req)` | Update a contact |
+| `qc.DeleteContact(ctx, id)` | Delete a contact |
+| `qc.ListTemplates(ctx, opts)` | Paginated quote template list |
+| `qc.GetTemplate(ctx)` | Get the active (singleton) quote template |
+| `qc.GetTemplateByID(ctx, id)` | Get a specific quote template by ID |
+| `qc.CreateTemplate(ctx, req)` | Create a quote template |
+| `qc.UpdateTemplate(ctx, id, req)` | Update a quote template |
+| `qc.DeleteTemplate(ctx, id)` | Delete a quote template |
+| `qc.ListTypes(ctx, opts)` | Paginated quote types/categories list |
+| `qc.CreateType(ctx, req)` | Create a quote type/category |
+| `qc.UpdateType(ctx, id, req)` | Update a quote type/category |
+| `qc.DeleteType(ctx, id)` | Delete a quote type/category |
 
 ## Gotchas
 
@@ -542,5 +752,8 @@ if err != nil {
 - **Read the raw request body in your receiver, not the decoded JSON.** Use `io.ReadAll(r.Body)`. `VerifyWebhookSignature` is computed over the raw bytes; a re-marshal will not match.
 - **`VerifyWebhookSignature` is a free function**, not a method on a client — it has no `APIKey` / `OrgID` dependency. Pass `nil` for `opts` to use the default 300-second tolerance.
 - **`ConflictError` (HTTP 409)** — returned by `CreateWebhook` when a webhook with the same name already exists for the org. Discriminate it with `errors.As(err, new(*turbodocx.ConflictError))`.
+- **TurboQuote decimal fields are `float64`**, not strings — the response normalizer coerces backend string decimals (e.g. `"499.00"`) to `float64` before unmarshalling into `Quote`, `LineItem`, `Product`, etc. Do not expect string values for `unitPrice`, `listPrice`, `grandTotal`, `taxRate`, or any other monetary/percentage field.
+- **PATCH null-clears on `UpdateQuoteRequest` require explicit helper calls.** Go omits nil pointer fields by default. To send `"priceBookId": null`, `"validUntil": null`, `"taxRate": null`, or `"renewalPeriod": null`, call the corresponding method (`ClearPriceBookID()`, `ClearValidUntil()`, etc.) on the request before passing it to `UpdateQuote`. Setting the pointer to `nil` alone is not sufficient.
+- **`discountType` is `"percent"` or `"amount"`.** Use the typed constants `turbodocx.DiscountTypePercent` and `turbodocx.DiscountTypeAmount` when setting discounts on line items or bundles to avoid silent backend validation errors.
 
 **Full API reference:** https://docs.turbodocx.com/docs

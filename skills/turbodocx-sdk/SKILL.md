@@ -1,9 +1,9 @@
 ---
 name: turbodocx-sdk
-description: Install TurboDocx SDK and generate integration code for TurboSign (digital signatures), Deliverable (template-based document generation), and/or TurboPartner (partner management). Use when the user wants to add e-signatures, document signing, generate documents from templates with variable substitution, partner organization management, or any TurboDocx/TurboSign/TurboPartner/Deliverable functionality to their project. Supports JavaScript, TypeScript, Python, Go, PHP, and Java.
+description: Install TurboDocx SDK and generate integration code for TurboSign (digital signatures), Deliverable (template-based document generation), TurboPartner (partner management), TurboWebhooks (signature event subscriptions), and/or TurboQuote (sales quotes and proposals). Use when the user wants to add e-signatures, document signing, generate documents from templates with variable substitution, partner organization management, signature webhooks, build quotes/proposals/CPQ with products and price books, or any TurboDocx/TurboSign/TurboPartner/Deliverable/TurboWebhooks/TurboQuote functionality to their project. Supports JavaScript, TypeScript, Python, Go, PHP, and Java.
 metadata:
   author: TurboDocx
-  version: "1.4.0"
+  version: "1.5.0"
 license: MIT
 ---
 
@@ -38,7 +38,7 @@ Use Glob to check for these files. If multiple languages are detected, ask which
 
 ## PHASE 2: Ask Product Selection
 
-If the user provided an argument (turbosign/deliverable/turbopartner/turbowebhooks), skip this phase.
+If the user provided an argument (turbosign/deliverable/turbopartner/turbowebhooks/turboquote), skip this phase.
 
 Otherwise, ask which products they need. Use AskUserQuestion with multi-select:
 
@@ -61,6 +61,10 @@ Both products share the same credentials (`TURBODOCX_API_KEY` + `TURBODOCX_ORG_I
 **TurboWebhooks is an opt-in add-on** to TurboSign — it subscribes a single per-org HTTPS endpoint (locked to the name `signature`) to events like `signature.document.completed`. Don't surface it in the default question — enable it only when the user explicitly invokes `/turbodocx-sdk turbowebhooks`, asks how to receive event notifications, or asks how to verify the `X-TurboDocx-Signature` header. Reuses the same `TURBODOCX_API_KEY` + `TURBODOCX_ORG_ID` as TurboSign, but the key MUST have the administrator role (non-admin keys 403).
 
 **Language coverage for TurboWebhooks:** PHP, JavaScript/TypeScript, Python, Go, and Java are fully covered today.
+
+**TurboQuote is a separate, opt-in product** for building sales quotes and proposals — quotes, line items, a product/bundle catalog, price books, companies/contacts, and quote templates. Don't surface it in the default question — only enable it when the user explicitly invokes `/turbodocx-sdk turboquote`, or asks about creating quotes, proposals, CPQ, product catalogs, or price books. It reuses the same `TURBODOCX_API_KEY` + `TURBODOCX_ORG_ID` as TurboSign and does **not** need `TURBODOCX_SENDER_EMAIL` (quotes are not signature emails).
+
+**Language coverage for TurboQuote:** JavaScript/TypeScript, Python, Go, PHP, and Java are fully covered.
 
 ---
 
@@ -192,6 +196,13 @@ Create working route handlers / endpoint code for the selected product(s). The l
 - `listOrganizations()` endpoint — list managed orgs (uses `limit`/`offset` pagination, not `page`)
 - `updateOrganizationEntitlements()` endpoint — set features/tracking (the request body shape is `{ features?, tracking? }`, not bare features)
 
+**For TurboQuote, generate:**
+- `createQuote()` endpoint — accepts `name`, `companyId`, `contactId` (+ optional `currency`/`termDays`/`validUntil`/`taxRate`); returns the new quote
+- `addLineItems()` endpoint — add product line items (single object or array) to a quote
+- `sendQuote()` endpoint — send a quote for review; returns `{ quote, message }`
+- `downloadQuotePdf()` endpoint — stream the quote PDF (raw bytes per language)
+- If the user is building a catalog, also scaffold `createProduct()` / `createBundle()` / `createPriceBook()` + `applyPriceBook()`. TurboQuote configures with `apiKey` + `orgId` only — no `senderEmail` (quotes are not signature emails).
+
 Once the basics are scaffolded, point the user at the language reference (`references/<language>.md`) for the full set of available operations — there are many more than the starter set (org/user/API-key management, audit logs, etc.) and the agent should mention which additional operations exist for the user's selected product so they know what to ask for next.
 
 **IMPORTANT:**
@@ -256,6 +267,7 @@ Support arguments to skip product selection:
 - `/turbodocx-sdk turbosign+deliverable` — generate-then-sign workflow
 - `/turbodocx-sdk turbopartner` — TurboPartner only (partner-portal use case; requires partner credentials)
 - `/turbodocx-sdk turbowebhooks` — TurboWebhooks only (subscribe to signature events; PHP, JS/TS, Python, Go, and Java supported)
+- `/turbodocx-sdk turboquote` — TurboQuote only (build quotes/proposals: quotes, line items, products, bundles, price books, companies/contacts; JS/TS, Python, Go, PHP, and Java supported)
 
 For backwards compatibility, `/turbodocx-sdk both` is treated as TurboSign + Deliverable.
 

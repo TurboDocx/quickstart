@@ -409,6 +409,140 @@ except NetworkError:         pass  # never reached the server
 except TurboDocxError:       pass  # other typed SDK error (e.g. 5xx)
 ```
 
+## TurboQuote
+
+TurboQuote manages the full CPQ (Configure, Price, Quote) workflow: products, bundles, price books, companies, contacts, quote templates, and interactive PDF quotes.
+
+### TurboQuote.configure
+
+```python
+import os
+from turbodocx_sdk import TurboQuote
+
+TurboQuote.configure(
+    api_key=os.environ["TURBODOCX_API_KEY"],
+    org_id=os.environ["TURBODOCX_ORG_ID"],
+)
+```
+
+`sender_email` is **not required** — TurboQuote does not send signature emails. `org_id` is technically optional in the SDK (auto-init from env on first use), but the backend returns `401` if it is missing, so always pass it.
+
+### create_quote
+
+```python
+quote = await TurboQuote.create_quote({
+    "name": "Enterprise License Q3",
+    "companyId": "company-uuid",
+    "contactId": "contact-uuid",
+    "currency": "USD",
+    "termDays": 30,
+})
+
+print(f"Quote ID: {quote['id']}")   # quote dict (result unwrapped)
+```
+
+### add_line_items
+
+```python
+# Single item dict is auto-wrapped to array.
+# Custom/ad-hoc line item (no catalog product): productId must be present and explicitly None.
+items = await TurboQuote.add_line_items(quote["id"], {
+    "productId": None,
+    "productName": "Platform License",
+    "unitPrice": 500.00,
+    "billingFrequency": "monthly",   # 'monthly'|'quarterly'|'annual'|'one-time'
+    "quantity": 10,
+    "discountType": "percent",       # 'percent'|'amount'
+    "discountPercent": 15,
+})
+# items is a list of created LineItem dicts
+```
+
+### send_quote
+
+```python
+result = await TurboQuote.send_quote(quote["id"])
+# result["quote"]["status"]  →  'sent'
+# result["message"]          →  human-readable confirmation string
+```
+
+### download_quote_pdf
+
+```python
+pdf_bytes = await TurboQuote.download_quote_pdf(quote["id"])
+with open("quote.pdf", "wb") as f:
+    f.write(pdf_bytes)
+```
+
+### Product / bundle / price book catalog example
+
+```python
+# Create a product
+product = await TurboQuote.create_product({
+    "name": "Widget Pro",
+    "listPrice": 199.99,
+    "billingFrequency": "one-time",
+    "showInCatalog": True,
+})
+
+# Create a price book and apply to a quote.
+# All four fields are REQUIRED: name, priceBookTypeId, validFrom, discountPercent.
+# priceBookTypeId comes from a create_type with categoryType "pricebook_type".
+price_book = await TurboQuote.create_price_book({
+    "name": "Partner Pricing",
+    "priceBookTypeId": "pricebook-type-uuid",
+    "validFrom": "2026-01-01",
+    "discountPercent": 15,
+})
+result = await TurboQuote.apply_price_book(quote["id"], price_book["id"])
+# result: {"quote": ..., "message": ..., "updatedCount": int, "skippedCount": int}
+```
+
+### create_and_send convenience method
+
+```python
+# Create + add items + send in one call
+result = await TurboQuote.create_and_send({
+    "name": "Quick Deal",
+    "companyId": "company-uuid",
+    "contactId": "contact-uuid",
+    "currency": "USD",
+    "items": [
+        {"productId": None, "productName": "Starter Plan", "unitPrice": 99.00, "billingFrequency": "monthly", "quantity": 1},
+    ],
+})
+print(result["quote"]["status"])  # 'sent'
+```
+
+### TurboQuote error handling
+
+```python
+from turbodocx_sdk import (
+    TurboDocxError,
+    AuthenticationError,
+    AuthorizationError,
+    ValidationError,
+    NotFoundError,
+    RateLimitError,
+    NetworkError,
+)
+
+try:
+    await TurboQuote.send_quote(quote_id)
+except ValidationError as e:
+    pass  # 400 — missing required fields or invalid enum value
+except NotFoundError:
+    pass  # 404 — quote_id does not exist
+except AuthenticationError:
+    pass  # 401 — bad / revoked API key or missing org_id
+except RateLimitError:
+    pass  # 429 — back off and retry
+except NetworkError:
+    pass  # never reached the server
+except TurboDocxError:
+    pass  # other typed SDK error (e.g. 5xx)
+```
+
 ## Error Handling
 
 ```python
@@ -466,6 +600,67 @@ except TurboDocxError as e:
 | `TurboWebhooks.replay_webhook_delivery(delivery_id)` | Retry a past delivery; returns the new delivery row |
 | `TurboWebhooks.get_webhook_stats(days=)` | Aggregate stats over a sliding window |
 | `verify_webhook_signature(raw_body, sig_header, ts_header, secret, ...)` | Free function; verifies inbound deliveries |
+| `TurboQuote.configure(api_key, org_id, base_url=...)` | Configure the quote client (no sender_email needed) |
+| `TurboQuote.list_quotes(options=)` | List quotes with pagination and filters |
+| `TurboQuote.create_quote(request)` | Create a new quote |
+| `TurboQuote.get_quote(id)` | Get quote by ID (statusInfo merged in) |
+| `TurboQuote.update_quote(id, request)` | PATCH any subset of quote fields |
+| `TurboQuote.delete_quote(id)` | Delete a quote |
+| `TurboQuote.duplicate_quote(id)` | Duplicate a quote |
+| `TurboQuote.send_quote(id, request=)` | Send quote to recipient; returns `{quote, message}` |
+| `TurboQuote.send_quote_with_deliverable(id, request)` | Send with attached deliverable; returns `{quote, message, documentId}` |
+| `TurboQuote.decline_quote(id, {reason})` | Decline a sent quote |
+| `TurboQuote.void_quote(id, {reason})` | Void a quote |
+| `TurboQuote.handle_expired_quote(id, request)` | Act on an expired sent quote (void/decline + new valid date) |
+| `TurboQuote.apply_price_book(quote_id, price_book_id)` | Apply price book to quote; returns `{quote, message, updatedCount, skippedCount}` |
+| `TurboQuote.remove_price_book(quote_id)` | Remove price book from quote |
+| `TurboQuote.download_quote_pdf(id)` | Download quote as raw PDF bytes |
+| `TurboQuote.create_and_send(request)` | Convenience: create + add items + send in one call |
+| `TurboQuote.list_line_items(quote_id, options=)` | List line items for a quote |
+| `TurboQuote.add_line_items(quote_id, items)` | Add product line item(s); single dict auto-wrapped to array |
+| `TurboQuote.add_bundle_line_items(quote_id, items)` | Add bundle line item(s) |
+| `TurboQuote.update_line_item(quote_id, item_id, request)` | Update a line item |
+| `TurboQuote.remove_line_item(quote_id, item_id)` | Remove a line item |
+| `TurboQuote.list_products(options=)` | List products |
+| `TurboQuote.create_product(request)` | Create product (multipart when `images` provided) |
+| `TurboQuote.get_product(id)` | Get product by ID |
+| `TurboQuote.update_product(id, request)` | Update product |
+| `TurboQuote.delete_product(id)` | Delete product |
+| `TurboQuote.duplicate_product(id)` | Duplicate product |
+| `TurboQuote.get_product_primary_images(product_ids)` | Batch-fetch primary images; returns `{product_id: image|None}` |
+| `TurboQuote.list_price_books(options=)` | List price books |
+| `TurboQuote.create_price_book(request)` | Create price book |
+| `TurboQuote.get_price_book(id)` | Get price book by ID |
+| `TurboQuote.update_price_book(id, request)` | Update price book |
+| `TurboQuote.delete_price_book(id)` | Delete price book |
+| `TurboQuote.duplicate_price_book(id)` | Duplicate price book |
+| `TurboQuote.list_price_book_products(id, options=)` | List products in a price book |
+| `TurboQuote.list_bundles(options=)` | List bundles |
+| `TurboQuote.create_bundle(request)` | Create bundle |
+| `TurboQuote.get_bundle(id)` | Get bundle by ID |
+| `TurboQuote.update_bundle(id, request)` | Update bundle |
+| `TurboQuote.delete_bundle(id)` | Delete bundle |
+| `TurboQuote.duplicate_bundle(id)` | Duplicate bundle |
+| `TurboQuote.list_companies(options=)` | List companies |
+| `TurboQuote.create_company(request)` | Create company (`contacts` list required, min 1) |
+| `TurboQuote.get_company(id)` | Get company by ID |
+| `TurboQuote.update_company(id, request)` | Update company |
+| `TurboQuote.delete_company(id)` | Delete company |
+| `TurboQuote.list_company_contacts(company_id, options=)` | List contacts for a company |
+| `TurboQuote.list_contacts(options=)` | List contacts |
+| `TurboQuote.create_contact(request)` | Create contact |
+| `TurboQuote.update_contact(id, request)` | Update contact |
+| `TurboQuote.delete_contact(id)` | Delete contact |
+| `TurboQuote.list_templates(options=)` | List quote templates |
+| `TurboQuote.get_template()` | Get the org's default (singleton) template |
+| `TurboQuote.get_template_by_id(id)` | Get a specific template by ID |
+| `TurboQuote.create_template(request)` | Create quote template |
+| `TurboQuote.update_template(id, request)` | Update quote template |
+| `TurboQuote.delete_template(id)` | Delete quote template |
+| `TurboQuote.list_types(options=)` | List types/categories |
+| `TurboQuote.create_type(request)` | Create a type |
+| `TurboQuote.update_type(id, request)` | Update a type |
+| `TurboQuote.delete_type(id)` | Delete a type |
 
 ## Gotchas
 
@@ -481,5 +676,9 @@ except TurboDocxError as e:
 - **Webhook URLs must be HTTPS.** Non-HTTPS URLs return 400 `ValidationError` from the backend.
 - **Read the raw request body in your receiver, not the parsed JSON.** Use Flask's `request.get_data()` or FastAPI's `await request.body()`. Signature verification is computed over the raw bytes; a JSON re-stringify will not match.
 - **`verify_webhook_signature` is a free function**, not a method on `TurboWebhooks` — import it directly from `turbodocx_sdk`. It has no `api_key`/`org_id` dependency.
+
+- **TurboQuote decimal fields come back as Python `float`**, not strings. The response normalizer coerces `listPrice`, `unitPrice`, `discountPercent`, `subtotal`, `grandTotal`, `taxRate`, and all other money/rate fields from the database string representation to `float` automatically — never parse them yourself.
+- **PATCH null clears nullable fields.** `update_quote` / `update_line_item` / `update_product` etc. use HTTP PATCH: explicitly passing `None` for a nullable field (e.g. `{"taxRate": None}`) sends `null` in the JSON body and clears that column. Omitting the key entirely leaves it unchanged. Do not pass `None` for fields you do not intend to clear.
+- **`discountType` is `'percent'` or `'amount'`, not `'percentage'`.** The backend enum is `'percent'`; using the wrong value returns a `400 ValidationError`. Similarly, `billingFrequency` values are `'monthly'`, `'quarterly'`, `'annual'`, and `'one-time'` (hyphen, not underscore).
 
 **Full API reference:** https://docs.turbodocx.com/docs

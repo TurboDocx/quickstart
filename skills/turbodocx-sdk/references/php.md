@@ -370,6 +370,162 @@ try {
 }
 ```
 
+## TurboQuote Configuration
+
+TurboQuote manages the full quoting lifecycle: companies, contacts, products, bundles, price books, and quotes — all the way through sending to a customer and downloading the PDF.
+
+```php
+use TurboDocx\TurboQuote;
+use TurboDocx\Config\QuoteClientConfig;
+
+TurboQuote::configure(new QuoteClientConfig(
+    apiKey: $_ENV['TURBODOCX_API_KEY'],   // admin TDX- key
+    orgId: $_ENV['TURBODOCX_ORG_ID'],     // strongly recommended; backend 401s without it
+    // baseUrl: 'https://api.turbodocx.com', // optional
+));
+
+// Or auto-configure from environment
+TurboQuote::configure(QuoteClientConfig::fromEnvironment());
+```
+
+Unlike `TurboSign`, `TurboQuote` does **NOT** require `senderEmail` or `senderName` — quote routes never send signature emails. `orgId` is technically optional in the config object but the backend will return 401 if it is missing, so treat it as required.
+
+## TurboQuote Usage
+
+### createQuote
+
+```php
+use TurboDocx\Types\Requests\Quote\CreateQuoteRequest;
+
+$quote = TurboQuote::createQuote(new CreateQuoteRequest(
+    name: 'Enterprise License Q3',
+    companyId: $company->id,
+    contactId: $contact->id,
+    currency: 'USD',
+    termDays: 30,
+));
+
+echo "Quote ID: {$quote->id}\n";
+echo "Status: {$quote->status}\n";
+```
+
+### addLineItems
+
+```php
+use TurboDocx\Types\Requests\Quote\AddLineItemRequest;
+
+TurboQuote::addLineItems($quote->id, [
+    new AddLineItemRequest(
+        productId: null,
+        productName: 'Platform Subscription',
+        unitPrice: 499.00,
+        billingFrequency: 'monthly',
+        quantity: 1,
+    ),
+    new AddLineItemRequest(
+        productId: null,
+        productName: 'Professional Services',
+        unitPrice: 2500.00,
+        billingFrequency: 'one-time',
+        quantity: 5,
+        discountType: 'percent',
+        discountPercent: 10,
+    ),
+]);
+// Returns LineItem[] — the resulting items array
+```
+
+To add a bundle (a pre-grouped set of products) use `addBundleLineItems` with `AddBundleLineItemRequest`.
+
+### sendQuote
+
+```php
+use TurboDocx\Types\Requests\Quote\SendQuoteRequest;
+
+$result = TurboQuote::sendQuote($quote->id, new SendQuoteRequest(
+    validUntil: date('Y-m-d', strtotime('+30 days')),
+));
+
+echo "Status: {$result->quote->status}\n";   // 'sent'
+echo "Message: {$result->message}\n";
+```
+
+### downloadQuotePdf
+
+```php
+$pdfBytes = TurboQuote::downloadQuotePdf($quote->id);
+file_put_contents('quote.pdf', $pdfBytes);
+```
+
+Returns raw bytes — write them directly with `file_put_contents` or stream as a response.
+
+### Products and bundles (catalog)
+
+```php
+use TurboDocx\Types\Requests\Quote\CreateProductRequest;
+use TurboDocx\Types\Requests\Quote\CreateBundleRequest;
+use TurboDocx\Types\Requests\Quote\CreatePriceBookRequest;
+
+// Create a catalog product
+$product = TurboQuote::createProduct(new CreateProductRequest(
+    name: 'Annual SaaS License',
+    listPrice: 999.00,
+    billingFrequency: 'annual',
+    categoryId: 'category-uuid',
+    showInCatalog: true,
+));
+
+// Create a bundle
+$bundle = TurboQuote::createBundle(new CreateBundleRequest(
+    name: 'Starter Pack',
+    categoryId: 'category-uuid',
+    items: [
+        ['productId' => $product->id, 'quantity' => 1],
+    ],
+));
+
+// Create a price book and apply it to a quote.
+// priceBookTypeId comes from a createType with categoryType 'pricebook_type';
+// name, priceBookTypeId, validFrom, and discountPercent are all required.
+$priceBook = TurboQuote::createPriceBook(new CreatePriceBookRequest(
+    name: 'Partner Tier A',
+    priceBookTypeId: 'pricebook-type-uuid',
+    validFrom: '2026-01-01',
+    discountPercent: 15.0,
+));
+
+TurboQuote::applyPriceBook($quote->id, $priceBook->id);
+// Returns ApplyPriceBookResponse: { quote, message, updatedCount, skippedCount }
+```
+
+### TurboQuote error handling
+
+```php
+use TurboDocx\Exceptions\TurboDocxException;
+use TurboDocx\Exceptions\AuthenticationException;
+use TurboDocx\Exceptions\AuthorizationException;
+use TurboDocx\Exceptions\ValidationException;
+use TurboDocx\Exceptions\NotFoundException;
+use TurboDocx\Exceptions\RateLimitException;
+use TurboDocx\Exceptions\NetworkException;
+
+try {
+    TurboQuote::sendQuote($quoteId);
+} catch (ValidationException $e) {
+    // 400 — missing required field or invalid value (e.g., unknown currency)
+} catch (AuthenticationException $e) {
+    // 401 — bad/missing API key, or missing orgId
+} catch (NotFoundException $e) {
+    // 404 — quote, product, or price book not found
+} catch (RateLimitException $e) {
+    // 429 — back off and retry
+} catch (NetworkException $e) {
+    // No status — request never reached the server
+} catch (TurboDocxException $e) {
+    // Any other typed SDK error
+}
+```
+
 ## Laravel Integration Example
 
 ```php
@@ -501,6 +657,75 @@ try {
 | `TurboWebhooks::replayWebhookDelivery($id)` | Manually retry a past delivery |
 | `TurboWebhooks::getWebhookStats($days)` | Aggregate stats over a sliding window |
 | `\TurboDocx\Utils\verifyWebhookSignature(...)` | Free function — verify inbound `X-TurboDocx-Signature` |
+| **TurboQuote — Quotes** | |
+| `TurboQuote::createQuote($request)` | Create a new quote |
+| `TurboQuote::listQuotes($request?)` | List quotes with pagination, filters, and stats |
+| `TurboQuote::getQuote($id)` | Get quote by ID (statusInfo merged in) |
+| `TurboQuote::updateQuote($id, $request)` | Update quote fields (PATCH — null-clears nullable fields) |
+| `TurboQuote::deleteQuote($id)` | Delete a quote |
+| `TurboQuote::duplicateQuote($id)` | Duplicate a quote |
+| `TurboQuote::downloadQuotePdf($id)` | Download quote as raw PDF bytes |
+| `TurboQuote::sendQuote($id, $request?)` | Send quote to the contact |
+| `TurboQuote::sendQuoteWithDeliverable($id, $request)` | Send with a TurboDocx-generated document attached |
+| `TurboQuote::declineQuote($id, $request)` | Mark a quote as declined |
+| `TurboQuote::voidQuote($id, $request)` | Void a quote |
+| `TurboQuote::handleExpiredQuote($id, $request)` | Re-send or void an expired quote |
+| `TurboQuote::applyPriceBook($quoteId, $priceBookId)` | Apply a price book, repricing line items |
+| `TurboQuote::removePriceBook($quoteId)` | Remove the applied price book |
+| `TurboQuote::createAndSend($request)` | Create quote + add items + send in one call |
+| **TurboQuote — Line Items** | |
+| `TurboQuote::listLineItems($quoteId, $request?)` | List items on a quote |
+| `TurboQuote::addLineItems($quoteId, $items)` | Add one or more product line items (single or array) |
+| `TurboQuote::addBundleLineItems($quoteId, $items)` | Add one or more bundle line items |
+| `TurboQuote::updateLineItem($quoteId, $itemId, $request)` | Update a line item |
+| `TurboQuote::removeLineItem($quoteId, $itemId)` | Remove a line item |
+| **TurboQuote — Products** | |
+| `TurboQuote::listProducts($request?)` | List catalog products |
+| `TurboQuote::createProduct($request)` | Create a product (supports image upload via multipart) |
+| `TurboQuote::getProduct($id)` | Get product by ID |
+| `TurboQuote::updateProduct($id, $request)` | Update a product |
+| `TurboQuote::deleteProduct($id)` | Delete a product |
+| `TurboQuote::duplicateProduct($id)` | Duplicate a product |
+| `TurboQuote::getProductPrimaryImages($productIds)` | Batch-fetch primary images for product IDs |
+| **TurboQuote — Price Books** | |
+| `TurboQuote::listPriceBooks($request?)` | List price books |
+| `TurboQuote::createPriceBook($request)` | Create a price book |
+| `TurboQuote::getPriceBook($id)` | Get price book by ID |
+| `TurboQuote::updatePriceBook($id, $request)` | Update a price book |
+| `TurboQuote::deletePriceBook($id)` | Delete a price book |
+| `TurboQuote::duplicatePriceBook($id)` | Duplicate a price book |
+| `TurboQuote::listPriceBookProducts($id, $request?)` | List products with custom pricing in a price book |
+| **TurboQuote — Bundles** | |
+| `TurboQuote::listBundles($request?)` | List catalog bundles |
+| `TurboQuote::createBundle($request)` | Create a bundle |
+| `TurboQuote::getBundle($id)` | Get bundle by ID |
+| `TurboQuote::updateBundle($id, $request)` | Update a bundle |
+| `TurboQuote::deleteBundle($id)` | Delete a bundle |
+| `TurboQuote::duplicateBundle($id)` | Duplicate a bundle |
+| **TurboQuote — Companies** | |
+| `TurboQuote::listCompanies($request?)` | List companies |
+| `TurboQuote::createCompany($request)` | Create a company (requires at least one contact in `contacts`) |
+| `TurboQuote::getCompany($id)` | Get company by ID |
+| `TurboQuote::updateCompany($id, $request)` | Update a company |
+| `TurboQuote::deleteCompany($id)` | Delete a company |
+| `TurboQuote::listCompanyContacts($companyId, $request?)` | List contacts for a company |
+| **TurboQuote — Contacts** | |
+| `TurboQuote::listContacts($request?)` | List contacts |
+| `TurboQuote::createContact($request)` | Create a contact |
+| `TurboQuote::updateContact($id, $request)` | Update a contact |
+| `TurboQuote::deleteContact($id)` | Delete a contact |
+| **TurboQuote — Templates** | |
+| `TurboQuote::listTemplates($request?)` | List quote templates |
+| `TurboQuote::getTemplate()` | Get the org's active quote template (singleton endpoint) |
+| `TurboQuote::getTemplateById($id)` | Get a template by ID |
+| `TurboQuote::createTemplate($request)` | Create a quote template |
+| `TurboQuote::updateTemplate($id, $request)` | Update a quote template |
+| `TurboQuote::deleteTemplate($id)` | Delete a quote template |
+| **TurboQuote — Types** | |
+| `TurboQuote::listTypes($request?)` | List quote types/categories |
+| `TurboQuote::createType($request)` | Create a type/category |
+| `TurboQuote::updateType($id, $request)` | Update a type/category |
+| `TurboQuote::deleteType($id)` | Delete a type/category |
 
 ## Gotchas
 
@@ -516,5 +741,9 @@ try {
 - **`createWebhook` URLs must be HTTPS** — non-HTTPS receivers return `ValidationException` (400). For local development, expose your receiver via an HTTPS tunnel (ngrok, cloudflared) and use the tunnel URL.
 - **Save the secret immediately** — `createWebhook` and `regenerateWebhookSecret` return the HMAC secret ONCE. There is no endpoint to retrieve it later. If you lose it, `regenerateWebhookSecret` mints a new one (and invalidates the old).
 - **Signature verification** — never `json_decode` the request body before passing it to `verifyWebhookSignature()`. The HMAC is over the raw bytes; re-encoded JSON will not match.
+
+- **TurboQuote decimal fields come back as numbers**, not strings — the response normalizer coerces `listPrice`, `unitPrice`, `discountPercent`, `subtotal`, `grandTotal`, `taxRate`, and related fields from the backend's string representation to PHP floats. Do not try to parse them yourself.
+- **PATCH null-clears nullable fields** — `updateQuote` (and other PATCH methods) include explicitly-set `null` values in the request body, which clears that field on the server. Only fields you actually pass are sent; fields you omit are left unchanged.
+- **`discountType` is `'percent'` or `'amount'`** — use the string literals or `DiscountType::PERCENT->value` / `DiscountType::AMOUNT->value`; mixing them up silently falls back to the backend default.
 
 **Full API reference:** https://docs.turbodocx.com/docs

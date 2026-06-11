@@ -471,6 +471,123 @@ try {
 }
 ```
 
+## TurboQuote
+
+TurboQuote provides end-to-end CPQ (configure-price-quote) operations: create and send professional quotes, manage your product catalog and bundles, apply pricebooks, and handle the full quote lifecycle (draft, sent, accepted, declined, voided).
+
+### Configuration
+
+`TurboQuoteClient` does NOT require `senderEmail` — quote routes do not send TurboSign signature emails. `orgId` is technically optional in the config but the backend will return 401 if it is missing, so always supply it.
+
+```java
+import com.turbodocx.TurboQuoteClient;
+import com.turbodocx.TurboQuote;
+
+TurboQuote tq = new TurboQuoteClient.Builder()
+    .apiKey(System.getenv("TURBODOCX_API_KEY"))
+    .orgId(System.getenv("TURBODOCX_ORG_ID"))
+    // .baseUrl(System.getenv("TURBODOCX_BASE_URL")) // optional, defaults to api.turbodocx.com
+    .build()
+    .turboQuote();
+```
+
+### createQuote
+
+```java
+CreateQuoteRequest req = new CreateQuoteRequest();
+req.setName("Q1 Software Proposal");
+req.setCompanyId(companyId);
+req.setContactId(contactId);
+req.setTermDays(30);
+req.setCurrency(Currency.USD);
+
+Quote quote = tq.createQuote(req);
+System.out.println("Quote ID: " + quote.getId());
+System.out.println("Status: "   + quote.getStatus()); // "draft"
+```
+
+### addLineItems
+
+`addLineItems` accepts either a single `AddLineItemRequest` or a `List` — the single-item overload is auto-wrapped internally.
+
+```java
+AddLineItemRequest item = new AddLineItemRequest();
+item.setProductName("Enterprise License");
+item.setProductId(null);           // null = ad-hoc line item; pass a real ID to link a catalog product
+item.setUnitPrice(1200.00);
+item.setQuantity(5.0);
+item.setBillingFrequency("annual");
+item.setDiscountType(DiscountType.PERCENT);
+item.setDiscountPercent(10.0);
+
+List<LineItem> lineItems = tq.addLineItems(quote.getId(), item);
+System.out.println("Total line items: " + lineItems.size());
+```
+
+### sendQuote
+
+```java
+SendQuoteResponse sent = tq.sendQuote(quote.getId());
+System.out.println("Status: " + sent.getQuote().getStatus()); // "sent"
+System.out.println(sent.getMessage());
+```
+
+### downloadQuotePdf
+
+```java
+byte[] pdf = tq.downloadQuotePdf(quoteId);
+Files.write(Paths.get("quote.pdf"), pdf);
+```
+
+### Catalog example (product / bundle / pricebook)
+
+```java
+// Create a product
+CreateProductRequest prod = new CreateProductRequest();
+prod.setName("Support Add-On");
+prod.setListPrice(500.00);
+prod.setBillingFrequency("annual");
+Product product = tq.createProduct(prod);
+
+// Create a bundle
+CreateBundleRequest bundle = new CreateBundleRequest();
+bundle.setName("Starter Pack");
+Bundle b = tq.createBundle(bundle);
+
+// Create and apply a pricebook — name, priceBookTypeId, validFrom, and discountPercent are all required.
+// priceBookTypeId comes from a createType(...) with categoryType PRICEBOOK_TYPE.
+CreatePriceBookRequest pb = new CreatePriceBookRequest();
+pb.setName("Partner Pricing");
+pb.setPriceBookTypeId(priceBookTypeId);
+pb.setValidFrom("2025-01-01");
+pb.setDiscountPercent(15.0);
+PriceBook priceBook = tq.createPriceBook(pb);
+
+ApplyPriceBookResponse applied = tq.applyPriceBook(quote.getId(), priceBook.getId());
+System.out.println("Updated items: " + applied.getUpdatedCount());
+System.out.println("Skipped items: " + applied.getSkippedCount());
+```
+
+### TurboQuote error handling
+
+```java
+import com.turbodocx.TurboDocxException;
+
+try {
+    tq.sendQuote(quoteId);
+} catch (TurboDocxException.ValidationException e) {
+    // 400 — e.g. quote has no line items, or quote is already sent
+} catch (TurboDocxException.AuthenticationException e) {
+    // 401 — bad / revoked API key, or missing orgId
+} catch (TurboDocxException.NotFoundException e) {
+    // 404 — quote or related resource does not exist
+} catch (TurboDocxException.RateLimitException e) {
+    // 429 — back off and retry
+} catch (TurboDocxException e) {
+    System.err.println("Error " + e.getStatusCode() + ": " + e.getMessage());
+}
+```
+
 ## Error Handling
 
 ```java
@@ -521,6 +638,67 @@ try {
 | `webhooks.replayWebhookDelivery(deliveryId)` | Retry a past delivery; returns the new delivery row |
 | `webhooks.getWebhookStats(days)` | Aggregate stats over a sliding window (`null` = backend default) |
 | `WebhookSignatureVerifier.verify(rawBody, sigHeader, tsHeader, secret)` | Static utility; verifies inbound deliveries |
+| `new TurboQuoteClient.Builder()...build().turboQuote()` | Construct a `TurboQuote` instance (no `senderEmail` required) |
+| `tq.listQuotes(options)` | List quotes with optional filters (status, search, pagination) |
+| `tq.createQuote(req)` | Create a new quote in draft status |
+| `tq.getQuote(id)` | Get quote by ID (statusInfo merged into response) |
+| `tq.updateQuote(id, req)` | PATCH quote fields; explicitly `null` fields are cleared |
+| `tq.deleteQuote(id)` | Delete a quote |
+| `tq.duplicateQuote(id)` | Duplicate a quote |
+| `tq.applyPriceBook(quoteId, priceBookId)` | Apply pricebook to a quote; returns updatedCount + skippedCount |
+| `tq.removePriceBook(quoteId)` | Remove applied pricebook from a quote |
+| `tq.downloadQuotePdf(id)` | Download quote as PDF; returns raw `byte[]` |
+| `tq.sendQuote(id)` | Send quote to recipient; transitions status to `sent` |
+| `tq.sendQuoteWithDeliverable(id, req)` | Send quote and attach a TurboDocx deliverable |
+| `tq.declineQuote(id, req)` | Decline a quote (reason required) |
+| `tq.voidQuote(id, req)` | Void a quote (reason required) |
+| `tq.handleExpiredQuote(id, req)` | Handle an expired sent quote (action + optional newValidUntil) |
+| `tq.listLineItems(quoteId)` | List line items on a quote |
+| `tq.addLineItems(quoteId, item)` | Add one or more line items (single or `List` overload) |
+| `tq.addBundleLineItems(quoteId, items)` | Add bundle line items to a quote |
+| `tq.updateLineItem(quoteId, itemId, req)` | Update a line item |
+| `tq.removeLineItem(quoteId, itemId)` | Remove a line item |
+| `tq.listProducts(options)` | List products in the catalog |
+| `tq.createProduct(req)` | Create a product (supports image upload via multipart) |
+| `tq.getProduct(id)` | Get product by ID |
+| `tq.updateProduct(id, req)` | Update a product |
+| `tq.deleteProduct(id)` | Delete a product |
+| `tq.duplicateProduct(id)` | Duplicate a product |
+| `tq.getProductPrimaryImages(productIds)` | Batch-fetch primary images for product IDs |
+| `tq.listPriceBooks(options)` | List pricebooks |
+| `tq.createPriceBook(req)` | Create a pricebook |
+| `tq.getPriceBook(id)` | Get pricebook by ID |
+| `tq.updatePriceBook(id, req)` | Update a pricebook |
+| `tq.deletePriceBook(id)` | Delete a pricebook |
+| `tq.duplicatePriceBook(id)` | Duplicate a pricebook |
+| `tq.listPriceBookProducts(id, options)` | List products in a pricebook |
+| `tq.listBundles(options)` | List bundles |
+| `tq.createBundle(req)` | Create a bundle |
+| `tq.getBundle(id)` | Get bundle by ID |
+| `tq.updateBundle(id, req)` | Update a bundle |
+| `tq.deleteBundle(id)` | Delete a bundle |
+| `tq.duplicateBundle(id)` | Duplicate a bundle |
+| `tq.listCompanies(options)` | List companies |
+| `tq.createCompany(req)` | Create a company (contacts required) |
+| `tq.getCompany(id)` | Get company by ID |
+| `tq.updateCompany(id, req)` | Update a company |
+| `tq.deleteCompany(id)` | Delete a company |
+| `tq.listCompanyContacts(companyId, options)` | List contacts belonging to a company |
+| `tq.listContacts(options)` | List contacts |
+| `tq.createContact(req)` | Create a contact |
+| `tq.updateContact(id, req)` | Update a contact |
+| `tq.deleteContact(id)` | Delete a contact |
+| `tq.listTemplates(options)` | List quote templates |
+| `tq.getTemplate()` | Get the org's singleton quote template |
+| `tq.getTemplateById(id)` | Get a specific quote template by ID |
+| `tq.createTemplate(req)` | Create a quote template |
+| `tq.updateTemplate(id, req)` | Update a quote template |
+| `tq.deleteTemplate(id)` | Delete a quote template |
+| `tq.listTypes(options)` | List quote types |
+| `tq.createType(req)` | Create a quote type |
+| `tq.updateType(id, req)` | Update a quote type |
+| `tq.deleteType(id)` | Delete a quote type |
+| `tq.createAndSend(req)` | Convenience: create quote + add line items + add bundles + send in one call |
 
 ## Gotchas
 
@@ -539,5 +717,9 @@ try {
 - **Webhook secrets are shown ONCE** — capture `created.get("secret").getAsString()` immediately. `regenerateWebhookSecret()` returns a new one and invalidates the old immediately.
 - **HTTPS-only URLs** — `http://` returns `ValidationException` (400).
 - **Catch `ConflictException` (409) on `createWebhook`** — the signature webhook may already exist from a previous run; update or delete instead.
+
+- **TurboQuote decimal fields come back as numbers, not strings.** The Java `ResponseNormalizer` (`FlexIntAdapter`) coerces string-serialized decimals (`listPrice`, `unitPrice`, `discountPercent`, `grandTotal`, `subtotal`, etc.) to `double`. Do not attempt to parse them manually from the raw JSON.
+- **`PATCH` null-clears nullable fields.** On `updateQuote`, `updateLineItem`, and similar PATCH methods, explicitly setting a field to `null` sends `null` in the request body and clears the value on the server. Fields you never set are omitted from the request entirely and left unchanged. This matters for fields like `priceBookId`, `validUntil`, and `taxRate`.
+- **`discountType` must be `"percent"` or `"amount"`.** Use the `DiscountType` enum constants (`DiscountType.PERCENT` / `DiscountType.AMOUNT`) to avoid silent 400 errors. Passing a raw string bypasses compile-time checking.
 
 **Full API reference:** https://docs.turbodocx.com/docs

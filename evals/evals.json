@@ -5,352 +5,1228 @@
       "id": 1,
       "prompt": "I need to add digital signature functionality to my Express app. Set up TurboDocx so I can send documents for signing and check their status.",
       "expected_output": "Creates a TurboSign config file, route handlers for sendSignature and getStatus, wires routes into the main app, adds .env with TurboSign vars, installs @turbodocx/sdk",
-      "files": ["package.json", "tsconfig.json", "src/index.ts", "package-lock.json"],
+      "files": [
+        "package.json",
+        "tsconfig.json",
+        "src/index.ts",
+        "package-lock.json"
+      ],
       "assertions": [
-        {"name": "config-file-created", "type": "file_exists", "description": "A TurboSign config/client file was created"},
-        {"name": "config-has-turbosign", "type": "file_contains", "description": "Config file calls TurboSign.configure with API key and sender email env vars"},
-        {"name": "route-file-created", "type": "file_exists", "description": "A route/handler file for signatures was created"},
-        {"name": "routes-wired", "type": "file_contains", "description": "Main app file (src/index.ts) was modified to import and register signature routes"},
-        {"name": "env-file-created", "type": "file_contains", "description": ".env file contains TURBODOCX_API_KEY and TURBODOCX_SENDER_EMAIL"},
-        {"name": "gitignore-has-env", "type": "file_contains", "description": ".gitignore includes .env"},
-        {"name": "no-partner-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY (user only asked for TurboSign)"},
-        {"name": "uses-typescript", "type": "file_exists", "description": "Generated files use .ts extension (tsconfig.json was detected)"},
-        {"name": "esm-imports", "type": "file_contains", "description": "Generated code uses ESM import syntax (package.json type is module)"}
+        {
+          "name": "config-file-created",
+          "type": "file_exists",
+          "description": "A TurboSign config/client file was created"
+        },
+        {
+          "name": "config-has-turbosign",
+          "type": "file_contains",
+          "description": "Config file calls TurboSign.configure with API key and sender email env vars"
+        },
+        {
+          "name": "route-file-created",
+          "type": "file_exists",
+          "description": "A route/handler file for signatures was created"
+        },
+        {
+          "name": "routes-wired",
+          "type": "file_contains",
+          "description": "Main app file (src/index.ts) was modified to import and register signature routes"
+        },
+        {
+          "name": "env-file-created",
+          "type": "file_contains",
+          "description": ".env file contains TURBODOCX_API_KEY and TURBODOCX_SENDER_EMAIL"
+        },
+        {
+          "name": "gitignore-has-env",
+          "type": "file_contains",
+          "description": ".gitignore includes .env"
+        },
+        {
+          "name": "no-partner-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY (user only asked for TurboSign)"
+        },
+        {
+          "name": "uses-typescript",
+          "type": "file_exists",
+          "description": "Generated files use .ts extension (tsconfig.json was detected)"
+        },
+        {
+          "name": "esm-imports",
+          "type": "file_contains",
+          "description": "Generated code uses ESM import syntax (package.json type is module)"
+        }
       ]
     },
     {
       "id": 2,
       "prompt": "Set up TurboDocx TurboPartner in my FastAPI app so I can provision and manage customer organizations.",
       "expected_output": "Creates a TurboPartner config file, route handlers for createOrganization and listOrganizations, wires router into FastAPI app, adds .env with TurboPartner vars",
-      "files": ["pyproject.toml", "app/main.py", "app/routers/__init__.py"],
+      "files": [
+        "pyproject.toml",
+        "app/main.py",
+        "app/routers/__init__.py"
+      ],
       "assertions": [
-        {"name": "config-file-created", "type": "file_exists", "description": "A TurboPartner config file was created"},
-        {"name": "config-has-turbopartner", "type": "file_contains", "description": "Config file calls TurboPartner.configure with partner API key and partner ID env vars"},
-        {"name": "router-file-created", "type": "file_exists", "description": "A FastAPI router file for partner/org management was created"},
-        {"name": "router-wired", "type": "file_contains", "description": "app/main.py was modified to include the new router"},
-        {"name": "env-has-partner-vars", "type": "file_contains", "description": ".env contains TURBODOCX_PARTNER_API_KEY and TURBODOCX_PARTNER_ID"},
-        {"name": "no-sign-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_API_KEY (user only asked for TurboPartner)"},
-        {"name": "uses-async", "type": "file_contains", "description": "Generated route handlers use async/await (FastAPI convention)"},
-        {"name": "uses-fastapi-patterns", "type": "file_contains", "description": "Generated code uses APIRouter and proper FastAPI patterns"}
+        {
+          "name": "config-file-created",
+          "type": "file_exists",
+          "description": "A TurboPartner config file was created"
+        },
+        {
+          "name": "config-has-turbopartner",
+          "type": "file_contains",
+          "description": "Config file calls TurboPartner.configure with partner API key and partner ID env vars"
+        },
+        {
+          "name": "router-file-created",
+          "type": "file_exists",
+          "description": "A FastAPI router file for partner/org management was created"
+        },
+        {
+          "name": "router-wired",
+          "type": "file_contains",
+          "description": "app/main.py was modified to include the new router"
+        },
+        {
+          "name": "env-has-partner-vars",
+          "type": "file_contains",
+          "description": ".env contains TURBODOCX_PARTNER_API_KEY and TURBODOCX_PARTNER_ID"
+        },
+        {
+          "name": "no-sign-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_API_KEY (user only asked for TurboPartner)"
+        },
+        {
+          "name": "uses-async",
+          "type": "file_contains",
+          "description": "Generated route handlers use async/await (FastAPI convention)"
+        },
+        {
+          "name": "uses-fastapi-patterns",
+          "type": "file_contains",
+          "description": "Generated code uses APIRouter and proper FastAPI patterns"
+        }
       ]
     },
     {
       "id": 3,
       "prompt": "I need both TurboSign and TurboPartner in my Go project. Set up the TurboDocx SDK with both products.",
       "expected_output": "Creates config file with both TurboSign client and TurboPartner client, handler files, wires into main.go, adds .env with all 6 vars",
-      "files": ["go.mod", "cmd/server/main.go", "internal/handlers/.gitkeep"],
+      "files": [
+        "go.mod",
+        "cmd/server/main.go",
+        "internal/handlers/.gitkeep"
+      ],
       "assertions": [
-        {"name": "config-file-created", "type": "file_exists", "description": "A Go config/client file was created for TurboDocx"},
-        {"name": "config-has-both-clients", "type": "file_contains", "description": "Config file creates both NewClientWithConfig (TurboSign) and NewPartnerClient (TurboPartner)"},
-        {"name": "handler-files-created", "type": "file_exists", "description": "Handler files were created for signature and/or partner operations"},
-        {"name": "main-wired", "type": "file_contains", "description": "cmd/server/main.go was modified to import and register handlers"},
-        {"name": "env-has-all-vars", "type": "file_contains", "description": ".env contains all 6 vars: TURBODOCX_API_KEY, ORG_ID, SENDER_EMAIL, SENDER_NAME, PARTNER_API_KEY, PARTNER_ID"},
-        {"name": "uses-context", "type": "file_contains", "description": "Handler code uses context.Context for SDK calls (Go convention)"},
-        {"name": "follows-project-structure", "type": "file_exists", "description": "New files placed in internal/ directory (matching existing project structure)"}
+        {
+          "name": "config-file-created",
+          "type": "file_exists",
+          "description": "A Go config/client file was created for TurboDocx"
+        },
+        {
+          "name": "config-has-both-clients",
+          "type": "file_contains",
+          "description": "Config file creates both NewClientWithConfig (TurboSign) and NewPartnerClient (TurboPartner)"
+        },
+        {
+          "name": "handler-files-created",
+          "type": "file_exists",
+          "description": "Handler files were created for signature and/or partner operations"
+        },
+        {
+          "name": "main-wired",
+          "type": "file_contains",
+          "description": "cmd/server/main.go was modified to import and register handlers"
+        },
+        {
+          "name": "env-has-all-vars",
+          "type": "file_contains",
+          "description": ".env contains all 6 vars: TURBODOCX_API_KEY, ORG_ID, SENDER_EMAIL, SENDER_NAME, PARTNER_API_KEY, PARTNER_ID"
+        },
+        {
+          "name": "uses-context",
+          "type": "file_contains",
+          "description": "Handler code uses context.Context for SDK calls (Go convention)"
+        },
+        {
+          "name": "follows-project-structure",
+          "type": "file_exists",
+          "description": "New files placed in internal/ directory (matching existing project structure)"
+        }
       ]
     },
     {
       "id": 4,
       "prompt": "Add TurboSign digital signature support to my NestJS app. I need endpoints for sending documents for signing and checking signature status.",
       "expected_output": "Creates TurboSign config as NestJS service/module, controller with decorators, wires module into app.module.ts, adds .env with TurboSign vars",
-      "files": ["package.json", "nest-cli.json", "tsconfig.json", "src/app.module.ts", "src/main.ts", "src/app.controller.ts", "src/app.service.ts"],
+      "files": [
+        "package.json",
+        "nest-cli.json",
+        "tsconfig.json",
+        "src/app.module.ts",
+        "src/main.ts",
+        "src/app.controller.ts",
+        "src/app.service.ts"
+      ],
       "assertions": [
-        {"name": "config-file-created", "type": "file_exists", "description": "A TurboSign config/client file was created (e.g. turbodocx.service.ts or turbodocx.module.ts)"},
-        {"name": "config-has-turbosign", "type": "file_contains", "description": "Config file calls TurboSign.configure with API key and sender email env vars"},
-        {"name": "uses-nest-decorators", "type": "file_contains", "description": "Generated code uses NestJS decorators (@Controller, @Get, @Post, @Injectable, or @Module)"},
-        {"name": "controller-created", "type": "file_exists", "description": "A NestJS controller file was created for signature endpoints (not a plain Express Router)"},
-        {"name": "module-wired", "type": "file_contains", "description": "The signature module/controller is registered in app.module.ts or a feature module"},
-        {"name": "env-has-sign-vars", "type": "file_contains", "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_SENDER_EMAIL"},
-        {"name": "no-partner-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY (user only asked for TurboSign)"},
-        {"name": "no-express-router", "type": "file_not_contains", "description": "Generated code does NOT use Express Router() directly (should use NestJS patterns)"},
-        {"name": "uses-typescript", "type": "file_exists", "description": "Generated files use .ts extension"}
+        {
+          "name": "config-file-created",
+          "type": "file_exists",
+          "description": "A TurboSign config/client file was created (e.g. turbodocx.service.ts or turbodocx.module.ts)"
+        },
+        {
+          "name": "config-has-turbosign",
+          "type": "file_contains",
+          "description": "Config file calls TurboSign.configure with API key and sender email env vars"
+        },
+        {
+          "name": "uses-nest-decorators",
+          "type": "file_contains",
+          "description": "Generated code uses NestJS decorators (@Controller, @Get, @Post, @Injectable, or @Module)"
+        },
+        {
+          "name": "controller-created",
+          "type": "file_exists",
+          "description": "A NestJS controller file was created for signature endpoints (not a plain Express Router)"
+        },
+        {
+          "name": "module-wired",
+          "type": "file_contains",
+          "description": "The signature module/controller is registered in app.module.ts or a feature module"
+        },
+        {
+          "name": "env-has-sign-vars",
+          "type": "file_contains",
+          "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_SENDER_EMAIL"
+        },
+        {
+          "name": "no-partner-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY (user only asked for TurboSign)"
+        },
+        {
+          "name": "no-express-router",
+          "type": "file_not_contains",
+          "description": "Generated code does NOT use Express Router() directly (should use NestJS patterns)"
+        },
+        {
+          "name": "uses-typescript",
+          "type": "file_exists",
+          "description": "Generated files use .ts extension"
+        }
       ]
     },
     {
       "id": 5,
       "prompt": "Set up TurboDocx TurboSign in my Next.js app so I can send documents for e-signature and check their status. I'm using the App Router.",
       "expected_output": "Creates TurboSign config file, App Router API routes in app/api/, uses NextResponse, no main app wiring needed",
-      "files": ["package.json", "next.config.js", "tsconfig.json", "app/layout.tsx", "app/page.tsx", "app/api/health/route.ts"],
+      "files": [
+        "package.json",
+        "next.config.js",
+        "tsconfig.json",
+        "app/layout.tsx",
+        "app/page.tsx",
+        "app/api/health/route.ts"
+      ],
       "assertions": [
-        {"name": "config-file-created", "type": "file_exists", "description": "A TurboSign config/client file was created (e.g. lib/turbodocx.ts)"},
-        {"name": "config-has-turbosign", "type": "file_contains", "description": "Config file calls TurboSign.configure with API key and sender email env vars"},
-        {"name": "api-route-created", "type": "file_exists", "description": "API route handler created in app/api/ directory using Next.js App Router conventions (route.ts)"},
-        {"name": "uses-route-handlers", "type": "file_contains", "description": "API routes export named functions (GET, POST) — Next.js App Router pattern, not pages/api style"},
-        {"name": "no-app-wiring", "type": "file_not_contains", "description": "No attempt to wire routes into a main app file (Next.js uses file-based routing)"},
-        {"name": "env-has-sign-vars", "type": "file_contains", "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_SENDER_EMAIL"},
-        {"name": "no-partner-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY (user only asked for TurboSign)"},
-        {"name": "uses-typescript", "type": "file_exists", "description": "Generated files use .ts or .tsx extension"},
-        {"name": "uses-nextresponse", "type": "file_contains", "description": "API route handlers use NextRequest/NextResponse or Response (not Express req/res)"}
+        {
+          "name": "config-file-created",
+          "type": "file_exists",
+          "description": "A TurboSign config/client file was created (e.g. lib/turbodocx.ts)"
+        },
+        {
+          "name": "config-has-turbosign",
+          "type": "file_contains",
+          "description": "Config file calls TurboSign.configure with API key and sender email env vars"
+        },
+        {
+          "name": "api-route-created",
+          "type": "file_exists",
+          "description": "API route handler created in app/api/ directory using Next.js App Router conventions (route.ts)"
+        },
+        {
+          "name": "uses-route-handlers",
+          "type": "file_contains",
+          "description": "API routes export named functions (GET, POST) — Next.js App Router pattern, not pages/api style"
+        },
+        {
+          "name": "no-app-wiring",
+          "type": "file_not_contains",
+          "description": "No attempt to wire routes into a main app file (Next.js uses file-based routing)"
+        },
+        {
+          "name": "env-has-sign-vars",
+          "type": "file_contains",
+          "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_SENDER_EMAIL"
+        },
+        {
+          "name": "no-partner-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY (user only asked for TurboSign)"
+        },
+        {
+          "name": "uses-typescript",
+          "type": "file_exists",
+          "description": "Generated files use .ts or .tsx extension"
+        },
+        {
+          "name": "uses-nextresponse",
+          "type": "file_contains",
+          "description": "API route handlers use NextRequest/NextResponse or Response (not Express req/res)"
+        }
       ]
     },
     {
       "id": 6,
       "prompt": "Set up TurboDocx TurboPartner in my Django app so I can provision and manage customer organizations through API endpoints.",
       "expected_output": "Creates TurboPartner config, Django views, URL patterns wired into project urls.py, adds .env with TurboPartner vars",
-      "files": ["requirements.txt", "manage.py", "myproject/settings.py", "myproject/urls.py", "myproject/wsgi.py", "myproject/__init__.py"],
+      "files": [
+        "requirements.txt",
+        "manage.py",
+        "myproject/settings.py",
+        "myproject/urls.py",
+        "myproject/wsgi.py",
+        "myproject/__init__.py"
+      ],
       "assertions": [
-        {"name": "config-file-created", "type": "file_exists", "description": "A TurboPartner config file was created"},
-        {"name": "config-has-turbopartner", "type": "file_contains", "description": "Config file calls TurboPartner.configure with partner API key and partner ID env vars"},
-        {"name": "views-created", "type": "file_exists", "description": "Django views file was created for partner/organization management"},
-        {"name": "urls-wired", "type": "file_contains", "description": "URL patterns are defined and included in the project urls.py"},
-        {"name": "uses-django-patterns", "type": "file_contains", "description": "Generated code uses Django patterns (views, urlpatterns, JsonResponse or DRF serializers)"},
-        {"name": "no-fastapi-patterns", "type": "file_not_contains", "description": "Generated code does NOT use FastAPI patterns (APIRouter, FastAPI(), @app.post)"},
-        {"name": "env-has-partner-vars", "type": "file_contains", "description": ".env contains TURBODOCX_PARTNER_API_KEY and TURBODOCX_PARTNER_ID"},
-        {"name": "no-sign-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_API_KEY (user only asked for TurboPartner)"}
+        {
+          "name": "config-file-created",
+          "type": "file_exists",
+          "description": "A TurboPartner config file was created"
+        },
+        {
+          "name": "config-has-turbopartner",
+          "type": "file_contains",
+          "description": "Config file calls TurboPartner.configure with partner API key and partner ID env vars"
+        },
+        {
+          "name": "views-created",
+          "type": "file_exists",
+          "description": "Django views file was created for partner/organization management"
+        },
+        {
+          "name": "urls-wired",
+          "type": "file_contains",
+          "description": "URL patterns are defined and included in the project urls.py"
+        },
+        {
+          "name": "uses-django-patterns",
+          "type": "file_contains",
+          "description": "Generated code uses Django patterns (views, urlpatterns, JsonResponse or DRF serializers)"
+        },
+        {
+          "name": "no-fastapi-patterns",
+          "type": "file_not_contains",
+          "description": "Generated code does NOT use FastAPI patterns (APIRouter, FastAPI(), @app.post)"
+        },
+        {
+          "name": "env-has-partner-vars",
+          "type": "file_contains",
+          "description": ".env contains TURBODOCX_PARTNER_API_KEY and TURBODOCX_PARTNER_ID"
+        },
+        {
+          "name": "no-sign-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_API_KEY (user only asked for TurboPartner)"
+        }
       ]
     },
     {
       "id": 7,
       "prompt": "Add TurboSign digital signature functionality to my Spring Boot app. I need REST endpoints for sending documents for signing and checking signature status.",
       "expected_output": "Creates TurboSign config with Builder pattern, Spring @RestController, proper Java package structure, application.properties with vars",
-      "files": ["pom.xml", "src/main/java/com/example/app/Application.java", "src/main/java/com/example/app/HealthController.java", "src/main/resources/application.properties"],
+      "files": [
+        "pom.xml",
+        "src/main/java/com/example/app/Application.java",
+        "src/main/java/com/example/app/HealthController.java",
+        "src/main/resources/application.properties"
+      ],
       "assertions": [
-        {"name": "config-file-created", "type": "file_exists", "description": "A TurboSign config/client file was created (e.g. TurboDocxConfig.java or TurboSignService.java)"},
-        {"name": "config-has-turbosign", "type": "file_contains", "description": "Config file creates TurboSign client using Builder pattern with API key and sender email"},
-        {"name": "controller-created", "type": "file_exists", "description": "A Spring @RestController was created for signature endpoints"},
-        {"name": "uses-spring-annotations", "type": "file_contains", "description": "Generated code uses Spring annotations (@RestController, @PostMapping, @GetMapping, @Bean, @Configuration)"},
-        {"name": "env-has-sign-vars", "type": "file_contains", "description": "application.properties or .env contains turbodocx.api-key and turbodocx.sender-email (or TURBODOCX_ env vars)"},
-        {"name": "no-partner-vars", "type": "file_not_contains", "description": "Config does NOT contain partner API key variables (user only asked for TurboSign)"},
-        {"name": "follows-java-conventions", "type": "file_exists", "description": "Files placed in proper Java package directory structure (src/main/java/...)"},
-        {"name": "uses-java-extension", "type": "file_exists", "description": "Generated files use .java extension"}
+        {
+          "name": "config-file-created",
+          "type": "file_exists",
+          "description": "A TurboSign config/client file was created (e.g. TurboDocxConfig.java or TurboSignService.java)"
+        },
+        {
+          "name": "config-has-turbosign",
+          "type": "file_contains",
+          "description": "Config file creates TurboSign client using Builder pattern with API key and sender email"
+        },
+        {
+          "name": "controller-created",
+          "type": "file_exists",
+          "description": "A Spring @RestController was created for signature endpoints"
+        },
+        {
+          "name": "uses-spring-annotations",
+          "type": "file_contains",
+          "description": "Generated code uses Spring annotations (@RestController, @PostMapping, @GetMapping, @Bean, @Configuration)"
+        },
+        {
+          "name": "env-has-sign-vars",
+          "type": "file_contains",
+          "description": "application.properties or .env contains turbodocx.api-key and turbodocx.sender-email (or TURBODOCX_ env vars)"
+        },
+        {
+          "name": "no-partner-vars",
+          "type": "file_not_contains",
+          "description": "Config does NOT contain partner API key variables (user only asked for TurboSign)"
+        },
+        {
+          "name": "follows-java-conventions",
+          "type": "file_exists",
+          "description": "Files placed in proper Java package directory structure (src/main/java/...)"
+        },
+        {
+          "name": "uses-java-extension",
+          "type": "file_exists",
+          "description": "Generated files use .java extension"
+        }
       ]
     },
     {
       "id": 8,
       "prompt": "Set up TurboDocx TurboPartner in my Laravel app so I can create and manage customer organizations via API endpoints.",
       "expected_output": "Creates TurboPartner config/service, Laravel controller, routes in routes/api.php, adds .env with TurboPartner vars",
-      "files": ["composer.json", "routes/api.php", "routes/web.php", "app/Http/Controllers/Controller.php", "app/Providers/AppServiceProvider.php", "bootstrap/app.php"],
+      "files": [
+        "composer.json",
+        "routes/api.php",
+        "routes/web.php",
+        "app/Http/Controllers/Controller.php",
+        "app/Providers/AppServiceProvider.php",
+        "bootstrap/app.php"
+      ],
       "assertions": [
-        {"name": "config-file-created", "type": "file_exists", "description": "A TurboPartner config or service file was created"},
-        {"name": "config-has-turbopartner", "type": "file_contains", "description": "Config file calls TurboPartner::configure or creates TurboPartner client with partner API key and partner ID"},
-        {"name": "controller-created", "type": "file_exists", "description": "A Laravel controller was created for partner/organization management"},
-        {"name": "routes-defined", "type": "file_contains", "description": "API routes are defined in routes/api.php using Route::get/post or Route::resource"},
-        {"name": "uses-laravel-patterns", "type": "file_contains", "description": "Generated code uses Laravel patterns (Controller class, response()->json(), Request injection)"},
-        {"name": "env-has-partner-vars", "type": "file_contains", "description": ".env contains TURBODOCX_PARTNER_API_KEY and TURBODOCX_PARTNER_ID"},
-        {"name": "no-sign-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_API_KEY (user only asked for TurboPartner)"},
-        {"name": "uses-php-extension", "type": "file_exists", "description": "Generated files use .php extension"}
+        {
+          "name": "config-file-created",
+          "type": "file_exists",
+          "description": "A TurboPartner config or service file was created"
+        },
+        {
+          "name": "config-has-turbopartner",
+          "type": "file_contains",
+          "description": "Config file calls TurboPartner::configure or creates TurboPartner client with partner API key and partner ID"
+        },
+        {
+          "name": "controller-created",
+          "type": "file_exists",
+          "description": "A Laravel controller was created for partner/organization management"
+        },
+        {
+          "name": "routes-defined",
+          "type": "file_contains",
+          "description": "API routes are defined in routes/api.php using Route::get/post or Route::resource"
+        },
+        {
+          "name": "uses-laravel-patterns",
+          "type": "file_contains",
+          "description": "Generated code uses Laravel patterns (Controller class, response()->json(), Request injection)"
+        },
+        {
+          "name": "env-has-partner-vars",
+          "type": "file_contains",
+          "description": ".env contains TURBODOCX_PARTNER_API_KEY and TURBODOCX_PARTNER_ID"
+        },
+        {
+          "name": "no-sign-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_API_KEY (user only asked for TurboPartner)"
+        },
+        {
+          "name": "uses-php-extension",
+          "type": "file_exists",
+          "description": "Generated files use .php extension"
+        }
       ]
     },
     {
       "id": 9,
       "prompt": "I need both TurboSign and TurboPartner in my Gin project. Set up the TurboDocx SDK with both products.",
       "expected_output": "Creates config with both clients, Gin handlers using *gin.Context, routes with r.POST/r.GET, .env with all 6 vars",
-      "files": ["go.mod", "main.go", "internal/handlers/.gitkeep", "internal/config/.gitkeep"],
+      "files": [
+        "go.mod",
+        "main.go",
+        "internal/handlers/.gitkeep",
+        "internal/config/.gitkeep"
+      ],
       "assertions": [
-        {"name": "config-file-created", "type": "file_exists", "description": "A Go config/client file was created for TurboDocx"},
-        {"name": "config-has-both-clients", "type": "file_contains", "description": "Config file creates both NewClientWithConfig (TurboSign) and NewPartnerClient (TurboPartner)"},
-        {"name": "handler-files-created", "type": "file_exists", "description": "Handler files were created for signature and partner operations"},
-        {"name": "uses-gin-context", "type": "file_contains", "description": "Handler functions use *gin.Context parameter (not http.ResponseWriter/http.Request)"},
-        {"name": "routes-use-gin", "type": "file_contains", "description": "Routes registered using gin methods (r.POST, r.GET, router.Group) not http.HandleFunc"},
-        {"name": "env-has-all-vars", "type": "file_contains", "description": ".env contains all 6 vars: TURBODOCX_API_KEY, ORG_ID, SENDER_EMAIL, SENDER_NAME, PARTNER_API_KEY, PARTNER_ID"},
-        {"name": "uses-context", "type": "file_contains", "description": "Handler code uses context.Context or c.Request.Context() for SDK calls"},
-        {"name": "follows-project-structure", "type": "file_exists", "description": "New files placed in internal/ directory (matching existing project structure)"}
+        {
+          "name": "config-file-created",
+          "type": "file_exists",
+          "description": "A Go config/client file was created for TurboDocx"
+        },
+        {
+          "name": "config-has-both-clients",
+          "type": "file_contains",
+          "description": "Config file creates both NewClientWithConfig (TurboSign) and NewPartnerClient (TurboPartner)"
+        },
+        {
+          "name": "handler-files-created",
+          "type": "file_exists",
+          "description": "Handler files were created for signature and partner operations"
+        },
+        {
+          "name": "uses-gin-context",
+          "type": "file_contains",
+          "description": "Handler functions use *gin.Context parameter (not http.ResponseWriter/http.Request)"
+        },
+        {
+          "name": "routes-use-gin",
+          "type": "file_contains",
+          "description": "Routes registered using gin methods (r.POST, r.GET, router.Group) not http.HandleFunc"
+        },
+        {
+          "name": "env-has-all-vars",
+          "type": "file_contains",
+          "description": ".env contains all 6 vars: TURBODOCX_API_KEY, ORG_ID, SENDER_EMAIL, SENDER_NAME, PARTNER_API_KEY, PARTNER_ID"
+        },
+        {
+          "name": "uses-context",
+          "type": "file_contains",
+          "description": "Handler code uses context.Context or c.Request.Context() for SDK calls"
+        },
+        {
+          "name": "follows-project-structure",
+          "type": "file_exists",
+          "description": "New files placed in internal/ directory (matching existing project structure)"
+        }
       ]
     },
     {
       "id": 13,
       "prompt": "Set up TurboDocx in my Express app so I can generate documents from a template by passing in variable values. I have a contract template in TurboDocx and want to programmatically render it for each customer.",
       "expected_output": "Creates a Deliverable config file, route handlers for generateDeliverable and downloadPDF, wires routes into the main app, adds .env with shared TurboDocx vars (no sender email since Deliverable doesn't send mail), installs @turbodocx/sdk",
-      "files": ["package.json", "tsconfig.json", "src/index.ts", "package-lock.json"],
+      "files": [
+        "package.json",
+        "tsconfig.json",
+        "src/index.ts",
+        "package-lock.json"
+      ],
       "assertions": [
-        {"name": "config-file-created", "type": "file_exists", "description": "A Deliverable config/client file was created"},
-        {"name": "config-has-deliverable", "type": "file_contains", "description": "Config file calls Deliverable.configure with apiKey and orgId env vars"},
-        {"name": "no-sender-config", "type": "file_not_contains", "description": "Deliverable.configure does NOT pass senderEmail/senderName (those are TurboSign-only)"},
-        {"name": "route-file-created", "type": "file_exists", "description": "A route/handler file for deliverable generation was created"},
-        {"name": "uses-generateDeliverable", "type": "file_contains", "description": "Route handler calls Deliverable.generateDeliverable with templateId + variables"},
-        {"name": "routes-wired", "type": "file_contains", "description": "Main app file (src/index.ts) was modified to import and register deliverable routes"},
-        {"name": "env-has-shared-vars", "type": "file_contains", "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_ORG_ID"},
-        {"name": "no-sender-env-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL (Deliverable doesn't need sender vars)"},
-        {"name": "no-partner-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY"},
-        {"name": "gitignore-has-env", "type": "file_contains", "description": ".gitignore includes .env"}
+        {
+          "name": "config-file-created",
+          "type": "file_exists",
+          "description": "A Deliverable config/client file was created"
+        },
+        {
+          "name": "config-has-deliverable",
+          "type": "file_contains",
+          "description": "Config file calls Deliverable.configure with apiKey and orgId env vars"
+        },
+        {
+          "name": "no-sender-config",
+          "type": "file_not_contains",
+          "description": "Deliverable.configure does NOT pass senderEmail/senderName (those are TurboSign-only)"
+        },
+        {
+          "name": "route-file-created",
+          "type": "file_exists",
+          "description": "A route/handler file for deliverable generation was created"
+        },
+        {
+          "name": "uses-generateDeliverable",
+          "type": "file_contains",
+          "description": "Route handler calls Deliverable.generateDeliverable with templateId + variables"
+        },
+        {
+          "name": "routes-wired",
+          "type": "file_contains",
+          "description": "Main app file (src/index.ts) was modified to import and register deliverable routes"
+        },
+        {
+          "name": "env-has-shared-vars",
+          "type": "file_contains",
+          "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_ORG_ID"
+        },
+        {
+          "name": "no-sender-env-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL (Deliverable doesn't need sender vars)"
+        },
+        {
+          "name": "no-partner-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY"
+        },
+        {
+          "name": "gitignore-has-env",
+          "type": "file_contains",
+          "description": ".gitignore includes .env"
+        }
       ]
     },
     {
       "id": 14,
       "prompt": "I'm building a contract automation flow in my Next.js App Router app. When a user submits a form, I need to generate a contract from a TurboDocx template, then immediately route it for e-signature. Set everything up.",
       "expected_output": "Creates a config file with both Deliverable and TurboSign clients, an App Router API route that calls Deliverable.generateDeliverable then TurboSign.sendSignature with the returned deliverableId, adds .env with shared API key/org + sender vars",
-      "files": ["package.json", "next.config.js", "tsconfig.json", "app/layout.tsx", "app/page.tsx"],
+      "files": [
+        "package.json",
+        "next.config.js",
+        "tsconfig.json",
+        "app/layout.tsx",
+        "app/page.tsx"
+      ],
       "assertions": [
-        {"name": "config-file-created", "type": "file_exists", "description": "A TurboDocx config/client file was created"},
-        {"name": "config-has-both-modules", "type": "file_contains", "description": "Config file configures both Deliverable AND TurboSign"},
-        {"name": "api-route-created", "type": "file_exists", "description": "API route handler created in app/api/ directory using Next.js App Router conventions (route.ts)"},
-        {"name": "calls-generateDeliverable", "type": "file_contains", "description": "Route handler calls Deliverable.generateDeliverable"},
-        {"name": "uses-deliverableId-not-buffer", "type": "file_contains", "description": "Route handler passes deliverableId to TurboSign.sendSignature (does NOT download the generated document and re-upload as a file/Buffer)"},
-        {"name": "uses-route-handlers", "type": "file_contains", "description": "API routes export named functions (POST) — Next.js App Router pattern"},
-        {"name": "env-has-shared-vars", "type": "file_contains", "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_ORG_ID"},
-        {"name": "env-has-sender-vars", "type": "file_contains", "description": ".env contains TURBODOCX_SENDER_EMAIL (required by TurboSign)"},
-        {"name": "no-partner-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY"},
-        {"name": "no-app-wiring", "type": "file_not_contains", "description": "No attempt to wire routes into a main app file (Next.js uses file-based routing)"}
+        {
+          "name": "config-file-created",
+          "type": "file_exists",
+          "description": "A TurboDocx config/client file was created"
+        },
+        {
+          "name": "config-has-both-modules",
+          "type": "file_contains",
+          "description": "Config file configures both Deliverable AND TurboSign"
+        },
+        {
+          "name": "api-route-created",
+          "type": "file_exists",
+          "description": "API route handler created in app/api/ directory using Next.js App Router conventions (route.ts)"
+        },
+        {
+          "name": "calls-generateDeliverable",
+          "type": "file_contains",
+          "description": "Route handler calls Deliverable.generateDeliverable"
+        },
+        {
+          "name": "uses-deliverableId-not-buffer",
+          "type": "file_contains",
+          "description": "Route handler passes deliverableId to TurboSign.sendSignature (does NOT download the generated document and re-upload as a file/Buffer)"
+        },
+        {
+          "name": "uses-route-handlers",
+          "type": "file_contains",
+          "description": "API routes export named functions (POST) — Next.js App Router pattern"
+        },
+        {
+          "name": "env-has-shared-vars",
+          "type": "file_contains",
+          "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_ORG_ID"
+        },
+        {
+          "name": "env-has-sender-vars",
+          "type": "file_contains",
+          "description": ".env contains TURBODOCX_SENDER_EMAIL (required by TurboSign)"
+        },
+        {
+          "name": "no-partner-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY"
+        },
+        {
+          "name": "no-app-wiring",
+          "type": "file_not_contains",
+          "description": "No attempt to wire routes into a main app file (Next.js uses file-based routing)"
+        }
       ]
     },
     {
       "id": 16,
       "prompt": "Add the ability to my Express app to cancel a signature request with a reason (e.g. counterparty wanted revisions) and to resend reminder emails to specific recipients who haven't signed yet.",
       "expected_output": "Creates endpoints calling TurboSign.void(documentId, reason) and TurboSign.resend(documentId, recipientIds) with the correct names and parameter types",
-      "files": ["package.json", "tsconfig.json", "src/index.ts", "package-lock.json"],
+      "files": [
+        "package.json",
+        "tsconfig.json",
+        "src/index.ts",
+        "package-lock.json"
+      ],
       "assertions": [
-        {"name": "uses-void-correct-name", "type": "file_contains", "description": "Route handler calls TurboSign.void (the correct method name) — NOT TurboSign.voidDocument"},
-        {"name": "passes-reason-arg", "type": "file_contains", "description": "TurboSign.void is called with a reason argument (second parameter)"},
-        {"name": "uses-resend-correct-name", "type": "file_contains", "description": "Route handler calls TurboSign.resend (the correct method name) — NOT TurboSign.resendEmail"},
-        {"name": "passes-recipient-ids-array", "type": "file_contains", "description": "TurboSign.resend is called with an array of recipient IDs/UUIDs — NOT a single recipient email string"},
-        {"name": "no-obsolete-names", "type": "file_not_contains", "description": "Code does NOT contain TurboSign.voidDocument or TurboSign.resendEmail (those are wrong names from the old skill)"},
-        {"name": "config-file-created", "type": "file_exists", "description": "A TurboSign config/client file was created"},
-        {"name": "routes-wired", "type": "file_contains", "description": "Main app file (src/index.ts) was modified to register the new routes"},
-        {"name": "env-has-sign-vars", "type": "file_contains", "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_SENDER_EMAIL"}
+        {
+          "name": "uses-void-correct-name",
+          "type": "file_contains",
+          "description": "Route handler calls TurboSign.void (the correct method name) — NOT TurboSign.voidDocument"
+        },
+        {
+          "name": "passes-reason-arg",
+          "type": "file_contains",
+          "description": "TurboSign.void is called with a reason argument (second parameter)"
+        },
+        {
+          "name": "uses-resend-correct-name",
+          "type": "file_contains",
+          "description": "Route handler calls TurboSign.resend (the correct method name) — NOT TurboSign.resendEmail"
+        },
+        {
+          "name": "passes-recipient-ids-array",
+          "type": "file_contains",
+          "description": "TurboSign.resend is called with an array of recipient IDs/UUIDs — NOT a single recipient email string"
+        },
+        {
+          "name": "no-obsolete-names",
+          "type": "file_not_contains",
+          "description": "Code does NOT contain TurboSign.voidDocument or TurboSign.resendEmail (those are wrong names from the old skill)"
+        },
+        {
+          "name": "config-file-created",
+          "type": "file_exists",
+          "description": "A TurboSign config/client file was created"
+        },
+        {
+          "name": "routes-wired",
+          "type": "file_contains",
+          "description": "Main app file (src/index.ts) was modified to register the new routes"
+        },
+        {
+          "name": "env-has-sign-vars",
+          "type": "file_contains",
+          "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_SENDER_EMAIL"
+        }
       ]
     },
     {
       "id": 17,
       "prompt": "Once a signature is completed, I want users to download the signed PDF directly from my Express app. Add a download endpoint that streams the file back with the right Content-Type header so the browser downloads it as a PDF.",
       "expected_output": "Creates a download endpoint that calls TurboSign.download(documentId), correctly converts the Blob to a Node Buffer, and streams it with application/pdf Content-Type",
-      "files": ["package.json", "tsconfig.json", "src/index.ts", "package-lock.json"],
+      "files": [
+        "package.json",
+        "tsconfig.json",
+        "src/index.ts",
+        "package-lock.json"
+      ],
       "assertions": [
-        {"name": "uses-download-method", "type": "file_contains", "description": "Route handler calls TurboSign.download(documentId)"},
-        {"name": "handles-blob-correctly", "type": "file_contains", "description": "Code calls .arrayBuffer() on the result (or otherwise correctly handles Blob — does NOT treat result as a Node Buffer directly which would be wrong)"},
-        {"name": "no-direct-buffer-assumption", "type": "file_not_contains", "description": "Code does NOT directly do `const buffer: Buffer = await TurboSign.download(...)` or `(await TurboSign.download(...)).pipe(...)` — these patterns assume Buffer/stream and would fail at runtime since download returns Blob"},
-        {"name": "sets-pdf-content-type", "type": "file_contains", "description": "Response sets Content-Type to application/pdf"},
-        {"name": "sets-content-disposition", "type": "file_contains", "description": "Response sets Content-Disposition header so browser downloads as a file (attachment or inline)"},
-        {"name": "config-file-created", "type": "file_exists", "description": "A TurboSign config/client file was created"},
-        {"name": "routes-wired", "type": "file_contains", "description": "Main app file (src/index.ts) was modified to register the download route"},
-        {"name": "env-has-sign-vars", "type": "file_contains", "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_SENDER_EMAIL"}
+        {
+          "name": "uses-download-method",
+          "type": "file_contains",
+          "description": "Route handler calls TurboSign.download(documentId)"
+        },
+        {
+          "name": "handles-blob-correctly",
+          "type": "file_contains",
+          "description": "Code calls .arrayBuffer() on the result (or otherwise correctly handles Blob — does NOT treat result as a Node Buffer directly which would be wrong)"
+        },
+        {
+          "name": "no-direct-buffer-assumption",
+          "type": "file_not_contains",
+          "description": "Code does NOT directly do `const buffer: Buffer = await TurboSign.download(...)` or `(await TurboSign.download(...)).pipe(...)` — these patterns assume Buffer/stream and would fail at runtime since download returns Blob"
+        },
+        {
+          "name": "sets-pdf-content-type",
+          "type": "file_contains",
+          "description": "Response sets Content-Type to application/pdf"
+        },
+        {
+          "name": "sets-content-disposition",
+          "type": "file_contains",
+          "description": "Response sets Content-Disposition header so browser downloads as a file (attachment or inline)"
+        },
+        {
+          "name": "config-file-created",
+          "type": "file_exists",
+          "description": "A TurboSign config/client file was created"
+        },
+        {
+          "name": "routes-wired",
+          "type": "file_contains",
+          "description": "Main app file (src/index.ts) was modified to register the download route"
+        },
+        {
+          "name": "env-has-sign-vars",
+          "type": "file_contains",
+          "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_SENDER_EMAIL"
+        }
       ]
     },
     {
       "id": 18,
       "prompt": "I'm a TurboDocx partner building an admin dashboard for my customers' onboarding. I need three things in my Express app: (1) provision a new customer organization, (2) invite a user to that newly-created org with a 'contributor' role, and (3) issue an org-scoped API key for the new org. Set everything up.",
       "expected_output": "Creates TurboPartner config + endpoints for createOrganization, addUserToOrganization, createOrganizationApiKey — and surfaces the API key value (only returned once) in the response",
-      "files": ["package.json", "tsconfig.json", "src/index.ts", "package-lock.json"],
+      "files": [
+        "package.json",
+        "tsconfig.json",
+        "src/index.ts",
+        "package-lock.json"
+      ],
       "assertions": [
-        {"name": "config-file-created", "type": "file_exists", "description": "A TurboPartner config/client file was created"},
-        {"name": "calls-createOrganization", "type": "file_contains", "description": "Route handler calls TurboPartner.createOrganization"},
-        {"name": "calls-addUserToOrganization", "type": "file_contains", "description": "Route handler calls TurboPartner.addUserToOrganization with an email and role"},
-        {"name": "uses-contributor-role", "type": "file_contains", "description": "addUserToOrganization is called with role 'contributor' (matching the user request)"},
-        {"name": "calls-createOrganizationApiKey", "type": "file_contains", "description": "Route handler calls TurboPartner.createOrganizationApiKey"},
-        {"name": "surfaces-api-key-value", "type": "file_contains", "description": "Response returns or surfaces the key field from the createOrganizationApiKey response (.data.key) — this is critical because the full key value is only returned on creation"},
-        {"name": "routes-wired", "type": "file_contains", "description": "Main app file (src/index.ts) was modified to register the new routes"},
-        {"name": "env-has-partner-vars", "type": "file_contains", "description": ".env contains TURBODOCX_PARTNER_API_KEY and TURBODOCX_PARTNER_ID"},
-        {"name": "no-sign-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL (partner-only, no signatures requested)"}
+        {
+          "name": "config-file-created",
+          "type": "file_exists",
+          "description": "A TurboPartner config/client file was created"
+        },
+        {
+          "name": "calls-createOrganization",
+          "type": "file_contains",
+          "description": "Route handler calls TurboPartner.createOrganization"
+        },
+        {
+          "name": "calls-addUserToOrganization",
+          "type": "file_contains",
+          "description": "Route handler calls TurboPartner.addUserToOrganization with an email and role"
+        },
+        {
+          "name": "uses-contributor-role",
+          "type": "file_contains",
+          "description": "addUserToOrganization is called with role 'contributor' (matching the user request)"
+        },
+        {
+          "name": "calls-createOrganizationApiKey",
+          "type": "file_contains",
+          "description": "Route handler calls TurboPartner.createOrganizationApiKey"
+        },
+        {
+          "name": "surfaces-api-key-value",
+          "type": "file_contains",
+          "description": "Response returns or surfaces the key field from the createOrganizationApiKey response (.data.key) — this is critical because the full key value is only returned on creation"
+        },
+        {
+          "name": "routes-wired",
+          "type": "file_contains",
+          "description": "Main app file (src/index.ts) was modified to register the new routes"
+        },
+        {
+          "name": "env-has-partner-vars",
+          "type": "file_contains",
+          "description": ".env contains TURBODOCX_PARTNER_API_KEY and TURBODOCX_PARTNER_ID"
+        },
+        {
+          "name": "no-sign-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL (partner-only, no signatures requested)"
+        }
       ]
     },
     {
       "id": 15,
       "prompt": "Set up TurboDocx in my Express app. I need to upload a contract PDF, place signature fields on it, and then show the user a preview/review URL so they can verify the field placement BEFORE the document is actually sent for signature. Once they confirm the preview looks right, that's when I'll send it.",
       "expected_output": "Creates a TurboSign config file, route handlers for both createSignatureReviewLink (preview, no emails sent) AND sendSignature (final send), exposes previewUrl from the review response, wires routes into the main app",
-      "files": ["package.json", "tsconfig.json", "src/index.ts", "package-lock.json"],
+      "files": [
+        "package.json",
+        "tsconfig.json",
+        "src/index.ts",
+        "package-lock.json"
+      ],
       "assertions": [
-        {"name": "config-file-created", "type": "file_exists", "description": "A TurboSign config/client file was created"},
-        {"name": "uses-createSignatureReviewLink", "type": "file_contains", "description": "Route handler calls TurboSign.createSignatureReviewLink (the preview-without-sending method)"},
-        {"name": "surfaces-previewUrl", "type": "file_contains", "description": "Route handler returns or surfaces the previewUrl field from the createSignatureReviewLink response"},
-        {"name": "separate-from-send", "type": "file_contains", "description": "Preview endpoint exists at a different path than the send endpoint (e.g. /review and /send) — the user wants two-step flow"},
-        {"name": "uses-sendSignature-for-final", "type": "file_contains", "description": "A separate sendSignature endpoint exists for the final send step (this is the two-step preview-then-send workflow)"},
-        {"name": "routes-wired", "type": "file_contains", "description": "Main app file (src/index.ts) was modified to import and register the routes"},
-        {"name": "env-has-sign-vars", "type": "file_contains", "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_SENDER_EMAIL"},
-        {"name": "no-partner-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY"}
+        {
+          "name": "config-file-created",
+          "type": "file_exists",
+          "description": "A TurboSign config/client file was created"
+        },
+        {
+          "name": "uses-createSignatureReviewLink",
+          "type": "file_contains",
+          "description": "Route handler calls TurboSign.createSignatureReviewLink (the preview-without-sending method)"
+        },
+        {
+          "name": "surfaces-previewUrl",
+          "type": "file_contains",
+          "description": "Route handler returns or surfaces the previewUrl field from the createSignatureReviewLink response"
+        },
+        {
+          "name": "separate-from-send",
+          "type": "file_contains",
+          "description": "Preview endpoint exists at a different path than the send endpoint (e.g. /review and /send) — the user wants two-step flow"
+        },
+        {
+          "name": "uses-sendSignature-for-final",
+          "type": "file_contains",
+          "description": "A separate sendSignature endpoint exists for the final send step (this is the two-step preview-then-send workflow)"
+        },
+        {
+          "name": "routes-wired",
+          "type": "file_contains",
+          "description": "Main app file (src/index.ts) was modified to import and register the routes"
+        },
+        {
+          "name": "env-has-sign-vars",
+          "type": "file_contains",
+          "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_SENDER_EMAIL"
+        },
+        {
+          "name": "no-partner-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY"
+        }
       ]
     },
     {
       "id": 19,
       "prompt": "Set up TurboDocx webhooks in my Express app so I can receive real-time signature.document.completed events instead of polling. I need (1) an endpoint that receives the webhook POST and verifies the X-TurboDocx-Signature header, and (2) an admin endpoint that registers the signature webhook with TurboDocx so my receiver URL gets called.",
       "expected_output": "Creates a TurboWebhooks config (admin-scoped, NO senderEmail), an unauthenticated POST /webhooks/turbodocx receiver that reads the RAW body and calls verifyWebhookSignature before trusting the payload, and an admin endpoint that calls TurboWebhooks.createWebhook and surfaces the secret (shown once). Adds .env with TURBODOCX_API_KEY, TURBODOCX_ORG_ID, TURBODOCX_WEBHOOK_SECRET — no sender email, no partner vars.",
-      "files": ["package.json", "tsconfig.json", "src/index.ts", "package-lock.json"],
+      "files": [
+        "package.json",
+        "tsconfig.json",
+        "src/index.ts",
+        "package-lock.json"
+      ],
       "assertions": [
-        {"name": "config-file-created", "type": "file_exists", "description": "A TurboWebhooks config/client file was created"},
-        {"name": "config-uses-webhooks-configure", "type": "file_contains", "description": "Config file calls TurboWebhooks.configure (or imports and configures the TurboWebhooks module) with apiKey and orgId — NOT TurboSign.configure"},
-        {"name": "no-sender-email-in-config", "type": "file_not_contains", "description": "TurboWebhooks.configure is NOT called with senderEmail/senderName — webhook routes don't send email and the SDK skips that validation"},
-        {"name": "receiver-route-created", "type": "file_exists", "description": "An HTTP route file was created for the inbound webhook receiver (e.g. POST /webhooks/turbodocx)"},
-        {"name": "uses-raw-body", "type": "file_contains", "description": "Receiver route uses express.raw({ type: 'application/json' }) middleware (or otherwise captures the raw request body as a Buffer) — required because the HMAC is computed over exact bytes"},
-        {"name": "calls-verifyWebhookSignature", "type": "file_contains", "description": "Receiver calls verifyWebhookSignature (the free function imported from @turbodocx/sdk) with the raw body, X-TurboDocx-Signature header, X-TurboDocx-Timestamp header, and the secret"},
-        {"name": "no-json-parse-before-verify", "type": "file_not_contains", "description": "Code does NOT use express.json() / JSON.parse / req.body as a parsed object BEFORE verifying the signature — that would lose whitespace and break HMAC"},
-        {"name": "calls-createWebhook", "type": "file_contains", "description": "An admin endpoint calls TurboWebhooks.createWebhook with HTTPS urls and an events array"},
-        {"name": "surfaces-secret-once", "type": "file_contains", "description": "Response from the create endpoint exposes the secret field (shown ONCE — must be captured by the caller)"},
-        {"name": "routes-wired", "type": "file_contains", "description": "Main app file (src/index.ts) was modified to register the webhook receiver and admin routes"},
-        {"name": "env-has-webhook-vars", "type": "file_contains", "description": ".env contains TURBODOCX_API_KEY, TURBODOCX_ORG_ID, and TURBODOCX_WEBHOOK_SECRET"},
-        {"name": "no-sender-env-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL (TurboWebhooks does not send mail — this is a common confusion with TurboSign)"},
-        {"name": "no-partner-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY"},
-        {"name": "gitignore-has-env", "type": "file_contains", "description": ".gitignore includes .env"}
+        {
+          "name": "config-file-created",
+          "type": "file_exists",
+          "description": "A TurboWebhooks config/client file was created"
+        },
+        {
+          "name": "config-uses-webhooks-configure",
+          "type": "file_contains",
+          "description": "Config file calls TurboWebhooks.configure (or imports and configures the TurboWebhooks module) with apiKey and orgId — NOT TurboSign.configure"
+        },
+        {
+          "name": "no-sender-email-in-config",
+          "type": "file_not_contains",
+          "description": "TurboWebhooks.configure is NOT called with senderEmail/senderName — webhook routes don't send email and the SDK skips that validation"
+        },
+        {
+          "name": "receiver-route-created",
+          "type": "file_exists",
+          "description": "An HTTP route file was created for the inbound webhook receiver (e.g. POST /webhooks/turbodocx)"
+        },
+        {
+          "name": "uses-raw-body",
+          "type": "file_contains",
+          "description": "Receiver route uses express.raw({ type: 'application/json' }) middleware (or otherwise captures the raw request body as a Buffer) — required because the HMAC is computed over exact bytes"
+        },
+        {
+          "name": "calls-verifyWebhookSignature",
+          "type": "file_contains",
+          "description": "Receiver calls verifyWebhookSignature (the free function imported from @turbodocx/sdk) with the raw body, X-TurboDocx-Signature header, X-TurboDocx-Timestamp header, and the secret"
+        },
+        {
+          "name": "no-json-parse-before-verify",
+          "type": "file_not_contains",
+          "description": "Code does NOT use express.json() / JSON.parse / req.body as a parsed object BEFORE verifying the signature — that would lose whitespace and break HMAC"
+        },
+        {
+          "name": "calls-createWebhook",
+          "type": "file_contains",
+          "description": "An admin endpoint calls TurboWebhooks.createWebhook with HTTPS urls and an events array"
+        },
+        {
+          "name": "surfaces-secret-once",
+          "type": "file_contains",
+          "description": "Response from the create endpoint exposes the secret field (shown ONCE — must be captured by the caller)"
+        },
+        {
+          "name": "routes-wired",
+          "type": "file_contains",
+          "description": "Main app file (src/index.ts) was modified to register the webhook receiver and admin routes"
+        },
+        {
+          "name": "env-has-webhook-vars",
+          "type": "file_contains",
+          "description": ".env contains TURBODOCX_API_KEY, TURBODOCX_ORG_ID, and TURBODOCX_WEBHOOK_SECRET"
+        },
+        {
+          "name": "no-sender-env-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL (TurboWebhooks does not send mail — this is a common confusion with TurboSign)"
+        },
+        {
+          "name": "no-partner-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY"
+        },
+        {
+          "name": "gitignore-has-env",
+          "type": "file_contains",
+          "description": ".gitignore includes .env"
+        }
       ]
     },
     {
       "id": 20,
       "prompt": "Add TurboDocx webhook support to my FastAPI app. I need an endpoint that receives signature.document.completed deliveries from TurboDocx and verifies the X-TurboDocx-Signature header, plus a way to register the webhook on startup.",
       "expected_output": "Creates a TurboWebhooks Python config (admin-scoped, NO sender email), a FastAPI route that reads the raw request body and calls verify_webhook_signature, and an endpoint or startup helper that calls TurboWebhooks.create_webhook. Adds .env with TURBODOCX_API_KEY, TURBODOCX_ORG_ID, TURBODOCX_WEBHOOK_SECRET.",
-      "files": ["pyproject.toml", "app/main.py", "app/routers/__init__.py"],
+      "files": [
+        "pyproject.toml",
+        "app/main.py",
+        "app/routers/__init__.py"
+      ],
       "assertions": [
-        {"name": "config-file-created", "type": "file_exists", "description": "A TurboWebhooks config file was created"},
-        {"name": "config-uses-webhooks-configure", "type": "file_contains", "description": "Config file calls TurboWebhooks.configure with api_key and org_id"},
-        {"name": "no-sender-email-in-config", "type": "file_not_contains", "description": "TurboWebhooks.configure is NOT called with sender_email/sender_name"},
-        {"name": "receiver-route-created", "type": "file_exists", "description": "A FastAPI router file was created for the inbound webhook receiver"},
-        {"name": "uses-raw-body", "type": "file_contains", "description": "Receiver reads the raw request body via `await request.body()` (returns bytes) — NOT a parsed Pydantic model or `await request.json()`"},
-        {"name": "calls-verify-webhook-signature", "type": "file_contains", "description": "Receiver calls verify_webhook_signature from the turbodocx package with the raw body bytes, X-TurboDocx-Signature header, X-TurboDocx-Timestamp header, and the secret"},
-        {"name": "no-pydantic-before-verify", "type": "file_not_contains", "description": "Receiver signature does NOT take a Pydantic BaseModel / parsed dict parameter BEFORE verification — that would let FastAPI re-serialize and break HMAC"},
-        {"name": "calls-create-webhook", "type": "file_contains", "description": "Code calls TurboWebhooks.create_webhook with urls (HTTPS) and events"},
-        {"name": "router-wired", "type": "file_contains", "description": "app/main.py was modified to include the new webhook router"},
-        {"name": "env-has-webhook-vars", "type": "file_contains", "description": ".env contains TURBODOCX_API_KEY, TURBODOCX_ORG_ID, and TURBODOCX_WEBHOOK_SECRET"},
-        {"name": "no-sender-env-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL"},
-        {"name": "no-partner-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY"}
+        {
+          "name": "config-file-created",
+          "type": "file_exists",
+          "description": "A TurboWebhooks config file was created"
+        },
+        {
+          "name": "config-uses-webhooks-configure",
+          "type": "file_contains",
+          "description": "Config file calls TurboWebhooks.configure with api_key and org_id"
+        },
+        {
+          "name": "no-sender-email-in-config",
+          "type": "file_not_contains",
+          "description": "TurboWebhooks.configure is NOT called with sender_email/sender_name"
+        },
+        {
+          "name": "receiver-route-created",
+          "type": "file_exists",
+          "description": "A FastAPI router file was created for the inbound webhook receiver"
+        },
+        {
+          "name": "uses-raw-body",
+          "type": "file_contains",
+          "description": "Receiver reads the raw request body via `await request.body()` (returns bytes) — NOT a parsed Pydantic model or `await request.json()`"
+        },
+        {
+          "name": "calls-verify-webhook-signature",
+          "type": "file_contains",
+          "description": "Receiver calls verify_webhook_signature from the turbodocx package with the raw body bytes, X-TurboDocx-Signature header, X-TurboDocx-Timestamp header, and the secret"
+        },
+        {
+          "name": "no-pydantic-before-verify",
+          "type": "file_not_contains",
+          "description": "Receiver signature does NOT take a Pydantic BaseModel / parsed dict parameter BEFORE verification — that would let FastAPI re-serialize and break HMAC"
+        },
+        {
+          "name": "calls-create-webhook",
+          "type": "file_contains",
+          "description": "Code calls TurboWebhooks.create_webhook with urls (HTTPS) and events"
+        },
+        {
+          "name": "router-wired",
+          "type": "file_contains",
+          "description": "app/main.py was modified to include the new webhook router"
+        },
+        {
+          "name": "env-has-webhook-vars",
+          "type": "file_contains",
+          "description": ".env contains TURBODOCX_API_KEY, TURBODOCX_ORG_ID, and TURBODOCX_WEBHOOK_SECRET"
+        },
+        {
+          "name": "no-sender-env-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL"
+        },
+        {
+          "name": "no-partner-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY"
+        }
       ]
     },
     {
       "id": 21,
       "prompt": "Wire up TurboDocx signature webhooks in my Laravel app. I need a public POST route to receive event deliveries (with HMAC verification on the X-TurboDocx-Signature header) and an admin endpoint that registers the org's signature webhook.",
       "expected_output": "Creates a TurboWebhooks PHP config/service (admin-scoped, no sender email), a Laravel controller for the webhook receiver that reads $request->getContent() (raw body string) and calls verifyWebhookSignature, plus a registration endpoint that calls TurboWebhooks::createWebhook and returns the secret. Adds .env with TURBODOCX_API_KEY, TURBODOCX_ORG_ID, TURBODOCX_WEBHOOK_SECRET.",
-      "files": ["composer.json", "routes/api.php", "routes/web.php", "app/Http/Controllers/Controller.php", "app/Providers/AppServiceProvider.php", "bootstrap/app.php"],
+      "files": [
+        "composer.json",
+        "routes/api.php",
+        "routes/web.php",
+        "app/Http/Controllers/Controller.php",
+        "app/Providers/AppServiceProvider.php",
+        "bootstrap/app.php"
+      ],
       "assertions": [
-        {"name": "config-file-created", "type": "file_exists", "description": "A TurboWebhooks config or service file was created"},
-        {"name": "config-uses-webhooks-configure", "type": "file_contains", "description": "Config file calls TurboWebhooks::configure (or TurboWebhooks::configureFromCredentials) with apiKey and orgId"},
-        {"name": "no-sender-email-in-config", "type": "file_not_contains", "description": "TurboWebhooks configure call does NOT pass senderEmail/senderName"},
-        {"name": "controller-created", "type": "file_exists", "description": "A Laravel controller was created for the webhook receiver"},
-        {"name": "uses-raw-body", "type": "file_contains", "description": "Receiver reads the raw body via $request->getContent() — NOT $request->json() / $request->all() / $request->validate(), which would parse and re-serialize"},
-        {"name": "calls-verifyWebhookSignature", "type": "file_contains", "description": "Receiver calls TurboWebhooks::verifyWebhookSignature (or verifyWebhookSignature helper) with the raw body, X-TurboDocx-Signature header, X-TurboDocx-Timestamp header, and the secret"},
-        {"name": "calls-createWebhook", "type": "file_contains", "description": "Code calls TurboWebhooks::createWebhook with urls and events"},
-        {"name": "routes-defined", "type": "file_contains", "description": "Webhook receiver and admin routes are registered in routes/api.php using Route::post"},
-        {"name": "uses-laravel-patterns", "type": "file_contains", "description": "Generated code uses Laravel patterns (Controller class, Request injection, response()->json())"},
-        {"name": "env-has-webhook-vars", "type": "file_contains", "description": ".env contains TURBODOCX_API_KEY, TURBODOCX_ORG_ID, and TURBODOCX_WEBHOOK_SECRET"},
-        {"name": "no-sender-env-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL"},
-        {"name": "no-partner-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY"}
+        {
+          "name": "config-file-created",
+          "type": "file_exists",
+          "description": "A TurboWebhooks config or service file was created"
+        },
+        {
+          "name": "config-uses-webhooks-configure",
+          "type": "file_contains",
+          "description": "Config file calls TurboWebhooks::configure (or TurboWebhooks::configureFromCredentials) with apiKey and orgId"
+        },
+        {
+          "name": "no-sender-email-in-config",
+          "type": "file_not_contains",
+          "description": "TurboWebhooks configure call does NOT pass senderEmail/senderName"
+        },
+        {
+          "name": "controller-created",
+          "type": "file_exists",
+          "description": "A Laravel controller was created for the webhook receiver"
+        },
+        {
+          "name": "uses-raw-body",
+          "type": "file_contains",
+          "description": "Receiver reads the raw body via $request->getContent() — NOT $request->json() / $request->all() / $request->validate(), which would parse and re-serialize"
+        },
+        {
+          "name": "calls-verifyWebhookSignature",
+          "type": "file_contains",
+          "description": "Receiver calls TurboWebhooks::verifyWebhookSignature (or verifyWebhookSignature helper) with the raw body, X-TurboDocx-Signature header, X-TurboDocx-Timestamp header, and the secret"
+        },
+        {
+          "name": "calls-createWebhook",
+          "type": "file_contains",
+          "description": "Code calls TurboWebhooks::createWebhook with urls and events"
+        },
+        {
+          "name": "routes-defined",
+          "type": "file_contains",
+          "description": "Webhook receiver and admin routes are registered in routes/api.php using Route::post"
+        },
+        {
+          "name": "uses-laravel-patterns",
+          "type": "file_contains",
+          "description": "Generated code uses Laravel patterns (Controller class, Request injection, response()->json())"
+        },
+        {
+          "name": "env-has-webhook-vars",
+          "type": "file_contains",
+          "description": ".env contains TURBODOCX_API_KEY, TURBODOCX_ORG_ID, and TURBODOCX_WEBHOOK_SECRET"
+        },
+        {
+          "name": "no-sender-env-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL"
+        },
+        {
+          "name": "no-partner-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY"
+        }
       ]
     },
     {
       "id": 22,
       "prompt": "Add TurboDocx signature webhooks to my Go service (using net/http or Gin). I need a handler that receives the webhook POST and verifies the X-TurboDocx-Signature header, plus a CLI/admin path to register the signature webhook with TurboDocx.",
       "expected_output": "Creates a Go config building a *WebhooksClient with NewWebhooksClientWithConfig (admin-scoped, NO SenderEmail), a handler that calls io.ReadAll(r.Body) and turbodocx.VerifyWebhookSignature before trusting the payload, and an admin call to wh.CreateWebhook that captures the Secret. Adds .env with TURBODOCX_API_KEY, TURBODOCX_ORG_ID, TURBODOCX_WEBHOOK_SECRET.",
-      "files": ["go.mod", "cmd/server/main.go", "internal/handlers/.gitkeep"],
+      "files": [
+        "go.mod",
+        "cmd/server/main.go",
+        "internal/handlers/.gitkeep"
+      ],
       "assertions": [
-        {"name": "config-file-created", "type": "file_exists", "description": "A Go config/client file was created for TurboWebhooks"},
-        {"name": "config-uses-NewWebhooksClientWithConfig", "type": "file_contains", "description": "Config file calls turbodocx.NewWebhooksClientWithConfig — NOT NewClientWithConfig (which is for TurboSign and requires SenderEmail)"},
-        {"name": "no-sender-email-in-config", "type": "file_not_contains", "description": "Config does NOT pass SenderEmail/SenderName to the webhooks client (the webhooks constructor specifically skips that validation)"},
-        {"name": "handler-file-created", "type": "file_exists", "description": "A handler file was created for the inbound webhook receiver"},
-        {"name": "uses-raw-body", "type": "file_contains", "description": "Handler reads the raw body via io.ReadAll(r.Body) — NOT json.NewDecoder(r.Body).Decode(...) before verification"},
-        {"name": "calls-VerifyWebhookSignature", "type": "file_contains", "description": "Handler calls turbodocx.VerifyWebhookSignature (the free function) with the raw body, signature header, timestamp header, secret, and options"},
-        {"name": "no-decode-before-verify", "type": "file_not_contains", "description": "Code does NOT call json.NewDecoder(r.Body).Decode(...) or json.Unmarshal on r.Body BEFORE VerifyWebhookSignature — that loses whitespace and breaks HMAC"},
-        {"name": "calls-CreateWebhook", "type": "file_contains", "description": "Code calls wh.CreateWebhook with a CreateWebhookRequest containing HTTPS URLs and events"},
-        {"name": "captures-secret", "type": "file_contains", "description": "Code surfaces or prints created.Secret (shown ONCE — must be captured)"},
-        {"name": "main-wired", "type": "file_contains", "description": "cmd/server/main.go was modified to register the webhook handler"},
-        {"name": "env-has-webhook-vars", "type": "file_contains", "description": ".env contains TURBODOCX_API_KEY, TURBODOCX_ORG_ID, and TURBODOCX_WEBHOOK_SECRET"},
-        {"name": "no-sender-env-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL"},
-        {"name": "no-partner-vars", "type": "file_not_contains", "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY"}
+        {
+          "name": "config-file-created",
+          "type": "file_exists",
+          "description": "A Go config/client file was created for TurboWebhooks"
+        },
+        {
+          "name": "config-uses-NewWebhooksClientWithConfig",
+          "type": "file_contains",
+          "description": "Config file calls turbodocx.NewWebhooksClientWithConfig — NOT NewClientWithConfig (which is for TurboSign and requires SenderEmail)"
+        },
+        {
+          "name": "no-sender-email-in-config",
+          "type": "file_not_contains",
+          "description": "Config does NOT pass SenderEmail/SenderName to the webhooks client (the webhooks constructor specifically skips that validation)"
+        },
+        {
+          "name": "handler-file-created",
+          "type": "file_exists",
+          "description": "A handler file was created for the inbound webhook receiver"
+        },
+        {
+          "name": "uses-raw-body",
+          "type": "file_contains",
+          "description": "Handler reads the raw body via io.ReadAll(r.Body) — NOT json.NewDecoder(r.Body).Decode(...) before verification"
+        },
+        {
+          "name": "calls-VerifyWebhookSignature",
+          "type": "file_contains",
+          "description": "Handler calls turbodocx.VerifyWebhookSignature (the free function) with the raw body, signature header, timestamp header, secret, and options"
+        },
+        {
+          "name": "no-decode-before-verify",
+          "type": "file_not_contains",
+          "description": "Code does NOT call json.NewDecoder(r.Body).Decode(...) or json.Unmarshal on r.Body BEFORE VerifyWebhookSignature — that loses whitespace and breaks HMAC"
+        },
+        {
+          "name": "calls-CreateWebhook",
+          "type": "file_contains",
+          "description": "Code calls wh.CreateWebhook with a CreateWebhookRequest containing HTTPS URLs and events"
+        },
+        {
+          "name": "captures-secret",
+          "type": "file_contains",
+          "description": "Code surfaces or prints created.Secret (shown ONCE — must be captured)"
+        },
+        {
+          "name": "main-wired",
+          "type": "file_contains",
+          "description": "cmd/server/main.go was modified to register the webhook handler"
+        },
+        {
+          "name": "env-has-webhook-vars",
+          "type": "file_contains",
+          "description": ".env contains TURBODOCX_API_KEY, TURBODOCX_ORG_ID, and TURBODOCX_WEBHOOK_SECRET"
+        },
+        {
+          "name": "no-sender-env-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL"
+        },
+        {
+          "name": "no-partner-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY"
+        }
       ]
     },
     {
       "id": 23,
       "prompt": "Hook up TurboDocx signature webhooks in my Spring Boot app. I need a controller that receives the inbound POST and verifies the X-TurboDocx-Signature header before trusting the payload, plus a Spring service that can register the webhook with TurboDocx on demand.",
       "expected_output": "Creates a TurboWebhooks Spring service that uses TurboDocxClient.Builder.buildWebhooksClient() (no senderEmail), a @RestController whose handler binds @RequestBody byte[] rawBody and calls WebhookSignatureVerifier.verify, and a register endpoint/service method that calls webhooks.createWebhook and returns the secret. Adds application.properties (or .env) with TURBODOCX_API_KEY / TURBODOCX_ORG_ID / TURBODOCX_WEBHOOK_SECRET.",
-      "files": ["pom.xml", "src/main/java/com/example/app/Application.java", "src/main/java/com/example/app/HealthController.java", "src/main/resources/application.properties"],
+      "files": [
+        "pom.xml",
+        "src/main/java/com/example/app/Application.java",
+        "src/main/java/com/example/app/HealthController.java",
+        "src/main/resources/application.properties"
+      ],
       "assertions": [
-        {"name": "config-file-created", "type": "file_exists", "description": "A TurboWebhooks Spring service/config file was created (e.g. TurboWebhooksService.java or TurboDocxWebhooksConfig.java)"},
-        {"name": "config-uses-buildWebhooksClient", "type": "file_contains", "description": "Config uses new TurboDocxClient.Builder()...buildWebhooksClient() — NOT .build() (which requires senderEmail for TurboSign)"},
-        {"name": "no-sender-email-in-config", "type": "file_not_contains", "description": "Config does NOT call .senderEmail(...) on the builder when constructing the webhooks client"},
-        {"name": "controller-created", "type": "file_exists", "description": "A Spring @RestController was created for the inbound webhook receiver"},
-        {"name": "uses-raw-body", "type": "file_contains", "description": "Receiver handler binds @RequestBody byte[] (or HttpServletRequest with getInputStream().readAllBytes()) — NOT a parsed Map/DTO @RequestBody"},
-        {"name": "calls-WebhookSignatureVerifier-verify", "type": "file_contains", "description": "Receiver calls WebhookSignatureVerifier.verify(rawBody, signatureHeader, timestampHeader, secret) — the static method on the final utility class"},
-        {"name": "no-map-or-dto-binding", "type": "file_not_contains", "description": "Receiver does NOT bind @RequestBody Map<String, Object> or @RequestBody SomeDto before verification — Jackson would re-serialize and break HMAC"},
-        {"name": "calls-createWebhook", "type": "file_contains", "description": "A register endpoint or service method calls webhooks.createWebhook with HTTPS urls and an events list"},
-        {"name": "surfaces-secret", "type": "file_contains", "description": "Response or returned value exposes the secret field from the createWebhook JsonObject (shown ONCE)"},
-        {"name": "uses-spring-annotations", "type": "file_contains", "description": "Generated code uses Spring annotations (@RestController, @PostMapping, @RequestHeader, @Bean or @Service)"},
-        {"name": "env-has-webhook-vars", "type": "file_contains", "description": "application.properties or .env contains TURBODOCX_API_KEY, TURBODOCX_ORG_ID, and TURBODOCX_WEBHOOK_SECRET (or turbodocx.api-key / turbodocx.org-id / turbodocx.webhook.secret equivalents)"},
-        {"name": "no-sender-env-vars", "type": "file_not_contains", "description": "Config does NOT contain TURBODOCX_SENDER_EMAIL / turbodocx.sender-email (TurboWebhooks does not send mail)"},
-        {"name": "no-partner-vars", "type": "file_not_contains", "description": "Config does NOT contain TURBODOCX_PARTNER_API_KEY"},
-        {"name": "follows-java-conventions", "type": "file_exists", "description": "Files placed in proper Java package directory structure (src/main/java/...)"}
+        {
+          "name": "config-file-created",
+          "type": "file_exists",
+          "description": "A TurboWebhooks Spring service/config file was created (e.g. TurboWebhooksService.java or TurboDocxWebhooksConfig.java)"
+        },
+        {
+          "name": "config-uses-buildWebhooksClient",
+          "type": "file_contains",
+          "description": "Config uses new TurboDocxClient.Builder()...buildWebhooksClient() — NOT .build() (which requires senderEmail for TurboSign)"
+        },
+        {
+          "name": "no-sender-email-in-config",
+          "type": "file_not_contains",
+          "description": "Config does NOT call .senderEmail(...) on the builder when constructing the webhooks client"
+        },
+        {
+          "name": "controller-created",
+          "type": "file_exists",
+          "description": "A Spring @RestController was created for the inbound webhook receiver"
+        },
+        {
+          "name": "uses-raw-body",
+          "type": "file_contains",
+          "description": "Receiver handler binds @RequestBody byte[] (or HttpServletRequest with getInputStream().readAllBytes()) — NOT a parsed Map/DTO @RequestBody"
+        },
+        {
+          "name": "calls-WebhookSignatureVerifier-verify",
+          "type": "file_contains",
+          "description": "Receiver calls WebhookSignatureVerifier.verify(rawBody, signatureHeader, timestampHeader, secret) — the static method on the final utility class"
+        },
+        {
+          "name": "no-map-or-dto-binding",
+          "type": "file_not_contains",
+          "description": "Receiver does NOT bind @RequestBody Map<String, Object> or @RequestBody SomeDto before verification — Jackson would re-serialize and break HMAC"
+        },
+        {
+          "name": "calls-createWebhook",
+          "type": "file_contains",
+          "description": "A register endpoint or service method calls webhooks.createWebhook with HTTPS urls and an events list"
+        },
+        {
+          "name": "surfaces-secret",
+          "type": "file_contains",
+          "description": "Response or returned value exposes the secret field from the createWebhook JsonObject (shown ONCE)"
+        },
+        {
+          "name": "uses-spring-annotations",
+          "type": "file_contains",
+          "description": "Generated code uses Spring annotations (@RestController, @PostMapping, @RequestHeader, @Bean or @Service)"
+        },
+        {
+          "name": "env-has-webhook-vars",
+          "type": "file_contains",
+          "description": "application.properties or .env contains TURBODOCX_API_KEY, TURBODOCX_ORG_ID, and TURBODOCX_WEBHOOK_SECRET (or turbodocx.api-key / turbodocx.org-id / turbodocx.webhook.secret equivalents)"
+        },
+        {
+          "name": "no-sender-env-vars",
+          "type": "file_not_contains",
+          "description": "Config does NOT contain TURBODOCX_SENDER_EMAIL / turbodocx.sender-email (TurboWebhooks does not send mail)"
+        },
+        {
+          "name": "no-partner-vars",
+          "type": "file_not_contains",
+          "description": "Config does NOT contain TURBODOCX_PARTNER_API_KEY"
+        },
+        {
+          "name": "follows-java-conventions",
+          "type": "file_exists",
+          "description": "Files placed in proper Java package directory structure (src/main/java/...)"
+        }
       ]
     },
     {
@@ -358,17 +1234,57 @@
       "skill_name": "turbodocx-html-to-docx",
       "prompt": "Add an endpoint to my Express app that converts HTML to DOCX documents. I want to POST HTML and get back a downloadable .docx file.",
       "expected_output": "Creates a helper module wrapping HTMLtoDOCX, a route file with POST endpoint, wires route into main app, installs @turbodocx/html-to-docx",
-      "files": ["package.json", "tsconfig.json", "src/index.ts"],
+      "files": [
+        "package.json",
+        "tsconfig.json",
+        "src/index.ts"
+      ],
       "assertions": [
-        {"name": "package-installed", "type": "file_contains", "description": "package.json contains @turbodocx/html-to-docx as a dependency"},
-        {"name": "helper-created", "type": "file_exists", "description": "A helper/utility module was created that wraps HTMLtoDOCX"},
-        {"name": "helper-imports-lib", "type": "file_contains", "description": "Helper file imports HTMLtoDOCX from @turbodocx/html-to-docx"},
-        {"name": "route-created", "type": "file_exists", "description": "A route/handler file was created for the docx generation endpoint"},
-        {"name": "correct-content-type", "type": "file_contains", "description": "Response sets Content-Type to application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
-        {"name": "content-disposition", "type": "file_contains", "description": "Response sets Content-Disposition header for file download"},
-        {"name": "route-wired", "type": "file_contains", "description": "Main app file (src/index.ts) was modified to import and register the new route"},
-        {"name": "uses-typescript", "type": "file_exists", "description": "Generated files use .ts extension (tsconfig.json was detected)"},
-        {"name": "no-env-vars", "type": "file_not_contains", "description": "No .env file created with API keys (this library doesn't need them)"}
+        {
+          "name": "package-installed",
+          "type": "file_contains",
+          "description": "package.json contains @turbodocx/html-to-docx as a dependency"
+        },
+        {
+          "name": "helper-created",
+          "type": "file_exists",
+          "description": "A helper/utility module was created that wraps HTMLtoDOCX"
+        },
+        {
+          "name": "helper-imports-lib",
+          "type": "file_contains",
+          "description": "Helper file imports HTMLtoDOCX from @turbodocx/html-to-docx"
+        },
+        {
+          "name": "route-created",
+          "type": "file_exists",
+          "description": "A route/handler file was created for the docx generation endpoint"
+        },
+        {
+          "name": "correct-content-type",
+          "type": "file_contains",
+          "description": "Response sets Content-Type to application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        },
+        {
+          "name": "content-disposition",
+          "type": "file_contains",
+          "description": "Response sets Content-Disposition header for file download"
+        },
+        {
+          "name": "route-wired",
+          "type": "file_contains",
+          "description": "Main app file (src/index.ts) was modified to import and register the new route"
+        },
+        {
+          "name": "uses-typescript",
+          "type": "file_exists",
+          "description": "Generated files use .ts extension (tsconfig.json was detected)"
+        },
+        {
+          "name": "no-env-vars",
+          "type": "file_not_contains",
+          "description": "No .env file created with API keys (this library doesn't need them)"
+        }
       ]
     },
     {
@@ -376,16 +1292,54 @@
       "skill_name": "turbodocx-html-to-docx",
       "prompt": "Add an API route to my Next.js app that accepts HTML in the request body and returns a generated DOCX file. I'm using the App Router.",
       "expected_output": "Creates a helper module wrapping HTMLtoDOCX, an App Router API route in app/api/ with POST handler, installs @turbodocx/html-to-docx",
-      "files": ["package.json", "tsconfig.json", "next.config.js", "app/page.tsx", "app/api/health/route.ts"],
+      "files": [
+        "package.json",
+        "tsconfig.json",
+        "next.config.js",
+        "app/page.tsx",
+        "app/api/health/route.ts"
+      ],
       "assertions": [
-        {"name": "package-installed", "type": "file_contains", "description": "package.json contains @turbodocx/html-to-docx as a dependency"},
-        {"name": "helper-created", "type": "file_exists", "description": "A helper/utility module was created that wraps HTMLtoDOCX"},
-        {"name": "helper-imports-lib", "type": "file_contains", "description": "Helper file imports HTMLtoDOCX from @turbodocx/html-to-docx"},
-        {"name": "api-route-created", "type": "file_exists", "description": "API route created in app/api/ directory using route.ts convention"},
-        {"name": "exports-post", "type": "file_contains", "description": "API route exports a POST function (Next.js App Router pattern)"},
-        {"name": "correct-content-type", "type": "file_contains", "description": "Response includes Content-Type for DOCX (application/vnd.openxmlformats-officedocument.wordprocessingml.document)"},
-        {"name": "uses-response", "type": "file_contains", "description": "API route uses Response or NextResponse (not Express res)"},
-        {"name": "no-app-wiring", "type": "file_not_contains", "description": "No attempt to wire routes into a main app file (Next.js uses file-based routing)"}
+        {
+          "name": "package-installed",
+          "type": "file_contains",
+          "description": "package.json contains @turbodocx/html-to-docx as a dependency"
+        },
+        {
+          "name": "helper-created",
+          "type": "file_exists",
+          "description": "A helper/utility module was created that wraps HTMLtoDOCX"
+        },
+        {
+          "name": "helper-imports-lib",
+          "type": "file_contains",
+          "description": "Helper file imports HTMLtoDOCX from @turbodocx/html-to-docx"
+        },
+        {
+          "name": "api-route-created",
+          "type": "file_exists",
+          "description": "API route created in app/api/ directory using route.ts convention"
+        },
+        {
+          "name": "exports-post",
+          "type": "file_contains",
+          "description": "API route exports a POST function (Next.js App Router pattern)"
+        },
+        {
+          "name": "correct-content-type",
+          "type": "file_contains",
+          "description": "Response includes Content-Type for DOCX (application/vnd.openxmlformats-officedocument.wordprocessingml.document)"
+        },
+        {
+          "name": "uses-response",
+          "type": "file_contains",
+          "description": "API route uses Response or NextResponse (not Express res)"
+        },
+        {
+          "name": "no-app-wiring",
+          "type": "file_not_contains",
+          "description": "No attempt to wire routes into a main app file (Next.js uses file-based routing)"
+        }
       ]
     },
     {
@@ -393,15 +1347,386 @@
       "skill_name": "turbodocx-html-to-docx",
       "prompt": "Create a Node.js script in my project that converts an HTML string to a DOCX file. I want a reusable function I can call from other scripts.",
       "expected_output": "Creates a reusable module exporting a function that wraps HTMLtoDOCX, a demo script that generates a .docx file, installs @turbodocx/html-to-docx",
-      "files": ["package.json", "src/index.js"],
+      "files": [
+        "package.json",
+        "src/index.js"
+      ],
       "assertions": [
-        {"name": "package-installed", "type": "file_contains", "description": "package.json contains @turbodocx/html-to-docx as a dependency"},
-        {"name": "script-created", "type": "file_exists", "description": "A script or module file was created for DOCX generation"},
-        {"name": "imports-lib", "type": "file_contains", "description": "Script imports HTMLtoDOCX from @turbodocx/html-to-docx"},
-        {"name": "exports-function", "type": "file_contains", "description": "Script exports a reusable function (not just inline code)"},
-        {"name": "writes-file", "type": "file_contains", "description": "Script writes the buffer to a .docx file using fs.writeFileSync or fs.writeFile"},
-        {"name": "has-example", "type": "file_contains", "description": "Script includes example HTML content to demonstrate usage"},
-        {"name": "uses-async", "type": "file_contains", "description": "Script uses async/await (HTMLtoDOCX is async)"}
+        {
+          "name": "package-installed",
+          "type": "file_contains",
+          "description": "package.json contains @turbodocx/html-to-docx as a dependency"
+        },
+        {
+          "name": "script-created",
+          "type": "file_exists",
+          "description": "A script or module file was created for DOCX generation"
+        },
+        {
+          "name": "imports-lib",
+          "type": "file_contains",
+          "description": "Script imports HTMLtoDOCX from @turbodocx/html-to-docx"
+        },
+        {
+          "name": "exports-function",
+          "type": "file_contains",
+          "description": "Script exports a reusable function (not just inline code)"
+        },
+        {
+          "name": "writes-file",
+          "type": "file_contains",
+          "description": "Script writes the buffer to a .docx file using fs.writeFileSync or fs.writeFile"
+        },
+        {
+          "name": "has-example",
+          "type": "file_contains",
+          "description": "Script includes example HTML content to demonstrate usage"
+        },
+        {
+          "name": "uses-async",
+          "type": "file_contains",
+          "description": "Script uses async/await (HTMLtoDOCX is async)"
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "prompt": "Add TurboQuote to my Express app so I can create a sales quote, add product line items, and send it to a customer for review. I want an endpoint that takes a company/contact + a list of products and returns the sent quote.",
+      "expected_output": "Creates a TurboQuote config (apiKey + orgId, NO senderEmail), a route/handler that creates a quote, adds product line items, and sends it for review (plus optionally downloads the quote PDF), wires it into the app, and adds .env with TURBODOCX_API_KEY + TURBODOCX_ORG_ID only — no sender email, no partner vars. Uses only real TurboQuote methods (JavaScript/TypeScript naming); no workflow/approval calls.",
+      "files": [
+        "package.json",
+        "tsconfig.json",
+        "src/index.ts",
+        "package-lock.json"
+      ],
+      "assertions": [
+        {
+          "name": "config-file-created",
+          "type": "file_exists",
+          "description": "A TurboQuote config/client file was created"
+        },
+        {
+          "name": "config-uses-turboquote",
+          "type": "file_contains",
+          "description": "Config file calls TurboQuote.configure with apiKey and orgId — NOT TurboSign.configure"
+        },
+        {
+          "name": "no-sender-email-in-config",
+          "type": "file_not_contains",
+          "description": "TurboQuote is configured WITHOUT senderEmail/senderName — quotes are not signature emails and the SDK skips that validation"
+        },
+        {
+          "name": "quote-route-created",
+          "type": "file_exists",
+          "description": "An HTTP route/handler file was created for quote operations"
+        },
+        {
+          "name": "creates-and-sends-quote",
+          "type": "file_contains",
+          "description": "Route creates a quote (TurboQuote.createQuote), adds line items (TurboQuote.addLineItems), and sends it (TurboQuote.sendQuote)"
+        },
+        {
+          "name": "routes-wired",
+          "type": "file_contains",
+          "description": "The main app file was modified to register the quote route(s)"
+        },
+        {
+          "name": "env-has-quote-vars",
+          "type": "file_contains",
+          "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_ORG_ID"
+        },
+        {
+          "name": "no-sender-env-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL (TurboQuote does not send mail — common confusion with TurboSign)"
+        },
+        {
+          "name": "no-partner-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY"
+        },
+        {
+          "name": "no-workflow-approval",
+          "type": "file_not_contains",
+          "description": "Code does NOT reference workflow/approval methods (createWorkflow, approveQuote, etc.) — these are not part of the TurboQuote SDK"
+        },
+        {
+          "name": "gitignore-has-env",
+          "type": "file_contains",
+          "description": ".gitignore includes .env"
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "prompt": "Add TurboQuote support to my FastAPI app. I need an endpoint that creates a quote for a company and contact, adds line items for some products, and sends the quote.",
+      "expected_output": "Creates a TurboQuote config (apiKey + orgId, NO senderEmail), a route/handler that creates a quote, adds product line items, and sends it for review (plus optionally downloads the quote PDF), wires it into the app, and adds .env with TURBODOCX_API_KEY + TURBODOCX_ORG_ID only — no sender email, no partner vars. Uses only real TurboQuote methods (Python (snake_case) naming); no workflow/approval calls.",
+      "files": [
+        "pyproject.toml",
+        "app/main.py",
+        "app/routers/__init__.py"
+      ],
+      "assertions": [
+        {
+          "name": "config-file-created",
+          "type": "file_exists",
+          "description": "A TurboQuote config/client file was created"
+        },
+        {
+          "name": "config-uses-turboquote",
+          "type": "file_contains",
+          "description": "Config calls TurboQuote.configure with api_key and org_id — NOT TurboSign.configure"
+        },
+        {
+          "name": "no-sender-email-in-config",
+          "type": "file_not_contains",
+          "description": "TurboQuote is configured WITHOUT senderEmail/senderName — quotes are not signature emails and the SDK skips that validation"
+        },
+        {
+          "name": "quote-route-created",
+          "type": "file_exists",
+          "description": "An HTTP route/handler file was created for quote operations"
+        },
+        {
+          "name": "creates-and-sends-quote",
+          "type": "file_contains",
+          "description": "Route creates a quote (create_quote), adds line items (add_line_items), and sends it (send_quote)"
+        },
+        {
+          "name": "routes-wired",
+          "type": "file_contains",
+          "description": "The main app file was modified to register the quote route(s)"
+        },
+        {
+          "name": "env-has-quote-vars",
+          "type": "file_contains",
+          "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_ORG_ID"
+        },
+        {
+          "name": "no-sender-env-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL (TurboQuote does not send mail — common confusion with TurboSign)"
+        },
+        {
+          "name": "no-partner-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY"
+        },
+        {
+          "name": "no-workflow-approval",
+          "type": "file_not_contains",
+          "description": "Code does NOT reference workflow/approval methods (createWorkflow, approveQuote, etc.) — these are not part of the TurboQuote SDK"
+        },
+        {
+          "name": "gitignore-has-env",
+          "type": "file_contains",
+          "description": ".gitignore includes .env"
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "prompt": "Wire up TurboQuote in my Laravel app: a controller endpoint that creates a quote, adds product line items, and sends it for review.",
+      "expected_output": "Creates a TurboQuote config (apiKey + orgId, NO senderEmail), a route/handler that creates a quote, adds product line items, and sends it for review (plus optionally downloads the quote PDF), wires it into the app, and adds .env with TURBODOCX_API_KEY + TURBODOCX_ORG_ID only — no sender email, no partner vars. Uses only real TurboQuote methods (PHP naming); no workflow/approval calls.",
+      "files": [
+        "composer.json",
+        "routes/api.php",
+        "routes/web.php",
+        "app/Http/Controllers/Controller.php",
+        "app/Providers/AppServiceProvider.php",
+        "bootstrap/app.php"
+      ],
+      "assertions": [
+        {
+          "name": "config-file-created",
+          "type": "file_exists",
+          "description": "A TurboQuote config/client file was created"
+        },
+        {
+          "name": "config-uses-turboquote",
+          "type": "file_contains",
+          "description": "Config uses the TurboQuote module / QuoteClientConfig with apiKey and orgId — NOT TurboSign"
+        },
+        {
+          "name": "no-sender-email-in-config",
+          "type": "file_not_contains",
+          "description": "TurboQuote is configured WITHOUT senderEmail/senderName — quotes are not signature emails and the SDK skips that validation"
+        },
+        {
+          "name": "quote-route-created",
+          "type": "file_exists",
+          "description": "An HTTP route/handler file was created for quote operations"
+        },
+        {
+          "name": "creates-and-sends-quote",
+          "type": "file_contains",
+          "description": "Controller creates a quote (createQuote), adds line items (addLineItems), and sends it (sendQuote)"
+        },
+        {
+          "name": "routes-wired",
+          "type": "file_contains",
+          "description": "The main app file was modified to register the quote route(s)"
+        },
+        {
+          "name": "env-has-quote-vars",
+          "type": "file_contains",
+          "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_ORG_ID"
+        },
+        {
+          "name": "no-sender-env-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL (TurboQuote does not send mail — common confusion with TurboSign)"
+        },
+        {
+          "name": "no-partner-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY"
+        },
+        {
+          "name": "no-workflow-approval",
+          "type": "file_not_contains",
+          "description": "Code does NOT reference workflow/approval methods (createWorkflow, approveQuote, etc.) — these are not part of the TurboQuote SDK"
+        },
+        {
+          "name": "gitignore-has-env",
+          "type": "file_contains",
+          "description": ".gitignore includes .env"
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "prompt": "Add TurboQuote to my Go service (net/http). I want a handler that creates a quote for a company/contact, adds line items, and sends it.",
+      "expected_output": "Creates a TurboQuote config (apiKey + orgId, NO senderEmail), a route/handler that creates a quote, adds product line items, and sends it for review (plus optionally downloads the quote PDF), wires it into the app, and adds .env with TURBODOCX_API_KEY + TURBODOCX_ORG_ID only — no sender email, no partner vars. Uses only real TurboQuote methods (Go (PascalCase exported) naming); no workflow/approval calls.",
+      "files": [
+        "go.mod",
+        "cmd/server/main.go",
+        "internal/handlers/.gitkeep"
+      ],
+      "assertions": [
+        {
+          "name": "config-file-created",
+          "type": "file_exists",
+          "description": "A TurboQuote config/client file was created"
+        },
+        {
+          "name": "config-uses-turboquote",
+          "type": "file_contains",
+          "description": "Config creates the quote client (NewQuoteClient / quote client with APIKey + OrgID) — NOT the TurboSign client"
+        },
+        {
+          "name": "no-sender-email-in-config",
+          "type": "file_not_contains",
+          "description": "TurboQuote is configured WITHOUT senderEmail/senderName — quotes are not signature emails and the SDK skips that validation"
+        },
+        {
+          "name": "quote-route-created",
+          "type": "file_exists",
+          "description": "An HTTP route/handler file was created for quote operations"
+        },
+        {
+          "name": "creates-and-sends-quote",
+          "type": "file_contains",
+          "description": "Handler creates a quote (CreateQuote), adds line items (AddLineItems), and sends it (SendQuote)"
+        },
+        {
+          "name": "routes-wired",
+          "type": "file_contains",
+          "description": "The main app file was modified to register the quote route(s)"
+        },
+        {
+          "name": "env-has-quote-vars",
+          "type": "file_contains",
+          "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_ORG_ID"
+        },
+        {
+          "name": "no-sender-env-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL (TurboQuote does not send mail — common confusion with TurboSign)"
+        },
+        {
+          "name": "no-partner-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY"
+        },
+        {
+          "name": "no-workflow-approval",
+          "type": "file_not_contains",
+          "description": "Code does NOT reference workflow/approval methods (createWorkflow, approveQuote, etc.) — these are not part of the TurboQuote SDK"
+        },
+        {
+          "name": "gitignore-has-env",
+          "type": "file_contains",
+          "description": ".gitignore includes .env"
+        }
+      ]
+    },
+    {
+      "id": 28,
+      "prompt": "Hook up TurboQuote in my Spring Boot app: a REST controller that creates a quote, adds product line items, and sends it for review.",
+      "expected_output": "Creates a TurboQuote config (apiKey + orgId, NO senderEmail), a route/handler that creates a quote, adds product line items, and sends it for review (plus optionally downloads the quote PDF), wires it into the app, and adds .env with TURBODOCX_API_KEY + TURBODOCX_ORG_ID only — no sender email, no partner vars. Uses only real TurboQuote methods (Java (camelCase) naming); no workflow/approval calls.",
+      "files": [
+        "pom.xml",
+        "src/main/java/com/example/app/Application.java",
+        "src/main/java/com/example/app/HealthController.java",
+        "src/main/resources/application.properties"
+      ],
+      "assertions": [
+        {
+          "name": "config-file-created",
+          "type": "file_exists",
+          "description": "A TurboQuote config/client file was created"
+        },
+        {
+          "name": "config-uses-turboquote",
+          "type": "file_contains",
+          "description": "Config builds the TurboQuote client (builder with apiKey + orgId, no senderEmail) — NOT TurboSign"
+        },
+        {
+          "name": "no-sender-email-in-config",
+          "type": "file_not_contains",
+          "description": "TurboQuote is configured WITHOUT senderEmail/senderName — quotes are not signature emails and the SDK skips that validation"
+        },
+        {
+          "name": "quote-route-created",
+          "type": "file_exists",
+          "description": "An HTTP route/handler file was created for quote operations"
+        },
+        {
+          "name": "creates-and-sends-quote",
+          "type": "file_contains",
+          "description": "Controller creates a quote (createQuote), adds line items (addLineItems), and sends it (sendQuote)"
+        },
+        {
+          "name": "routes-wired",
+          "type": "file_contains",
+          "description": "The main app file was modified to register the quote route(s)"
+        },
+        {
+          "name": "env-has-quote-vars",
+          "type": "file_contains",
+          "description": "application.properties / .env contains TURBODOCX_API_KEY and TURBODOCX_ORG_ID"
+        },
+        {
+          "name": "no-sender-env-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL (TurboQuote does not send mail — common confusion with TurboSign)"
+        },
+        {
+          "name": "no-partner-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY"
+        },
+        {
+          "name": "no-workflow-approval",
+          "type": "file_not_contains",
+          "description": "Code does NOT reference workflow/approval methods (createWorkflow, approveQuote, etc.) — these are not part of the TurboQuote SDK"
+        },
+        {
+          "name": "gitignore-has-env",
+          "type": "file_contains",
+          "description": ".gitignore includes .env"
+        }
       ]
     }
   ]
