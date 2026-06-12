@@ -1728,6 +1728,59 @@
           "description": ".gitignore includes .env"
         }
       ]
+    },
+    {
+      "id": 29,
+      "prompt": "I'm using TurboQuote in my Express app and want to collect payment on quotes. Add an endpoint that generates a pay link for a quote, an endpoint to check a quote's payment status, and a webhook handler for when a quote gets paid.",
+      "expected_output": "Uses TurboQuote (apiKey + orgId, NO senderEmail). Adds a route calling TurboQuote.createPaymentLink (returns checkoutUrl + paymentId to send the buyer), a route calling TurboQuote.getPaymentStatus, and a webhook handler for the quote.payment.succeeded event verified with verifyWebhookSignature over the raw body. Adds TURBODOCX_WEBHOOK_SECRET to .env. Uses only real payment methods; does NOT attempt provider/Connect onboarding (that happens in the TurboQuote UI, not the SDK).",
+      "files": [
+        "package.json",
+        "tsconfig.json",
+        "src/index.ts",
+        "package-lock.json"
+      ],
+      "assertions": [
+        {
+          "name": "creates-pay-link",
+          "type": "file_contains",
+          "description": "A route calls TurboQuote.createPaymentLink and uses the returned checkoutUrl + paymentId"
+        },
+        {
+          "name": "checks-payment-status",
+          "type": "file_contains",
+          "description": "A route calls TurboQuote.getPaymentStatus for a quote"
+        },
+        {
+          "name": "payment-webhook-handler",
+          "type": "file_contains",
+          "description": "A webhook handler checks for the quote.payment.succeeded event"
+        },
+        {
+          "name": "verifies-webhook-signature",
+          "type": "file_contains",
+          "description": "The webhook handler verifies the signature with verifyWebhookSignature using the raw request body"
+        },
+        {
+          "name": "env-has-webhook-secret",
+          "type": "file_contains",
+          "description": ".env contains TURBODOCX_WEBHOOK_SECRET"
+        },
+        {
+          "name": "no-onboarding-calls",
+          "type": "file_not_contains",
+          "description": "Code does NOT attempt provider/Connect onboarding (connectOrgAccount, createOnboardingSession, etc.) — onboarding is a one-time UI step, not part of the SDK payment flow"
+        },
+        {
+          "name": "no-sender-env-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL (TurboQuote does not send signature mail)"
+        },
+        {
+          "name": "gitignore-has-env",
+          "type": "file_contains",
+          "description": ".gitignore includes .env"
+        }
+      ]
     }
   ]
 }

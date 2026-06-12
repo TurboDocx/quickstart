@@ -202,6 +202,7 @@ Create working route handlers / endpoint code for the selected product(s). The l
 - `sendQuote()` endpoint — send a quote for review; returns `{ quote, message }`
 - `downloadQuotePdf()` endpoint — stream the quote PDF (raw bytes per language)
 - If the user is building a catalog, also scaffold `createProduct()` / `createBundle()` / `createPriceBook()` + `applyPriceBook()`. TurboQuote configures with `apiKey` + `orgId` only — no `senderEmail` (quotes are not signature emails).
+- **If the user asks to collect/accept payment on quotes (get paid, pay link, checkout, Stripe):** scaffold the payments path — `getPaymentConnectionStatus()` (gate on `chargesEnabled`), `createPaymentLink()` (returns `{ checkoutUrl, paymentId }` to send the buyer), and `getPaymentStatus()`. Prefer a `quote.payment.succeeded` webhook handler (verified with `verifyWebhookSignature`, adds `TURBODOCX_WEBHOOK_SECRET` to `.env`) over polling. The seller connects their payment provider once in the TurboQuote UI — the skill does NOT do onboarding; it generates the link/status/webhook code. See `references/<lang>.md` → "Online payments".
 
 Once the basics are scaffolded, point the user at the language reference (`references/<language>.md`) for the full set of available operations — there are many more than the starter set (org/user/API-key management, audit logs, etc.) and the agent should mention which additional operations exist for the user's selected product so they know what to ask for next.
 

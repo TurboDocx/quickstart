@@ -712,6 +712,47 @@ const pdf = await TurboQuote.downloadQuotePdf(quote.id);
 await writeFile('quote.pdf', Buffer.from(pdf));  // pdf is ArrayBuffer
 ```
 
+### Online payments (collect for a quote)
+
+Let buyers pay a quote online. The seller connects a payment provider once (Stripe Connect) in the TurboQuote UI; then generate a pay link and track status. `getPaymentConnectionStatus` tells you (via the provider's `capabilities`) whether the org can collect.
+
+```typescript
+// Is the org set up to collect?
+const conn = await TurboQuote.getPaymentConnectionStatus();
+if (!conn.chargesEnabled) throw new Error('Connect a payment provider in TurboQuote Settings → Payments first');
+
+// Create a hosted pay link for a quote — send checkoutUrl to the buyer.
+const { checkoutUrl, paymentId } = await TurboQuote.createPaymentLink(quote.id, {
+  buyerEmail: 'buyer@example.com', // optional; falls back to the quote's contact
+});
+
+// Check status (poll, or prefer the webhook below).
+const payment = await TurboQuote.getPaymentStatus(quote.id);
+// payment.status: 'none' | 'pending' | 'partial' | 'paid' | 'failed' | 'overdue'
+```
+
+**Get notified on payment** — subscribe to the TurboDocx-native `quote.payment.succeeded` webhook (provider-agnostic; better than polling). Verify it with the shared helper:
+
+```typescript
+import { verifyWebhookSignature } from '@turbodocx/sdk';
+
+app.post('/webhooks/turbodocx', express.raw({ type: 'application/json' }), (req, res) => {
+  const valid = verifyWebhookSignature({
+    payload: req.body,                                  // raw bytes
+    signature: req.header('X-TurboDocx-Signature') || '',
+    secret: process.env.TURBODOCX_WEBHOOK_SECRET || '',
+  });
+  if (!valid) return res.status(400).send('bad signature');
+
+  const event = JSON.parse(req.body.toString());
+  if (event.event === 'quote.payment.succeeded') {
+    const { quote_id, quote_number, amount, currency, paid_at } = event.data;
+    // mark the quote paid in your system
+  }
+  res.sendStatus(200);
+});
+```
+
 ### Catalog management (products, bundles, price books)
 
 ```typescript
