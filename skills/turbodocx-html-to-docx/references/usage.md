@@ -378,9 +378,9 @@ Use the IIFE bundle. **Polyfills for `global`, `process`, and `Buffer` must be s
 The browser bundle ships in the npm package's `dist/` directory, so most users don't need to build it. If you're working from a cloned repo or want a custom build:
 
 ```bash
-npm run build               # all three outputs (ESM + UMD + Browser)
-npm run build:browser       # browser IIFE only (dev)
-npm run build:browser:prod  # browser IIFE only (minified, production)
+npm run build               # all four outputs (ESM + UMD + Browser ESM + Browser IIFE)
+npm run build:browser       # both browser builds (ESM + IIFE), dev
+npm run build:browser:prod  # both browser builds (ESM + IIFE), minified, production
 ```
 
 ### Browser limitations
