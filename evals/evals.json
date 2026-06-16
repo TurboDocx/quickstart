@@ -403,6 +403,65 @@
         {"name": "has-example", "type": "file_contains", "description": "Script includes example HTML content to demonstrate usage"},
         {"name": "uses-async", "type": "file_contains", "description": "Script uses async/await (HTMLtoDOCX is async)"}
       ]
+    },
+    {
+      "id": 24,
+      "skill_name": "turbodocx-html-to-docx",
+      "prompt": "Add a 'Download as Word' button to my Vite + React app that converts an HTML string to a DOCX file entirely in the browser and downloads it. This is a static SPA with no backend.",
+      "expected_output": "Installs @turbodocx/html-to-docx, adds client-side generation inside a React component click handler using a plain import (zero bundler config), coerces the result to a Blob, and triggers a download via URL.createObjectURL + an anchor click. No vite.config polyfills/aliases, no server code.",
+      "files": ["package.json", "vite.config.ts", "tsconfig.json", "index.html", "src/main.tsx", "src/App.tsx"],
+      "assertions": [
+        {"name": "package-installed", "type": "file_contains", "description": "package.json contains @turbodocx/html-to-docx as a dependency"},
+        {"name": "plain-import", "type": "file_contains", "description": "Code imports HTMLtoDOCX from '@turbodocx/html-to-docx' with a plain default import (no deep path into dist/, no alias)"},
+        {"name": "no-bundler-polyfills", "type": "file_not_contains", "description": "vite.config.ts is NOT modified to add Node polyfills or a package alias (no vite-plugin-node-polyfills, no resolve.alias for @turbodocx/html-to-docx, no global/process/Buffer define shims) — the browser ESM build resolves zero-config"},
+        {"name": "in-react-component", "type": "file_contains", "description": "Generation is wired into a React component (e.g. src/App.tsx) via an onClick handler — not a standalone Node script"},
+        {"name": "handles-blob", "type": "file_contains", "description": "Code treats the result as a Blob (e.g. `result instanceof Blob` or wraps it in `new Blob([...])`) — does NOT call fs / writeFileSync / Buffer"},
+        {"name": "creates-object-url", "type": "file_contains", "description": "Code calls URL.createObjectURL on the Blob to make it downloadable"},
+        {"name": "triggers-download", "type": "file_contains", "description": "Code creates an anchor element, sets its download attribute, and calls .click() to start the download"},
+        {"name": "revokes-object-url", "type": "file_contains", "description": "Code calls URL.revokeObjectURL after triggering the download (ideally on the next tick via setTimeout, per the skill's timing fix)"},
+        {"name": "no-server-code", "type": "file_not_contains", "description": "No server/API code is created (no Express route, no fetch to a backend, no Node-only APIs) — generation happens fully client-side"},
+        {"name": "no-fs-usage", "type": "file_not_contains", "description": "Generated browser code does NOT import 'fs' or call writeFileSync (that only works in Node)"},
+        {"name": "uses-typescript", "type": "file_exists", "description": "Generated files use .ts/.tsx extension (Vite + TS project)"}
+      ]
+    },
+    {
+      "id": 25,
+      "skill_name": "turbodocx-html-to-docx",
+      "prompt": "I have a Next.js App Router app. Add a 'Download as Word' button to a page that converts HTML to DOCX entirely in the browser — generate it on the client, no API route.",
+      "expected_output": "Adds a Client Component (\"use client\") with a button whose handler dynamically imports @turbodocx/html-to-docx (so the ~1.6 MB build is code-split out of first-load JS and never runs during SSR), coerces the result to a Blob, and downloads it via URL.createObjectURL. Does NOT create an app/api route.",
+      "files": ["package.json", "next.config.js", "tsconfig.json", "app/layout.tsx", "app/page.tsx"],
+      "assertions": [
+        {"name": "package-installed", "type": "file_contains", "description": "package.json contains @turbodocx/html-to-docx as a dependency"},
+        {"name": "use-client-directive", "type": "file_contains", "description": "The component that runs generation starts with the \"use client\" directive (it uses browser APIs and event handlers)"},
+        {"name": "dynamic-import", "type": "file_contains", "description": "The click handler dynamically imports the library via `await import('@turbodocx/html-to-docx')` so it is code-split and never bundled into server/first-load JS (per the skill's Next.js guidance)"},
+        {"name": "no-api-route", "type": "file_not_contains", "description": "No API route is created under app/api/ (e.g. app/api/.../route.ts) — the user explicitly wants client-side generation only"},
+        {"name": "no-server-generation", "type": "file_not_contains", "description": "HTMLtoDOCX is NOT called in a Server Component, route handler, or server action — generation runs only in the browser click handler"},
+        {"name": "handles-blob", "type": "file_contains", "description": "Code treats the result as a Blob (e.g. `result instanceof Blob` or `new Blob([...])`)"},
+        {"name": "creates-object-url", "type": "file_contains", "description": "Code calls URL.createObjectURL on the Blob"},
+        {"name": "triggers-download", "type": "file_contains", "description": "Code creates an anchor, sets the download attribute, and calls .click()"},
+        {"name": "revokes-object-url", "type": "file_contains", "description": "Code calls URL.revokeObjectURL after the download (ideally on the next tick)"},
+        {"name": "no-fs-usage", "type": "file_not_contains", "description": "Generated browser code does NOT import 'fs' or call writeFileSync"},
+        {"name": "uses-typescript", "type": "file_exists", "description": "Generated files use .ts/.tsx extension"}
+      ]
+    },
+    {
+      "id": 26,
+      "skill_name": "turbodocx-html-to-docx",
+      "prompt": "Add client-side HTML-to-DOCX download to my Remix app. When a user clicks a button on a route, generate the Word document in the browser and download it — don't do it on the server.",
+      "expected_output": "Installs @turbodocx/html-to-docx and adds generation inside a route component's client-side click handler using a plain import, coercing the result to a Blob and downloading via URL.createObjectURL. Does NOT run generation inside a Remix loader or action (those execute on the server).",
+      "files": ["package.json", "vite.config.ts", "tsconfig.json", "app/root.tsx", "app/routes/_index.tsx"],
+      "assertions": [
+        {"name": "package-installed", "type": "file_contains", "description": "package.json contains @turbodocx/html-to-docx as a dependency"},
+        {"name": "plain-import", "type": "file_contains", "description": "Code imports HTMLtoDOCX from '@turbodocx/html-to-docx' (plain default import, no deep dist/ path, no alias)"},
+        {"name": "client-side-handler", "type": "file_contains", "description": "Generation runs inside a browser event handler (e.g. an onClick) in a route component — using browser APIs"},
+        {"name": "not-in-loader-or-action", "type": "file_not_contains", "description": "HTMLtoDOCX is NOT called inside a Remix `loader` or `action` (those run on the server, defeating the client-side requirement)"},
+        {"name": "handles-blob", "type": "file_contains", "description": "Code treats the result as a Blob (e.g. `result instanceof Blob` or `new Blob([...])`)"},
+        {"name": "creates-object-url", "type": "file_contains", "description": "Code calls URL.createObjectURL on the Blob"},
+        {"name": "triggers-download", "type": "file_contains", "description": "Code creates an anchor, sets the download attribute, and calls .click()"},
+        {"name": "revokes-object-url", "type": "file_contains", "description": "Code calls URL.revokeObjectURL after the download (ideally on the next tick)"},
+        {"name": "no-fs-usage", "type": "file_not_contains", "description": "Generated browser code does NOT import 'fs' or call writeFileSync"},
+        {"name": "uses-typescript", "type": "file_exists", "description": "Generated files use .ts/.tsx extension"}
+      ]
     }
   ]
 }
