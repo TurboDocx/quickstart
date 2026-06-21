@@ -712,6 +712,46 @@ const pdf = await TurboQuote.downloadQuotePdf(quote.id);
 await writeFile('quote.pdf', Buffer.from(pdf));  // pdf is ArrayBuffer
 ```
 
+### getQuoteNumberConfig
+
+Admin-only. Read the org's quote-number config — the format that drives how new quote numbers are generated (prefix, year/month tokens, separator, zero-padding, suffix, starting number, reset cadence).
+
+```typescript
+const config = await TurboQuote.getQuoteNumberConfig();
+
+console.log(config.format.prefix);     // string — e.g. 'Q'
+console.log(config.format.padWidth);   // number — zero-pad width
+console.log(config.currentFloor);      // number — per-period issued floor
+```
+
+Response: `{ format, currentFloor }`. `format` carries `prefix`, `yearToken` (`'none' | 'two' | 'four'`), `monthToken` (`'off' | 'two'`), `separator`, `padWidth` (int 0–12), `suffix`, `startNumber` (int >= 0), and `resetCadence` (`'never' | 'yearly' | 'monthly'`). `currentFloor` is the per-period issued floor — `startNumber` can't be set below it.
+
+### updateQuoteNumberConfig
+
+Admin-only. Update the org's quote-number config; returns the same `{ format, currentFloor }` shape. Request-body keys stay camelCase verbatim.
+
+```typescript
+// Fetch the current config first, then update with a custom format
+const current = await TurboQuote.getQuoteNumberConfig();
+console.log(current.format.prefix, current.currentFloor);
+
+const updated = await TurboQuote.updateQuoteNumberConfig({
+  prefix: 'INV',
+  yearToken: 'none',       // 'none' | 'two' | 'four'
+  monthToken: 'off',       // 'off' | 'two'
+  separator: '-',
+  padWidth: 4,             // int 0–12 — zero-pad to 4 digits
+  suffix: '',
+  startNumber: 1000,       // int >= 0; can't be below currentFloor
+  resetCadence: 'never',   // 'never' | 'yearly' | 'monthly'
+});
+
+console.log(updated.format.prefix);  // 'INV'
+console.log(updated.currentFloor);   // number
+```
+
+Response: `{ format, currentFloor }` — the updated config. All eight `format` fields are required; keys (`prefix`, `yearToken`, `monthToken`, `separator`, `padWidth`, `suffix`, `startNumber`, `resetCadence`) stay camelCase verbatim. `padWidth` and `startNumber` are integers.
+
 ### Catalog management (products, bundles, price books)
 
 ```typescript
@@ -1029,6 +1069,8 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode` and `code` p
 | `TurboQuote.applyPriceBook(quoteId, priceBookId)` | Apply price-book pricing to all matching line items |
 | `TurboQuote.removePriceBook(quoteId)` | Detach price book from quote |
 | `TurboQuote.downloadQuotePdf(id)` | Download rendered quote PDF as `ArrayBuffer` |
+| `TurboQuote.getQuoteNumberConfig()` | Admin-only: read the org's quote-number config `{ format, currentFloor }` |
+| `TurboQuote.updateQuoteNumberConfig(format)` | Admin-only: update the quote-number format; returns `{ format, currentFloor }` |
 | `TurboQuote.createAndSend(request)` | Convenience: create quote + add items + send in one call |
 
 ### TurboQuote — Line Items

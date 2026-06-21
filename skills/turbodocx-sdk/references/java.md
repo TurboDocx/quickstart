@@ -568,6 +568,40 @@ System.out.println("Updated items: " + applied.getUpdatedCount());
 System.out.println("Skipped items: " + applied.getSkippedCount());
 ```
 
+### getQuoteNumberConfig
+
+Admin-only. Reads the org's quote-numbering config — the `format` plus the per-period `currentFloor`.
+
+```java
+QuoteNumberConfig config = tq.getQuoteNumberConfig();
+System.out.println("Prefix: "        + config.getFormat().getPrefix());
+System.out.println("Current floor: " + config.getCurrentFloor()); // startNumber can't be set below this
+```
+
+Response: `{ format, currentFloor }`. `format` carries `prefix`, `yearToken`, `monthToken`, `separator`, `padWidth`, `suffix`, `startNumber`, `resetCadence` (field keys are camelCase verbatim); `currentFloor` is the highest number already issued for the current period.
+
+### updateQuoteNumberConfig
+
+Admin-only. Replaces the org's quote-number format (all eight fields are sent) so you can customize how new quote numbers are generated — prefix, year/month tokens, separator, zero-padding, suffix, starting number, and reset cadence.
+
+```java
+QuoteNumberFormat format = new QuoteNumberFormat();
+format.setPrefix("INV");
+format.setYearToken(QuoteNumberYearToken.NONE);
+format.setMonthToken(QuoteNumberMonthToken.OFF);
+format.setSeparator("-");
+format.setPadWidth(4);                                  // integer 0-12
+format.setSuffix("");
+format.setStartNumber(1000);                            // integer >= 0, can't be below currentFloor
+format.setResetCadence(QuoteNumberResetCadence.NEVER);
+
+QuoteNumberConfig updated = tq.updateQuoteNumberConfig(format);
+System.out.println("New prefix: "    + updated.getFormat().getPrefix());   // "INV"
+System.out.println("Current floor: " + updated.getCurrentFloor());
+```
+
+Response: `{ format, currentFloor }` — the same shape as `getQuoteNumberConfig`. Request-body keys stay camelCase verbatim (`prefix`, `yearToken`, `monthToken`, `separator`, `padWidth`, `suffix`, `startNumber`, `resetCadence`); `padWidth` and `startNumber` are integers.
+
 ### TurboQuote error handling
 
 ```java
@@ -699,6 +733,8 @@ try {
 | `tq.updateType(id, req)` | Update a quote type |
 | `tq.deleteType(id)` | Delete a quote type |
 | `tq.createAndSend(req)` | Convenience: create quote + add line items + add bundles + send in one call |
+| `tq.getQuoteNumberConfig()` | Admin: get the org's quote-number config (`format` + `currentFloor`) |
+| `tq.updateQuoteNumberConfig(format)` | Admin: replace the quote-number format; returns updated `{ format, currentFloor }` |
 
 ## Gotchas
 

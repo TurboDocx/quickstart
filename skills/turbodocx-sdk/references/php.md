@@ -498,6 +498,44 @@ TurboQuote::applyPriceBook($quote->id, $priceBook->id);
 // Returns ApplyPriceBookResponse: { quote, message, updatedCount, skippedCount }
 ```
 
+### getQuoteNumberConfig
+
+Admin-only. Reads the org's quote-number configuration — the format used to generate new quote numbers (prefix, year/month tokens, separator, zero-padding, suffix, starting number, reset cadence).
+
+```php
+$config = TurboQuote::getQuoteNumberConfig();
+
+echo "Prefix: {$config->format->prefix}\n";
+echo "Current floor: {$config->currentFloor}\n";   // lowest start number you can set this period
+```
+
+Response: a `QuoteNumberConfig` — `{ format, currentFloor }`. `format` is a `QuoteNumberFormat` (`prefix`, `yearToken`, `monthToken`, `separator`, `padWidth`, `suffix`, `startNumber`, `resetCadence`); `currentFloor` is the per-period issued floor (a new `startNumber` can't be set below it).
+
+### updateQuoteNumberConfig
+
+Admin-only. Updates the org's quote-number format. Pass the full format (all eight fields). Request-body keys stay camelCase verbatim.
+
+```php
+use TurboDocx\Types\Quote\QuoteNumberFormat;
+
+// e.g. INV0001000 — no year/month tokens, 4-digit zero-padding, starting at 1000, never resets
+$config = TurboQuote::updateQuoteNumberConfig(new QuoteNumberFormat(
+    prefix: 'INV',
+    yearToken: 'none',     // 'none' | 'two' | 'four'
+    monthToken: 'off',     // 'off' | 'two'
+    separator: '',
+    padWidth: 4,           // int 0-12
+    suffix: '',
+    startNumber: 1000,     // int >= 0 (must be >= currentFloor)
+    resetCadence: 'never', // 'never' | 'yearly' | 'monthly'
+));
+
+echo "New prefix: {$config->format->prefix}\n";
+echo "Current floor: {$config->currentFloor}\n";
+```
+
+Response: the updated `QuoteNumberConfig` — same `{ format, currentFloor }` shape as `getQuoteNumberConfig`.
+
 ### TurboQuote error handling
 
 ```php
@@ -726,6 +764,9 @@ try {
 | `TurboQuote::createType($request)` | Create a type/category |
 | `TurboQuote::updateType($id, $request)` | Update a type/category |
 | `TurboQuote::deleteType($id)` | Delete a type/category |
+| **TurboQuote — Quote Numbering** | |
+| `TurboQuote::getQuoteNumberConfig()` | Get the org's quote-number config (admin only) |
+| `TurboQuote::updateQuoteNumberConfig($format)` | Update the quote-number format (admin only) |
 
 ## Gotchas
 

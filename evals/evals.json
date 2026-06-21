@@ -1728,6 +1728,121 @@
           "description": ".gitignore includes .env"
         }
       ]
+    },
+    {
+      "id": 29,
+      "prompt": "Add an admin endpoint to my Express app to view and customize our TurboQuote number format. Right now quotes are numbered like Q-2026-00001 but we want them like INV-1000 (prefix INV, no year, 4-digit, starting at 1000, never reset). Use the TurboDocx SDK so I can GET the current numbering config and PATCH a new one.",
+      "expected_output": "Creates a TurboQuote config (apiKey + orgId, NO senderEmail), a route/handler that calls TurboQuote.getQuoteNumberConfig() and TurboQuote.updateQuoteNumberConfig(format) with a camelCase format object (prefix, yearToken, monthToken, separator, padWidth, suffix, startNumber, resetCadence), wires the route into the app, and adds .env with TURBODOCX_API_KEY + TURBODOCX_ORG_ID only. Uses only the real method names; no invented methods like setQuoteFormat.",
+      "files": [
+        "package.json",
+        "tsconfig.json",
+        "src/index.ts",
+        "package-lock.json"
+      ],
+      "assertions": [
+        {
+          "name": "config-file-created",
+          "type": "file_exists",
+          "description": "A TurboQuote config/client file was created"
+        },
+        {
+          "name": "config-uses-turboquote",
+          "type": "file_contains",
+          "description": "Config calls TurboQuote.configure with apiKey and orgId (NOT TurboSign.configure)"
+        },
+        {
+          "name": "no-sender-email-in-config",
+          "type": "file_not_contains",
+          "description": "TurboQuote is configured WITHOUT senderEmail/senderName"
+        },
+        {
+          "name": "number-config-route-created",
+          "type": "file_exists",
+          "description": "An HTTP route/handler file was created for the quote numbering config"
+        },
+        {
+          "name": "uses-get-quote-number-config",
+          "type": "file_contains",
+          "description": "Calls TurboQuote.getQuoteNumberConfig() to read the current config"
+        },
+        {
+          "name": "uses-update-quote-number-config",
+          "type": "file_contains",
+          "description": "Calls TurboQuote.updateQuoteNumberConfig(format) to update it"
+        },
+        {
+          "name": "format-keys-camelcase",
+          "type": "file_contains",
+          "description": "The format object uses camelCase keys (prefix, yearToken, padWidth, startNumber, resetCadence)"
+        },
+        {
+          "name": "no-invented-methods",
+          "type": "file_not_contains",
+          "description": "Does NOT call invented methods like setQuoteFormat, configureQuoteNumber, or setQuoteNumberFormat"
+        },
+        {
+          "name": "routes-wired",
+          "type": "file_contains",
+          "description": "Main app (src/index.ts) imports and registers the numbering-config route"
+        },
+        {
+          "name": "env-has-org-id",
+          "type": "file_contains",
+          "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_ORG_ID"
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "prompt": "I run a Python (FastAPI) backend. Add an admin route that lets us customize the TurboQuote quote-number format with the TurboDocx SDK \u2014 read the current config and update it (we want prefix 'INV', no year segment, 4 digits, start at 1000, never reset). Expose GET and PATCH endpoints.",
+      "expected_output": "Creates a TurboQuote config (api key + org id, no sender email), a FastAPI route that calls TurboQuote.get_quote_number_config() and TurboQuote.update_quote_number_config(format) with a format dict whose KEYS stay camelCase (prefix, yearToken, monthToken, separator, padWidth, suffix, startNumber, resetCadence), wires it into the app, and adds env vars TURBODOCX_API_KEY + TURBODOCX_ORG_ID. Uses snake_case METHOD names but camelCase request-body keys; no invented methods.",
+      "files": [
+        "requirements.txt",
+        "main.py",
+        "pyproject.toml"
+      ],
+      "assertions": [
+        {
+          "name": "config-uses-turboquote",
+          "type": "file_contains",
+          "description": "Configures TurboQuote with api key + org id (not TurboSign)"
+        },
+        {
+          "name": "uses-get-quote-number-config",
+          "type": "file_contains",
+          "description": "Calls get_quote_number_config() (snake_case method name)"
+        },
+        {
+          "name": "uses-update-quote-number-config",
+          "type": "file_contains",
+          "description": "Calls update_quote_number_config(format) (snake_case method name)"
+        },
+        {
+          "name": "format-keys-camelcase",
+          "type": "file_contains",
+          "description": "The format dict KEYS are camelCase verbatim (prefix, yearToken, padWidth, startNumber, resetCadence) \u2014 NOT snake_cased"
+        },
+        {
+          "name": "no-snakecased-body-keys",
+          "type": "file_not_contains",
+          "description": "Does NOT snake_case the request-body keys (no year_token, pad_width, start_number, reset_cadence)"
+        },
+        {
+          "name": "no-invented-methods",
+          "type": "file_not_contains",
+          "description": "Does NOT call invented methods like set_quote_format or configure_quote_number"
+        },
+        {
+          "name": "route-wired",
+          "type": "file_contains",
+          "description": "FastAPI app registers the numbering-config GET and PATCH endpoints"
+        },
+        {
+          "name": "env-has-org-id",
+          "type": "file_contains",
+          "description": "Env config includes TURBODOCX_API_KEY and TURBODOCX_ORG_ID"
+        }
+      ]
     }
   ]
 }

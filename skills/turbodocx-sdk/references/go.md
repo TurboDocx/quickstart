@@ -600,6 +600,37 @@ if err != nil {
 fmt.Printf("Quote %s sent\n", result.Quote.QuoteNumber)
 ```
 
+### GetQuoteNumberConfig / UpdateQuoteNumberConfig
+
+Admin-only. Customize how new quote numbers are generated — prefix, year/month tokens, separator, zero-padding, suffix, starting number, and reset cadence.
+
+```go
+// Fetch the org's current quote-number config
+cfg, err := qc.GetQuoteNumberConfig(ctx)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("Current prefix: %s  Floor: %d\n", cfg.Format.Prefix, cfg.CurrentFloor)
+
+// Update with a custom format: e.g. INV-1000, INV-1001, ...
+updated, err := qc.UpdateQuoteNumberConfig(ctx, &turbodocx.QuoteNumberFormat{
+    Prefix:       "INV",
+    YearToken:    turbodocx.QuoteNumberYearTokenNone, // "none" | "two" | "four"
+    MonthToken:   turbodocx.QuoteNumberMonthTokenOff, // "off" | "two"
+    Separator:    "-",
+    PadWidth:     4, // zero-pad sequence to 4 digits (0-12)
+    Suffix:       "",
+    StartNumber:  1000, // can't be set below CurrentFloor
+    ResetCadence: turbodocx.QuoteNumberResetCadenceNever, // "never" | "yearly" | "monthly"
+})
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("New prefix: %s  Floor: %d\n", updated.Format.Prefix, updated.CurrentFloor)
+```
+
+Both methods return `{ format, currentFloor }`. `currentFloor` is the per-period issued floor (a read-only value the backend tracks — never sent in the PATCH body). Request-body keys stay camelCase verbatim: `prefix`, `yearToken`, `monthToken`, `separator`, `padWidth`, `suffix`, `startNumber`, `resetCadence` (`padWidth`/`startNumber` are integers).
+
 ### TurboQuote error handling
 
 ```go
@@ -690,6 +721,8 @@ if err != nil {
 | `qc.VoidQuote(ctx, id, req)` | Void a quote (reason required) |
 | `qc.HandleExpiredQuote(ctx, id, req)` | Resend, extend, or void an expired sent quote |
 | `qc.CreateAndSend(ctx, req)` | Convenience: create + add items + send in one call |
+| `qc.GetQuoteNumberConfig(ctx)` | Get the org's quote-number config (admin; `{ format, currentFloor }`) |
+| `qc.UpdateQuoteNumberConfig(ctx, format)` | Update the org's quote-number format (admin; returns `{ format, currentFloor }`) |
 | `qc.ListLineItems(ctx, quoteID, opts)` | List line items for a quote |
 | `qc.AddLineItems(ctx, quoteID, items...)` | Add one or more product line items (variadic) |
 | `qc.AddBundleLineItems(ctx, quoteID, items...)` | Add one or more bundle line items (variadic) |

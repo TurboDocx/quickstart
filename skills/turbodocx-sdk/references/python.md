@@ -543,6 +543,42 @@ except TurboDocxError:
     pass  # other typed SDK error (e.g. 5xx)
 ```
 
+### get_quote_number_config
+
+Admin-only. Read the org's quote-number configuration — the format that controls how new quote numbers are generated (prefix, year/month tokens, separator, zero-padding, suffix, starting number, and reset cadence).
+
+```python
+config = await TurboQuote.get_quote_number_config()
+
+fmt = config["format"]
+print(f"Prefix: {fmt['prefix']}")              # e.g. 'Q-'
+print(f"Current floor: {config['currentFloor']}")  # lowest issuable number this period
+```
+
+**Response:** `{ "format": {...}, "currentFloor": int }`. `currentFloor` is the per-period issued floor — `startNumber` can't be set below it.
+
+### update_quote_number_config
+
+Admin-only. Customize how new quote numbers are generated. Request-body keys stay **camelCase verbatim** (do not snake_case them); `padWidth` and `startNumber` are integers.
+
+```python
+updated = await TurboQuote.update_quote_number_config({
+    "prefix": "INV",
+    "yearToken": "none",       # 'none' | 'two' | 'four'
+    "monthToken": "off",       # 'off' | 'two'
+    "separator": "-",
+    "padWidth": 4,             # int 0-12 (zero-pad width)
+    "suffix": "",
+    "startNumber": 1000,       # int >= 0 (can't be below currentFloor)
+    "resetCadence": "never",   # 'never' | 'yearly' | 'monthly'
+})
+
+print(updated["format"]["prefix"])    # 'INV'
+print(updated["currentFloor"])        # per-period issued floor
+```
+
+**Response:** same shape as `get_quote_number_config` — `{ "format": {...}, "currentFloor": int }`.
+
 ## Error Handling
 
 ```python
@@ -615,6 +651,8 @@ except TurboDocxError as e:
 | `TurboQuote.apply_price_book(quote_id, price_book_id)` | Apply price book to quote; returns `{quote, message, updatedCount, skippedCount}` |
 | `TurboQuote.remove_price_book(quote_id)` | Remove price book from quote |
 | `TurboQuote.download_quote_pdf(id)` | Download quote as raw PDF bytes |
+| `TurboQuote.get_quote_number_config()` | Get the org's quote-number config (admin only); returns `{format, currentFloor}` |
+| `TurboQuote.update_quote_number_config(format)` | Update the quote-number format (admin only); returns `{format, currentFloor}` |
 | `TurboQuote.create_and_send(request)` | Convenience: create + add items + send in one call |
 | `TurboQuote.list_line_items(quote_id, options=)` | List line items for a quote |
 | `TurboQuote.add_line_items(quote_id, items)` | Add product line item(s); single dict auto-wrapped to array |
