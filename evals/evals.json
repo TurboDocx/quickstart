@@ -1843,6 +1843,149 @@
           "description": "Env config includes TURBODOCX_API_KEY and TURBODOCX_ORG_ID"
         }
       ]
+    },
+    {
+      "id": 31,
+      "prompt": "I have a Go HTTP service (net/http). Add an admin handler that lets us customize the TurboQuote number format with the TurboDocx Go SDK \u2014 read the current config and update it (prefix INV, no year segment, 4 digits, start at 1000, never reset). Expose GET and PATCH endpoints.",
+      "expected_output": "Configures the TurboDocx Go SDK quote client (api key + org id, no sender email), a handler that calls quoteClient.GetQuoteNumberConfig(ctx) and quoteClient.UpdateQuoteNumberConfig(ctx, &turbodocx.QuoteNumberFormat{...}) using the typed struct + typed enum constants (QuoteNumberYearTokenNone, QuoteNumberResetCadenceNever), wires the GET+PATCH handlers, and reads env TURBODOCX_API_KEY + TURBODOCX_ORG_ID. PascalCase method names; no invented methods.",
+      "files": [
+        "go.mod",
+        "main.go"
+      ],
+      "assertions": [
+        {
+          "name": "config-uses-turboquote",
+          "type": "file_contains",
+          "description": "Configures the TurboDocx Go SDK quote client with api key + org id (NOT a TurboSign client)"
+        },
+        {
+          "name": "uses-get-quote-number-config",
+          "type": "file_contains",
+          "description": "Calls GetQuoteNumberConfig(ctx) (PascalCase)"
+        },
+        {
+          "name": "uses-update-quote-number-config",
+          "type": "file_contains",
+          "description": "Calls UpdateQuoteNumberConfig(ctx, ...) (PascalCase)"
+        },
+        {
+          "name": "uses-format-struct",
+          "type": "file_contains",
+          "description": "Passes a typed *turbodocx.QuoteNumberFormat struct (NOT a hand-built map with arbitrary string keys)"
+        },
+        {
+          "name": "uses-typed-enum-or-values",
+          "type": "file_contains",
+          "description": "Uses the SDK enum constants (e.g. QuoteNumberYearTokenNone / QuoteNumberResetCadenceNever) or the exact valid string values"
+        },
+        {
+          "name": "no-invented-methods",
+          "type": "file_not_contains",
+          "description": "Does NOT call invented methods like SetQuoteFormat / ConfigureQuoteNumber"
+        },
+        {
+          "name": "handlers-wired",
+          "type": "file_contains",
+          "description": "Registers GET and PATCH handlers for the numbering config endpoint"
+        },
+        {
+          "name": "env-has-org-id",
+          "type": "file_contains",
+          "description": "Reads/sets TURBODOCX_API_KEY and TURBODOCX_ORG_ID"
+        }
+      ]
+    },
+    {
+      "id": 32,
+      "prompt": "I have a PHP app (Composer, plain PHP front controller). Add an admin route to customize the TurboQuote number format with the TurboDocx PHP SDK \u2014 read the current config and update it (prefix INV, no year segment, 4 digits, start at 1000, never reset). Expose GET and PATCH handling.",
+      "expected_output": "Configures TurboQuote (api key + org id, no sender email), a handler that calls TurboQuote::getQuoteNumberConfig() and TurboQuote::updateQuoteNumberConfig(new QuoteNumberFormat(...)) with camelCase named constructor args (prefix, yearToken, monthToken, separator, padWidth, suffix, startNumber, resetCadence), and reads env TURBODOCX_API_KEY + TURBODOCX_ORG_ID. camelCase method names; no invented methods.",
+      "files": [
+        "composer.json",
+        "public/index.php"
+      ],
+      "assertions": [
+        {
+          "name": "config-uses-turboquote",
+          "type": "file_contains",
+          "description": "Calls TurboQuote::configure with api key + org id (NOT TurboSign::configure)"
+        },
+        {
+          "name": "uses-get-quote-number-config",
+          "type": "file_contains",
+          "description": "Calls TurboQuote::getQuoteNumberConfig()"
+        },
+        {
+          "name": "uses-update-quote-number-config",
+          "type": "file_contains",
+          "description": "Calls TurboQuote::updateQuoteNumberConfig(...)"
+        },
+        {
+          "name": "uses-format-type-camelcase",
+          "type": "file_contains",
+          "description": "Builds a QuoteNumberFormat with camelCase named args (prefix, yearToken, padWidth, startNumber, resetCadence)"
+        },
+        {
+          "name": "no-snakecased-args",
+          "type": "file_not_contains",
+          "description": "Does NOT use snake_cased format args (no year_token, pad_width, start_number, reset_cadence)"
+        },
+        {
+          "name": "no-invented-methods",
+          "type": "file_not_contains",
+          "description": "Does NOT call invented methods like setQuoteFormat / configureQuoteNumber"
+        },
+        {
+          "name": "env-has-org-id",
+          "type": "file_contains",
+          "description": "Reads/sets TURBODOCX_API_KEY and TURBODOCX_ORG_ID"
+        }
+      ]
+    },
+    {
+      "id": 33,
+      "prompt": "I have a Java (Spring Boot, Maven) service. Add an admin controller to customize the TurboQuote number format with the TurboDocx Java SDK \u2014 read the current config and update it (prefix INV, no year segment, 4 digits, start at 1000, never reset). Expose GET and PATCH endpoints.",
+      "expected_output": "Configures TurboQuote (api key + org id, no sender email), a controller that calls tq.getQuoteNumberConfig() and tq.updateQuoteNumberConfig(format) where format is a QuoteNumberFormat whose token fields are set with the SDK enum constants (QuoteNumberYearToken.NONE, QuoteNumberMonthToken.OFF, QuoteNumberResetCadence.NEVER) \u2014 NOT String literals \u2014 and reads env TURBODOCX_API_KEY + TURBODOCX_ORG_ID. camelCase method names; no invented methods.",
+      "files": [
+        "pom.xml",
+        "src/main/java/com/example/demo/DemoApplication.java"
+      ],
+      "assertions": [
+        {
+          "name": "config-uses-turboquote",
+          "type": "file_contains",
+          "description": "Configures TurboQuote with api key + org id (NOT TurboSign)"
+        },
+        {
+          "name": "uses-get-quote-number-config",
+          "type": "file_contains",
+          "description": "Calls getQuoteNumberConfig()"
+        },
+        {
+          "name": "uses-update-quote-number-config",
+          "type": "file_contains",
+          "description": "Calls updateQuoteNumberConfig(...)"
+        },
+        {
+          "name": "uses-enum-constants",
+          "type": "file_contains",
+          "description": "Sets token fields with SDK enum constants (QuoteNumberYearToken.NONE / QuoteNumberResetCadence.NEVER)"
+        },
+        {
+          "name": "no-string-literal-enums",
+          "type": "file_not_contains",
+          "description": "Does NOT pass String literals to the enum setters (e.g. setYearToken(\"none\"), setResetCadence(\"never\"))"
+        },
+        {
+          "name": "no-invented-methods",
+          "type": "file_not_contains",
+          "description": "Does NOT call invented methods like setQuoteFormat / configureQuoteNumber"
+        },
+        {
+          "name": "env-has-org-id",
+          "type": "file_contains",
+          "description": "Reads/sets TURBODOCX_API_KEY and TURBODOCX_ORG_ID"
+        }
+      ]
     }
   ]
 }
