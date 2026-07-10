@@ -345,8 +345,8 @@ echo $org->data->id;
 
 // List (uses limit/offset, not page)
 $orgs = TurboPartner::listOrganizations(new ListOrganizationsRequest(limit: 20, offset: 0, search: 'acme'));
-echo $orgs->data->totalRecords;
-foreach ($orgs->data->results as $o) {
+echo $orgs->totalRecords;
+foreach ($orgs->results as $o) {
     echo "{$o->id} {$o->name}\n";
 }
 
@@ -423,6 +423,7 @@ TurboPartner::revokeOrganizationApiKey('org-uuid', 'key-uuid');
 use TurboDocx\Types\Requests\Partner\ListPartnerApiKeysRequest;
 use TurboDocx\Types\Requests\Partner\CreatePartnerApiKeyRequest;
 use TurboDocx\Types\Requests\Partner\UpdatePartnerApiKeyRequest;
+use TurboDocx\Types\Enums\PartnerScope;
 
 // List
 $keys = TurboPartner::listPartnerApiKeys(new ListPartnerApiKeysRequest(limit: 10));
@@ -430,7 +431,7 @@ $keys = TurboPartner::listPartnerApiKeys(new ListPartnerApiKeysRequest(limit: 10
 // Create with scopes — full key returned only on creation
 $created = TurboPartner::createPartnerApiKey(new CreatePartnerApiKeyRequest(
     name: 'CI/CD Key',
-    scopes: ['org:create', 'org:read', 'entitlements:update'],
+    scopes: [PartnerScope::ORG_CREATE, PartnerScope::ORG_READ, PartnerScope::ENTITLEMENTS_UPDATE],
     description: 'Used by GitHub Actions',
 ));
 echo $created->data->key; // store this immediately
@@ -438,7 +439,7 @@ echo $created->data->key; // store this immediately
 // Update name / scopes
 TurboPartner::updatePartnerApiKey('key-uuid', new UpdatePartnerApiKeyRequest(
     name: 'CI/CD Key (extended)',
-    scopes: ['org:create', 'org:read', 'org:update', 'entitlements:update'],
+    scopes: [PartnerScope::ORG_CREATE, PartnerScope::ORG_READ, PartnerScope::ORG_UPDATE, PartnerScope::ENTITLEMENTS_UPDATE],
 ));
 
 // Revoke
@@ -501,8 +502,8 @@ $logs = TurboPartner::getPartnerAuditLogs(new ListAuditLogsRequest(
     offset: 0,
 ));
 
-echo $logs->data->totalRecords;
-foreach ($logs->data->results as $entry) {
+echo $logs->totalRecords;
+foreach ($logs->results as $entry) {
     echo "{$entry->createdOn} {$entry->action} {$entry->resourceId}\n";
 }
 ```
