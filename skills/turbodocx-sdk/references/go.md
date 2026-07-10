@@ -631,6 +631,38 @@ fmt.Printf("New prefix: %s  Floor: %d\n", updated.Format.Prefix, updated.Current
 
 Both methods return `{ format, currentFloor }`. `currentFloor` is the per-period issued floor (a read-only value the backend tracks — never sent in the PATCH body). Request-body keys stay camelCase verbatim: `prefix`, `yearToken`, `monthToken`, `separator`, `padWidth`, `suffix`, `startNumber`, `resetCadence` (`padWidth`/`startNumber` are integers).
 
+### Bulk create (CSV-style imports)
+
+Six catalog resources support bulk creation from a slice of typed request rows (e.g. a parsed CSV): `BulkCreateProducts`, `BulkCreatePriceBooks`, `BulkCreateBundles`, `BulkCreateCompanies`, `BulkCreateContacts`, and `BulkCreateTypes`. Each takes the same request struct as the matching single `Create*` call; the SDK wraps the rows in the `{ "rows": [...] }` envelope the `POST {resource}/bulk` endpoint expects. Each returns `(*BulkImportResult, error)`.
+
+```go
+result, err := qc.BulkCreateProducts(ctx, []turbodocx.CreateProductRequest{
+    {Name: "Basic Plan",   ListPrice: 10,  BillingFrequency: "monthly", CategoryID: "category-uuid"},
+    {Name: "Premium Plan", ListPrice: 100, BillingFrequency: "monthly", CategoryID: "category-uuid"},
+})
+if err != nil {
+    log.Fatal(err) // only a transport/validation error (e.g. >500 rows) — NOT a per-row failure
+}
+
+fmt.Printf("Imported: %d\n", result.Imported)
+
+// Partial success: inspect failed rows instead of assuming all-or-nothing
+for _, f := range result.Failed {
+    fmt.Printf("Row %d failed: %s\n", f.Row, f.Reason)     // Row is 1-indexed
+}
+for _, a := range result.Adjusted {
+    fmt.Printf("Row %d adjusted: %s\n", a.Row, a.Reason)   // imported with a server-side tweak
+}
+```
+
+Response: `*BulkImportResult` — `{ Imported int; Failed []BulkImportRowIssue; Adjusted []BulkImportRowIssue }`, where each `BulkImportRowIssue` is `{ Row int; Reason string }` (`Row` is 1-indexed into the rows you sent).
+
+Bulk-create semantics:
+
+- **Partial success** — a failed row does **not** return an error and does **not** roll back the rows before it. It is reported in `result.Failed` with a 1-indexed `Row` and a `Reason`. Rows the server tweaked (e.g. an unknown bundle item dropped) appear in `result.Adjusted`. Always read `result.Failed` rather than assuming every row imported — a non-nil `err` only signals a transport-level or request-level failure (e.g. exceeding the cap).
+- **500-row cap per request** — more than 500 rows returns a 400 `*turbodocx.ValidationError`. The SDK does not validate the rows or the cap client-side.
+- **Roles** — available to administrator and contributor API keys.
+
 ### TurboQuote error handling
 
 ```go
@@ -730,6 +762,7 @@ if err != nil {
 | `qc.RemoveLineItem(ctx, quoteID, itemID)` | Remove a line item |
 | `qc.ListProducts(ctx, opts)` | Paginated product catalog |
 | `qc.CreateProduct(ctx, req)` | Create a product (multipart when images provided) |
+| `qc.BulkCreateProducts(ctx, rows)` | Bulk-import products; returns `(*BulkImportResult, error)` (partial success) |
 | `qc.GetProduct(ctx, id)` | Get a product by ID |
 | `qc.UpdateProduct(ctx, id, req)` | Update a product (multipart when images provided) |
 | `qc.DeleteProduct(ctx, id)` | Delete a product |
@@ -737,6 +770,7 @@ if err != nil {
 | `qc.GetProductPrimaryImages(ctx, productIDs)` | Batch-fetch primary images by product ID |
 | `qc.ListPriceBooks(ctx, opts)` | Paginated price-book list |
 | `qc.CreatePriceBook(ctx, req)` | Create a price book |
+| `qc.BulkCreatePriceBooks(ctx, rows)` | Bulk-import price books; returns `(*BulkImportResult, error)` (partial success) |
 | `qc.GetPriceBook(ctx, id)` | Get a price book by ID |
 | `qc.UpdatePriceBook(ctx, id, req)` | Update a price book |
 | `qc.DeletePriceBook(ctx, id)` | Delete a price book |
@@ -744,18 +778,21 @@ if err != nil {
 | `qc.ListPriceBookProducts(ctx, id, opts)` | List products associated with a price book |
 | `qc.ListBundles(ctx, opts)` | Paginated bundle list |
 | `qc.CreateBundle(ctx, req)` | Create a bundle |
+| `qc.BulkCreateBundles(ctx, rows)` | Bulk-import bundles; returns `(*BulkImportResult, error)` (partial success) |
 | `qc.GetBundle(ctx, id)` | Get a bundle by ID |
 | `qc.UpdateBundle(ctx, id, req)` | Update a bundle |
 | `qc.DeleteBundle(ctx, id)` | Delete a bundle |
 | `qc.DuplicateBundle(ctx, id)` | Duplicate a bundle |
 | `qc.ListCompanies(ctx, opts)` | Paginated company list |
 | `qc.CreateCompany(ctx, req)` | Create a company (contacts required ≥ 1) |
+| `qc.BulkCreateCompanies(ctx, rows)` | Bulk-import companies; returns `(*BulkImportResult, error)` (partial success) |
 | `qc.GetCompany(ctx, id)` | Get a company by ID |
 | `qc.UpdateCompany(ctx, id, req)` | Update a company |
 | `qc.DeleteCompany(ctx, id)` | Delete a company |
 | `qc.ListCompanyContacts(ctx, companyID, opts)` | List contacts for a specific company |
 | `qc.ListContacts(ctx, opts)` | Paginated contact list |
 | `qc.CreateContact(ctx, req)` | Create a contact |
+| `qc.BulkCreateContacts(ctx, rows)` | Bulk-import contacts; returns `(*BulkImportResult, error)` (partial success) |
 | `qc.UpdateContact(ctx, id, req)` | Update a contact |
 | `qc.DeleteContact(ctx, id)` | Delete a contact |
 | `qc.ListTemplates(ctx, opts)` | Paginated quote template list |
@@ -766,6 +803,7 @@ if err != nil {
 | `qc.DeleteTemplate(ctx, id)` | Delete a quote template |
 | `qc.ListTypes(ctx, opts)` | Paginated quote types/categories list |
 | `qc.CreateType(ctx, req)` | Create a quote type/category |
+| `qc.BulkCreateTypes(ctx, rows)` | Bulk-import types/categories; returns `(*BulkImportResult, error)` (partial success) |
 | `qc.UpdateType(ctx, id, req)` | Update a quote type/category |
 | `qc.DeleteType(ctx, id)` | Delete a quote type/category |
 
@@ -788,5 +826,6 @@ if err != nil {
 - **TurboQuote decimal fields are `float64`**, not strings — the response normalizer coerces backend string decimals (e.g. `"499.00"`) to `float64` before unmarshalling into `Quote`, `LineItem`, `Product`, etc. Do not expect string values for `unitPrice`, `listPrice`, `grandTotal`, `taxRate`, or any other monetary/percentage field.
 - **PATCH null-clears on `UpdateQuoteRequest` require explicit helper calls.** Go omits nil pointer fields by default. To send `"priceBookId": null`, `"validUntil": null`, `"taxRate": null`, or `"renewalPeriod": null`, call the corresponding method (`ClearPriceBookID()`, `ClearValidUntil()`, etc.) on the request before passing it to `UpdateQuote`. Setting the pointer to `nil` alone is not sufficient.
 - **`discountType` is `"percent"` or `"amount"`.** Use the typed constants `turbodocx.DiscountTypePercent` and `turbodocx.DiscountTypeAmount` when setting discounts on line items or bundles to avoid silent backend validation errors.
+- **Bulk creates are partial-success, not transactional.** `BulkCreateProducts`/`BulkCreatePriceBooks`/`BulkCreateBundles`/`BulkCreateCompanies`/`BulkCreateContacts`/`BulkCreateTypes` return a non-nil `err` only for transport/request-level failures (e.g. exceeding the 500-row cap → 400). A bad row does not error — read `result.Failed` (`[]BulkImportRowIssue{Row, Reason}`, `Row` 1-indexed) and `result.Adjusted`; earlier rows are not rolled back. Admin + contributor keys only.
 
 **Full API reference:** https://docs.turbodocx.com/docs

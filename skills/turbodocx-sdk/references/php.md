@@ -536,6 +536,47 @@ echo "Current floor: {$config->currentFloor}\n";
 
 Response: the updated `QuoteNumberConfig` — same `{ format, currentFloor }` shape as `getQuoteNumberConfig`.
 
+### Bulk create (CSV-style imports)
+
+Six catalog resources support bulk creation from an array of typed request rows (e.g. a parsed CSV): `bulkCreateProducts`, `bulkCreatePriceBooks`, `bulkCreateBundles`, `bulkCreateCompanies`, `bulkCreateContacts`, and `bulkCreateTypes`. Each takes an array of the same request objects the matching single `create*` call uses; the SDK wraps them in the `{ "rows": [...] }` envelope the `POST {resource}/bulk` endpoint expects. Each returns a `BulkImportResult`.
+
+```php
+use TurboDocx\Types\Requests\Quote\CreateProductRequest;
+
+$result = TurboQuote::bulkCreateProducts([
+    new CreateProductRequest(
+        name: 'Basic Plan',
+        listPrice: 10.00,
+        billingFrequency: 'monthly',
+        categoryId: 'category-uuid',
+    ),
+    new CreateProductRequest(
+        name: 'Premium Plan',
+        listPrice: 100.00,
+        billingFrequency: 'monthly',
+        categoryId: 'category-uuid',
+    ),
+]);
+
+echo "Imported: {$result->imported}\n";
+
+// Partial success: inspect failed rows instead of assuming all-or-nothing
+foreach ($result->failed as $issue) {
+    echo "Row {$issue->row} failed: {$issue->reason}\n";     // row is 1-indexed
+}
+foreach ($result->adjusted as $issue) {
+    echo "Row {$issue->row} adjusted: {$issue->reason}\n";   // imported with a server-side tweak
+}
+```
+
+Response: a `BulkImportResult` with `int $imported`, `BulkImportRowIssue[] $failed`, and `BulkImportRowIssue[] $adjusted`; each `BulkImportRowIssue` exposes `int $row` (1-indexed) and `string $reason`.
+
+Bulk-create semantics:
+
+- **Partial success** — a failed row does **not** throw and does **not** roll back the rows before it. It is reported in `$result->failed` with a 1-indexed `row` and a `reason`. Rows the server tweaked (e.g. an unknown bundle item dropped) appear in `$result->adjusted`. Always read `$result->failed` rather than assuming every row imported.
+- **500-row cap per request** — more than 500 rows throws `ValidationException` (400). The SDK does not validate the rows or the cap client-side.
+- **Roles** — available to administrator and contributor API keys.
+
 ### TurboQuote error handling
 
 ```php
@@ -720,6 +761,7 @@ try {
 | **TurboQuote — Products** | |
 | `TurboQuote::listProducts($request?)` | List catalog products |
 | `TurboQuote::createProduct($request)` | Create a product (supports image upload via multipart) |
+| `TurboQuote::bulkCreateProducts($rows)` | Bulk-import products; returns a partial-success `BulkImportResult` |
 | `TurboQuote::getProduct($id)` | Get product by ID |
 | `TurboQuote::updateProduct($id, $request)` | Update a product |
 | `TurboQuote::deleteProduct($id)` | Delete a product |
@@ -728,6 +770,7 @@ try {
 | **TurboQuote — Price Books** | |
 | `TurboQuote::listPriceBooks($request?)` | List price books |
 | `TurboQuote::createPriceBook($request)` | Create a price book |
+| `TurboQuote::bulkCreatePriceBooks($rows)` | Bulk-import price books; returns a partial-success `BulkImportResult` |
 | `TurboQuote::getPriceBook($id)` | Get price book by ID |
 | `TurboQuote::updatePriceBook($id, $request)` | Update a price book |
 | `TurboQuote::deletePriceBook($id)` | Delete a price book |
@@ -736,6 +779,7 @@ try {
 | **TurboQuote — Bundles** | |
 | `TurboQuote::listBundles($request?)` | List catalog bundles |
 | `TurboQuote::createBundle($request)` | Create a bundle |
+| `TurboQuote::bulkCreateBundles($rows)` | Bulk-import bundles; returns a partial-success `BulkImportResult` |
 | `TurboQuote::getBundle($id)` | Get bundle by ID |
 | `TurboQuote::updateBundle($id, $request)` | Update a bundle |
 | `TurboQuote::deleteBundle($id)` | Delete a bundle |
@@ -743,6 +787,7 @@ try {
 | **TurboQuote — Companies** | |
 | `TurboQuote::listCompanies($request?)` | List companies |
 | `TurboQuote::createCompany($request)` | Create a company (requires at least one contact in `contacts`) |
+| `TurboQuote::bulkCreateCompanies($rows)` | Bulk-import companies; returns a partial-success `BulkImportResult` |
 | `TurboQuote::getCompany($id)` | Get company by ID |
 | `TurboQuote::updateCompany($id, $request)` | Update a company |
 | `TurboQuote::deleteCompany($id)` | Delete a company |
@@ -750,6 +795,7 @@ try {
 | **TurboQuote — Contacts** | |
 | `TurboQuote::listContacts($request?)` | List contacts |
 | `TurboQuote::createContact($request)` | Create a contact |
+| `TurboQuote::bulkCreateContacts($rows)` | Bulk-import contacts; returns a partial-success `BulkImportResult` |
 | `TurboQuote::updateContact($id, $request)` | Update a contact |
 | `TurboQuote::deleteContact($id)` | Delete a contact |
 | **TurboQuote — Templates** | |
@@ -762,6 +808,7 @@ try {
 | **TurboQuote — Types** | |
 | `TurboQuote::listTypes($request?)` | List quote types/categories |
 | `TurboQuote::createType($request)` | Create a type/category |
+| `TurboQuote::bulkCreateTypes($rows)` | Bulk-import types/categories; returns a partial-success `BulkImportResult` |
 | `TurboQuote::updateType($id, $request)` | Update a type/category |
 | `TurboQuote::deleteType($id)` | Delete a type/category |
 | **TurboQuote — Quote Numbering** | |
@@ -786,5 +833,6 @@ try {
 - **TurboQuote decimal fields come back as numbers**, not strings — the response normalizer coerces `listPrice`, `unitPrice`, `discountPercent`, `subtotal`, `grandTotal`, `taxRate`, and related fields from the backend's string representation to PHP floats. Do not try to parse them yourself.
 - **PATCH null-clears nullable fields** — `updateQuote` (and other PATCH methods) include explicitly-set `null` values in the request body, which clears that field on the server. Only fields you actually pass are sent; fields you omit are left unchanged.
 - **`discountType` is `'percent'` or `'amount'`** — use the string literals or `DiscountType::PERCENT->value` / `DiscountType::AMOUNT->value`; mixing them up silently falls back to the backend default.
+- **Bulk creates are partial-success, not transactional.** `bulkCreateProducts`/`bulkCreatePriceBooks`/`bulkCreateBundles`/`bulkCreateCompanies`/`bulkCreateContacts`/`bulkCreateTypes` never throw on a bad row — read `$result->failed` (`BulkImportRowIssue[]` with 1-indexed `$row` + `$reason`) and `$result->adjusted`; earlier rows are not rolled back. Cap is 500 rows/request (over → `ValidationException` 400). Admin + contributor keys only.
 
 **Full API reference:** https://docs.turbodocx.com/docs

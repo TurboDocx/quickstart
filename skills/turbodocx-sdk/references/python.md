@@ -579,6 +579,33 @@ print(updated["currentFloor"])        # per-period issued floor
 
 **Response:** same shape as `get_quote_number_config` — `{ "format": {...}, "currentFloor": int }`.
 
+### Bulk create (CSV-style imports)
+
+Six catalog resources support bulk creation from a list of rows (e.g. a parsed CSV): `bulk_create_products`, `bulk_create_price_books`, `bulk_create_bundles`, `bulk_create_companies`, `bulk_create_contacts`, and `bulk_create_types`. Each takes a `list` of row dicts (the same shape as the matching single `create_*` request); the SDK wraps them in the `{ "rows": [...] }` envelope the `POST {resource}/bulk` endpoint expects. Row-dict keys stay **camelCase verbatim** — do not snake_case them.
+
+```python
+result = await TurboQuote.bulk_create_products([
+    {"name": "Basic Plan",   "listPrice": 10,  "billingFrequency": "monthly", "categoryId": "category-uuid"},
+    {"name": "Premium Plan", "listPrice": 100, "billingFrequency": "monthly", "categoryId": "category-uuid"},
+])
+
+print(result["imported"])   # int — rows that were created
+
+# Partial success: inspect failed rows instead of assuming all-or-nothing
+for f in result["failed"]:
+    print(f"Row {f['row']} failed: {f['reason']}")     # row is 1-indexed
+for a in result["adjusted"]:
+    print(f"Row {a['row']} adjusted: {a['reason']}")   # imported with a server-side tweak
+```
+
+**Response:** a `BulkImportResult` dict — `{ "imported": int, "failed": [...], "adjusted": [...] }`, where each entry in `failed`/`adjusted` is `{ "row": int, "reason": str }` (`row` is 1-indexed into the rows you sent).
+
+Bulk-create semantics:
+
+- **Partial success** — a failed row does **not** raise and does **not** roll back the rows before it. It is reported in `result["failed"]` with a 1-indexed `row` and a `reason`. Rows the server tweaked (e.g. an unknown bundle item dropped) appear in `result["adjusted"]`. Always read `result["failed"]` rather than assuming every row imported.
+- **500-row cap per request** — more than 500 rows returns 400 `ValidationError`. The SDK does not validate the rows or the cap client-side.
+- **Roles** — available to administrator and contributor API keys.
+
 ## Error Handling
 
 ```python
@@ -661,6 +688,7 @@ except TurboDocxError as e:
 | `TurboQuote.remove_line_item(quote_id, item_id)` | Remove a line item |
 | `TurboQuote.list_products(options=)` | List products |
 | `TurboQuote.create_product(request)` | Create product (multipart when `images` provided) |
+| `TurboQuote.bulk_create_products(rows)` | Bulk-import products; returns a partial-success `BulkImportResult` dict |
 | `TurboQuote.get_product(id)` | Get product by ID |
 | `TurboQuote.update_product(id, request)` | Update product |
 | `TurboQuote.delete_product(id)` | Delete product |
@@ -668,6 +696,7 @@ except TurboDocxError as e:
 | `TurboQuote.get_product_primary_images(product_ids)` | Batch-fetch primary images; returns `{product_id: image|None}` |
 | `TurboQuote.list_price_books(options=)` | List price books |
 | `TurboQuote.create_price_book(request)` | Create price book |
+| `TurboQuote.bulk_create_price_books(rows)` | Bulk-import price books; returns a partial-success `BulkImportResult` dict |
 | `TurboQuote.get_price_book(id)` | Get price book by ID |
 | `TurboQuote.update_price_book(id, request)` | Update price book |
 | `TurboQuote.delete_price_book(id)` | Delete price book |
@@ -675,18 +704,21 @@ except TurboDocxError as e:
 | `TurboQuote.list_price_book_products(id, options=)` | List products in a price book |
 | `TurboQuote.list_bundles(options=)` | List bundles |
 | `TurboQuote.create_bundle(request)` | Create bundle |
+| `TurboQuote.bulk_create_bundles(rows)` | Bulk-import bundles; returns a partial-success `BulkImportResult` dict |
 | `TurboQuote.get_bundle(id)` | Get bundle by ID |
 | `TurboQuote.update_bundle(id, request)` | Update bundle |
 | `TurboQuote.delete_bundle(id)` | Delete bundle |
 | `TurboQuote.duplicate_bundle(id)` | Duplicate bundle |
 | `TurboQuote.list_companies(options=)` | List companies |
 | `TurboQuote.create_company(request)` | Create company (`contacts` list required, min 1) |
+| `TurboQuote.bulk_create_companies(rows)` | Bulk-import companies; returns a partial-success `BulkImportResult` dict |
 | `TurboQuote.get_company(id)` | Get company by ID |
 | `TurboQuote.update_company(id, request)` | Update company |
 | `TurboQuote.delete_company(id)` | Delete company |
 | `TurboQuote.list_company_contacts(company_id, options=)` | List contacts for a company |
 | `TurboQuote.list_contacts(options=)` | List contacts |
 | `TurboQuote.create_contact(request)` | Create contact |
+| `TurboQuote.bulk_create_contacts(rows)` | Bulk-import contacts; returns a partial-success `BulkImportResult` dict |
 | `TurboQuote.update_contact(id, request)` | Update contact |
 | `TurboQuote.delete_contact(id)` | Delete contact |
 | `TurboQuote.list_templates(options=)` | List quote templates |
@@ -697,6 +729,7 @@ except TurboDocxError as e:
 | `TurboQuote.delete_template(id)` | Delete quote template |
 | `TurboQuote.list_types(options=)` | List types/categories |
 | `TurboQuote.create_type(request)` | Create a type |
+| `TurboQuote.bulk_create_types(rows)` | Bulk-import types/categories; returns a partial-success `BulkImportResult` dict |
 | `TurboQuote.update_type(id, request)` | Update a type |
 | `TurboQuote.delete_type(id)` | Delete a type |
 
@@ -718,5 +751,6 @@ except TurboDocxError as e:
 - **TurboQuote decimal fields come back as Python `float`**, not strings. The response normalizer coerces `listPrice`, `unitPrice`, `discountPercent`, `subtotal`, `grandTotal`, `taxRate`, and all other money/rate fields from the database string representation to `float` automatically — never parse them yourself.
 - **PATCH null clears nullable fields.** `update_quote` / `update_line_item` / `update_product` etc. use HTTP PATCH: explicitly passing `None` for a nullable field (e.g. `{"taxRate": None}`) sends `null` in the JSON body and clears that column. Omitting the key entirely leaves it unchanged. Do not pass `None` for fields you do not intend to clear.
 - **`discountType` is `'percent'` or `'amount'`, not `'percentage'`.** The backend enum is `'percent'`; using the wrong value returns a `400 ValidationError`. Similarly, `billingFrequency` values are `'monthly'`, `'quarterly'`, `'annual'`, and `'one-time'` (hyphen, not underscore).
+- **Bulk creates are partial-success, not transactional.** `bulk_create_products`/`bulk_create_price_books`/`bulk_create_bundles`/`bulk_create_companies`/`bulk_create_contacts`/`bulk_create_types` never raise on a bad row — read `result["failed"]` (`[{ "row", "reason" }]`, `row` 1-indexed) and `result["adjusted"]`; earlier rows are not rolled back. Cap is 500 rows/request (over → 400). Admin + contributor keys only. Row-dict keys stay camelCase.
 
 **Full API reference:** https://docs.turbodocx.com/docs

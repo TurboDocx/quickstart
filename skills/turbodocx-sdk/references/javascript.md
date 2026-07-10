@@ -752,6 +752,35 @@ console.log(updated.currentFloor);   // number
 
 Response: `{ format, currentFloor }` — the updated config. All eight `format` fields are required; keys (`prefix`, `yearToken`, `monthToken`, `separator`, `padWidth`, `suffix`, `startNumber`, `resetCadence`) stay camelCase verbatim. `padWidth` and `startNumber` are integers.
 
+### Bulk create (CSV-style imports)
+
+Six catalog resources support bulk creation from an array of rows (e.g. a parsed CSV): `bulkCreateProducts`, `bulkCreatePriceBooks`, `bulkCreateBundles`, `bulkCreateCompanies`, `bulkCreateContacts`, and `bulkCreateTypes`. Each takes an array of row objects (the same shape as the matching single `create*` request); the SDK wraps them in the `{ rows: [...] }` envelope the `POST {resource}/bulk` endpoint expects.
+
+```typescript
+const result = await TurboQuote.bulkCreateProducts([
+  { name: 'Basic Plan',   listPrice: 10,  billingFrequency: 'monthly', categoryId: 'category-uuid' },
+  { name: 'Premium Plan', listPrice: 100, billingFrequency: 'monthly', categoryId: 'category-uuid' },
+]);
+
+console.log(result.imported);   // number — rows that were created
+
+// Partial success: inspect failed rows instead of assuming all-or-nothing
+for (const f of result.failed) {
+  console.error(`Row ${f.row} failed: ${f.reason}`);   // row is 1-indexed
+}
+for (const a of result.adjusted) {
+  console.warn(`Row ${a.row} adjusted: ${a.reason}`);  // imported with a server-side tweak
+}
+```
+
+Response: `BulkImportResult` — `{ imported: number, failed: BulkImportRowIssue[], adjusted: BulkImportRowIssue[] }`, where each `BulkImportRowIssue` is `{ row: number, reason: string }` (`row` is 1-indexed into the rows you sent).
+
+Bulk-create semantics:
+
+- **Partial success** — a failed row does **not** throw and does **not** roll back the rows before it. It is reported in `failed` with its 1-indexed `row` and a `reason`. Rows the server tweaked (e.g. an unknown bundle item dropped) appear in `adjusted`. Always read `result.failed` rather than assuming every row imported.
+- **500-row cap per request** — more than 500 rows returns 400 `ValidationError`. The SDK does not validate the rows or the cap client-side.
+- **Roles** — available to administrator and contributor API keys.
+
 ### Catalog management (products, bundles, price books)
 
 ```typescript
@@ -1089,6 +1118,7 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode` and `code` p
 |--------|-------------|
 | `TurboQuote.listProducts(options?)` | Paginated product catalog |
 | `TurboQuote.createProduct(request)` | Create a product (uses multipart when `images` array is provided) |
+| `TurboQuote.bulkCreateProducts(rows)` | Bulk-import products from an array of rows; returns a partial-success `BulkImportResult` |
 | `TurboQuote.getProduct(id)` | Get a single product |
 | `TurboQuote.updateProduct(id, request)` | PATCH a product; multipart when images included |
 | `TurboQuote.deleteProduct(id)` | Delete a product |
@@ -1101,6 +1131,7 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode` and `code` p
 |--------|-------------|
 | `TurboQuote.listBundles(options?)` | Paginated bundle catalog |
 | `TurboQuote.createBundle(request)` | Create a bundle |
+| `TurboQuote.bulkCreateBundles(rows)` | Bulk-import bundles; returns a partial-success `BulkImportResult` |
 | `TurboQuote.getBundle(id)` | Get a single bundle |
 | `TurboQuote.updateBundle(id, request)` | PATCH a bundle |
 | `TurboQuote.deleteBundle(id)` | Delete a bundle |
@@ -1112,6 +1143,7 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode` and `code` p
 |--------|-------------|
 | `TurboQuote.listPriceBooks(options?)` | Paginated price book list |
 | `TurboQuote.createPriceBook(request)` | Create a price book |
+| `TurboQuote.bulkCreatePriceBooks(rows)` | Bulk-import price books; returns a partial-success `BulkImportResult` |
 | `TurboQuote.getPriceBook(id)` | Get a single price book |
 | `TurboQuote.updatePriceBook(id, request)` | PATCH a price book |
 | `TurboQuote.deletePriceBook(id)` | Delete a price book |
@@ -1124,12 +1156,14 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode` and `code` p
 |--------|-------------|
 | `TurboQuote.listCompanies(options?)` | Paginated company list |
 | `TurboQuote.createCompany(request)` | Create a company (`contacts` array with at least one entry required) |
+| `TurboQuote.bulkCreateCompanies(rows)` | Bulk-import companies; returns a partial-success `BulkImportResult` |
 | `TurboQuote.getCompany(id)` | Get a single company |
 | `TurboQuote.updateCompany(id, request)` | PATCH a company |
 | `TurboQuote.deleteCompany(id)` | Delete a company |
 | `TurboQuote.listCompanyContacts(companyId, options?)` | List contacts belonging to a company |
 | `TurboQuote.listContacts(options?)` | Paginated contact list across all companies |
 | `TurboQuote.createContact(request)` | Create a standalone contact |
+| `TurboQuote.bulkCreateContacts(rows)` | Bulk-import contacts; returns a partial-success `BulkImportResult` |
 | `TurboQuote.updateContact(id, request)` | PATCH a contact |
 | `TurboQuote.deleteContact(id)` | Delete a contact |
 
@@ -1145,6 +1179,7 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode` and `code` p
 | `TurboQuote.deleteTemplate(id)` | Delete a template |
 | `TurboQuote.listTypes(options?)` | List quote types/categories |
 | `TurboQuote.createType(request)` | Create a quote type |
+| `TurboQuote.bulkCreateTypes(rows)` | Bulk-import types/categories; returns a partial-success `BulkImportResult` |
 | `TurboQuote.updateType(id, request)` | PATCH a type name |
 | `TurboQuote.deleteType(id)` | Delete a type |
 
@@ -1176,5 +1211,6 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode` and `code` p
 - **`addLineItems` auto-wraps a single object to an array.** You can pass either one `AddLineItemRequest` or `AddLineItemRequest[]` — the SDK normalizes it. The return is always `LineItem[]`.
 - **`createCompany` requires at least one contact.** Pass a `contacts` array with at least one entry or the backend returns 400.
 - **No `getContact` or `getType` methods.** The backend has no `GET /v1/contacts/:id` or `GET /v1/types/:id` routes — this is intentional, not an SDK gap.
+- **Bulk creates are partial-success, not transactional.** `bulkCreateProducts`/`bulkCreatePriceBooks`/`bulkCreateBundles`/`bulkCreateCompanies`/`bulkCreateContacts`/`bulkCreateTypes` never throw on a bad row — read `result.failed` (`[{ row, reason }]`, `row` 1-indexed) and `result.adjusted`; earlier rows are not rolled back. Cap is 500 rows/request (over → 400). Admin + contributor keys only.
 
 **Full API reference:** https://docs.turbodocx.com/docs

@@ -1986,6 +1986,232 @@
           "description": "Reads/sets TURBODOCX_API_KEY and TURBODOCX_ORG_ID"
         }
       ]
+    },
+    {
+      "id": 34,
+      "prompt": "I have a Ruby on Rails app. Add an admin controller to customize our TurboQuote number format with the TurboDocx Ruby SDK — read the current config and update it (prefix INV, no year segment, 4 digits, start at 1000, never reset). Expose GET and PATCH endpoints.",
+      "expected_output": "Adds turbodocx-sdk to the Gemfile, configures TurboQuote (api_key + org_id, NO sender_email) in an initializer, and a controller that calls TurboDocxSdk::TurboQuote.get_quote_number_config and TurboDocxSdk::TurboQuote.update_quote_number_config(format) where the format hash KEYS stay camelCase verbatim (prefix, yearToken, monthToken, separator, padWidth, suffix, startNumber, resetCadence). Uses snake_case METHOD names but camelCase request-body keys; no invented methods; reads env TURBODOCX_API_KEY + TURBODOCX_ORG_ID.",
+      "files": [
+        "Gemfile",
+        "config/application.rb",
+        "config/routes.rb",
+        "app/controllers/application_controller.rb"
+      ],
+      "assertions": [
+        {
+          "name": "gem-added",
+          "type": "file_contains",
+          "description": "Gemfile includes the turbodocx-sdk gem"
+        },
+        {
+          "name": "config-uses-turboquote",
+          "type": "file_contains",
+          "description": "Configures TurboDocxSdk::TurboQuote with api_key and org_id (NOT TurboSign)"
+        },
+        {
+          "name": "no-sender-email-in-config",
+          "type": "file_not_contains",
+          "description": "TurboQuote is configured WITHOUT sender_email/sender_name"
+        },
+        {
+          "name": "uses-get-quote-number-config",
+          "type": "file_contains",
+          "description": "Calls get_quote_number_config (snake_case method name)"
+        },
+        {
+          "name": "uses-update-quote-number-config",
+          "type": "file_contains",
+          "description": "Calls update_quote_number_config (snake_case method name)"
+        },
+        {
+          "name": "format-keys-camelcase",
+          "type": "file_contains",
+          "description": "The format hash KEYS are camelCase verbatim (prefix, yearToken, padWidth, startNumber, resetCadence) — NOT snake_cased"
+        },
+        {
+          "name": "no-snakecased-body-keys",
+          "type": "file_not_contains",
+          "description": "Does NOT snake_case the request-body keys (no year_token, pad_width, start_number, reset_cadence)"
+        },
+        {
+          "name": "no-invented-methods",
+          "type": "file_not_contains",
+          "description": "Does NOT call invented methods like set_quote_format or configure_quote_number"
+        },
+        {
+          "name": "routes-defined",
+          "type": "file_contains",
+          "description": "GET and PATCH routes for the numbering-config endpoint are registered in config/routes.rb"
+        },
+        {
+          "name": "env-has-org-id",
+          "type": "file_contains",
+          "description": "Reads/sets TURBODOCX_API_KEY and TURBODOCX_ORG_ID"
+        }
+      ]
+    },
+    {
+      "id": 35,
+      "prompt": "I have a Ruby on Rails app. Add TurboDocx digital signature support with the TurboDocx Ruby SDK so I can send documents for e-signature and check their status. Add controller actions for sending and status.",
+      "expected_output": "Adds turbodocx-sdk to the Gemfile, configures TurboDocxSdk::TurboSign in a Rails initializer with api_key + org_id + sender_email, creates a controller that calls TurboDocxSdk::TurboSign.send_signature and get_status, wires routes into config/routes.rb, and adds .env with TurboSign vars. Uses snake_case method names but camelCase request-hash keys (documentName, recipients with signingOrder, fields with recipientEmail); no partner vars.",
+      "files": [
+        "Gemfile",
+        "config/application.rb",
+        "config/routes.rb",
+        "app/controllers/application_controller.rb"
+      ],
+      "assertions": [
+        {
+          "name": "gem-added",
+          "type": "file_contains",
+          "description": "Gemfile includes the turbodocx-sdk gem"
+        },
+        {
+          "name": "config-file-created",
+          "type": "file_exists",
+          "description": "A TurboSign config/initializer file was created (e.g. config/initializers/turbodocx.rb)"
+        },
+        {
+          "name": "config-has-turbosign",
+          "type": "file_contains",
+          "description": "Config calls TurboDocxSdk::TurboSign.configure with api_key, org_id, and sender_email env vars"
+        },
+        {
+          "name": "requires-sdk",
+          "type": "file_contains",
+          "description": "Code requires the SDK via require \"turbodocx_sdk\" (underscore, not hyphen)"
+        },
+        {
+          "name": "controller-created",
+          "type": "file_exists",
+          "description": "A Rails controller was created for signature send/status actions"
+        },
+        {
+          "name": "uses-send-signature",
+          "type": "file_contains",
+          "description": "Controller calls TurboDocxSdk::TurboSign.send_signature and get_status (snake_case method names)"
+        },
+        {
+          "name": "camelcase-request-keys",
+          "type": "file_contains",
+          "description": "The send_signature request hash uses camelCase keys verbatim (documentName, and recipients/fields with signingOrder/recipientEmail) — NOT snake_cased payload keys"
+        },
+        {
+          "name": "routes-wired",
+          "type": "file_contains",
+          "description": "config/routes.rb was modified to register the signature routes"
+        },
+        {
+          "name": "env-has-sign-vars",
+          "type": "file_contains",
+          "description": ".env contains TURBODOCX_API_KEY, TURBODOCX_ORG_ID, and TURBODOCX_SENDER_EMAIL"
+        },
+        {
+          "name": "no-partner-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY (user only asked for TurboSign)"
+        },
+        {
+          "name": "gitignore-has-env",
+          "type": "file_contains",
+          "description": ".gitignore includes .env"
+        }
+      ]
+    },
+    {
+      "id": 36,
+      "prompt": "Add a bulk product import endpoint to my Express app using TurboDocx TurboQuote. It should accept a parsed CSV of products (name, list price, billing frequency) and import them all in one call, then report which rows succeeded and which failed.",
+      "expected_output": "Creates a TurboQuote config (apiKey + orgId, NO senderEmail), a route/handler that calls TurboQuote.bulkCreateProducts(rows) once with the array of rows, and reports partial-success results by reading result.imported, result.failed (each { row, reason }, row 1-indexed), and result.adjusted — NOT assuming all-or-nothing and NOT looping createProduct per row. Adds .env with TURBODOCX_API_KEY + TURBODOCX_ORG_ID.",
+      "files": [
+        "package.json",
+        "tsconfig.json",
+        "src/index.ts",
+        "package-lock.json"
+      ],
+      "assertions": [
+        {
+          "name": "config-uses-turboquote",
+          "type": "file_contains",
+          "description": "Config calls TurboQuote.configure with apiKey and orgId (NOT TurboSign)"
+        },
+        {
+          "name": "uses-bulk-create-products",
+          "type": "file_contains",
+          "description": "Handler calls TurboQuote.bulkCreateProducts (the correct camelCase method name) with an array of rows"
+        },
+        {
+          "name": "reads-failed-partial-success",
+          "type": "file_contains",
+          "description": "Handler reads result.failed (partial-success report) rather than assuming every row imported — surfaces failed rows with their row/reason"
+        },
+        {
+          "name": "no-per-row-create-loop",
+          "type": "file_not_contains",
+          "description": "Does NOT loop calling TurboQuote.createProduct once per row (bulk import is a single call, not a per-row loop)"
+        },
+        {
+          "name": "no-invented-bulk-methods",
+          "type": "file_not_contains",
+          "description": "Does NOT call invented method names like importProducts, createProductsBulk, or bulkImportProducts"
+        },
+        {
+          "name": "env-has-org-id",
+          "type": "file_contains",
+          "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_ORG_ID"
+        },
+        {
+          "name": "no-sender-env-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL (TurboQuote does not send mail)"
+        }
+      ]
+    },
+    {
+      "id": 37,
+      "prompt": "In my FastAPI app, add an endpoint that bulk-imports a list of companies into TurboDocx TurboQuote from an uploaded spreadsheet, using the TurboDocx Python SDK. Report how many imported and which rows failed.",
+      "expected_output": "Creates a TurboQuote config (api_key + org_id, NO sender_email), a route that calls TurboQuote.bulk_create_companies(rows) once with the list of row dicts (row-dict KEYS stay camelCase verbatim), and reports partial success by reading result[\"imported\"], result[\"failed\"] (each { row, reason }, row 1-indexed), and result[\"adjusted\"] — NOT assuming all-or-nothing and NOT looping create_company per row. Adds env TURBODOCX_API_KEY + TURBODOCX_ORG_ID.",
+      "files": [
+        "pyproject.toml",
+        "app/main.py",
+        "app/routers/__init__.py"
+      ],
+      "assertions": [
+        {
+          "name": "config-uses-turboquote",
+          "type": "file_contains",
+          "description": "Config calls TurboQuote.configure with api_key and org_id (NOT TurboSign)"
+        },
+        {
+          "name": "uses-bulk-create-companies",
+          "type": "file_contains",
+          "description": "Route calls TurboQuote.bulk_create_companies (snake_case method name) with a list of rows"
+        },
+        {
+          "name": "row-keys-camelcase",
+          "type": "file_contains",
+          "description": "The row dicts use camelCase keys verbatim (e.g. contacts) — NOT snake_cased request-body keys"
+        },
+        {
+          "name": "reads-failed-partial-success",
+          "type": "file_contains",
+          "description": "Route reads result[\"failed\"] (partial-success report) rather than assuming every row imported — surfaces failed rows with their row/reason"
+        },
+        {
+          "name": "no-per-row-create-loop",
+          "type": "file_not_contains",
+          "description": "Does NOT loop calling create_company once per row (bulk import is a single call, not a per-row loop)"
+        },
+        {
+          "name": "no-invented-bulk-methods",
+          "type": "file_not_contains",
+          "description": "Does NOT call invented method names like import_companies or bulk_import_companies"
+        },
+        {
+          "name": "env-has-org-id",
+          "type": "file_contains",
+          "description": "Env config includes TURBODOCX_API_KEY and TURBODOCX_ORG_ID"
+        }
+      ]
     }
   ]
 }

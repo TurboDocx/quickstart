@@ -8,20 +8,20 @@
 <dependency>
     <groupId>com.turbodocx</groupId>
     <artifactId>turbodocx-sdk</artifactId>
-    <version>0.2.0</version>
+    <version>0.4.0</version>
 </dependency>
 ```
 
 ### Gradle
 
 ```groovy
-implementation 'com.turbodocx:turbodocx-sdk:0.2.0'
+implementation 'com.turbodocx:turbodocx-sdk:0.4.0'
 ```
 
 ### Gradle (Kotlin DSL)
 
 ```kotlin
-implementation("com.turbodocx:turbodocx-sdk:0.2.0")
+implementation("com.turbodocx:turbodocx-sdk:0.4.0")
 ```
 
 ## Imports
@@ -602,6 +602,49 @@ System.out.println("Current floor: " + updated.getCurrentFloor());
 
 Response: `{ format, currentFloor }` — the same shape as `getQuoteNumberConfig`. Request-body keys stay camelCase verbatim (`prefix`, `yearToken`, `monthToken`, `separator`, `padWidth`, `suffix`, `startNumber`, `resetCadence`); `padWidth` and `startNumber` are integers.
 
+### Bulk create (CSV-style imports)
+
+Six catalog resources support bulk creation from a `List` of typed request rows (e.g. a parsed CSV): `bulkCreateProducts`, `bulkCreatePriceBooks`, `bulkCreateBundles`, `bulkCreateCompanies`, `bulkCreateContacts`, and `bulkCreateTypes`. Each takes a `List` of the same request objects the matching single `create*` call uses; the SDK wraps them in the `{ "rows": [...] }` envelope the `POST {resource}/bulk` endpoint expects. Each returns a `BulkImportResult`.
+
+```java
+import com.turbodocx.models.quote.CreateProductRequest;
+import com.turbodocx.models.quote.BulkImportResult;
+import com.turbodocx.models.quote.BulkImportRowIssue;
+import java.util.List;
+
+CreateProductRequest basic = new CreateProductRequest();
+basic.setName("Basic Plan");
+basic.setListPrice(10.00);
+basic.setBillingFrequency("monthly");
+basic.setCategoryId("category-uuid");
+
+CreateProductRequest premium = new CreateProductRequest();
+premium.setName("Premium Plan");
+premium.setListPrice(100.00);
+premium.setBillingFrequency("monthly");
+premium.setCategoryId("category-uuid");
+
+BulkImportResult result = tq.bulkCreateProducts(List.of(basic, premium));
+
+System.out.println("Imported: " + result.getImported());
+
+// Partial success: inspect failed rows instead of assuming all-or-nothing
+for (BulkImportRowIssue issue : result.getFailed()) {
+    System.err.println("Row " + issue.getRow() + " failed: " + issue.getReason());   // row is 1-indexed
+}
+for (BulkImportRowIssue issue : result.getAdjusted()) {
+    System.out.println("Row " + issue.getRow() + " adjusted: " + issue.getReason()); // imported with a server-side tweak
+}
+```
+
+Response: a `BulkImportResult` — `getImported()` (int), `getFailed()` and `getAdjusted()` (`List<BulkImportRowIssue>`); each `BulkImportRowIssue` exposes `getRow()` (1-indexed int) and `getReason()` (String).
+
+Bulk-create semantics:
+
+- **Partial success** — a failed row does **not** throw and does **not** roll back the rows before it. It is reported by `result.getFailed()` with a 1-indexed row and a reason. Rows the server tweaked (e.g. an unknown bundle item dropped) appear in `result.getAdjusted()`. Always read `getFailed()` rather than assuming every row imported.
+- **500-row cap per request** — more than 500 rows throws `ValidationException` (400). The SDK does not validate the rows or the cap client-side.
+- **Roles** — available to administrator and contributor API keys.
+
 ### TurboQuote error handling
 
 ```java
@@ -694,6 +737,7 @@ try {
 | `tq.removeLineItem(quoteId, itemId)` | Remove a line item |
 | `tq.listProducts(options)` | List products in the catalog |
 | `tq.createProduct(req)` | Create a product (supports image upload via multipart) |
+| `tq.bulkCreateProducts(rows)` | Bulk-import products; returns a partial-success `BulkImportResult` |
 | `tq.getProduct(id)` | Get product by ID |
 | `tq.updateProduct(id, req)` | Update a product |
 | `tq.deleteProduct(id)` | Delete a product |
@@ -701,6 +745,7 @@ try {
 | `tq.getProductPrimaryImages(productIds)` | Batch-fetch primary images for product IDs |
 | `tq.listPriceBooks(options)` | List pricebooks |
 | `tq.createPriceBook(req)` | Create a pricebook |
+| `tq.bulkCreatePriceBooks(rows)` | Bulk-import price books; returns a partial-success `BulkImportResult` |
 | `tq.getPriceBook(id)` | Get pricebook by ID |
 | `tq.updatePriceBook(id, req)` | Update a pricebook |
 | `tq.deletePriceBook(id)` | Delete a pricebook |
@@ -708,18 +753,21 @@ try {
 | `tq.listPriceBookProducts(id, options)` | List products in a pricebook |
 | `tq.listBundles(options)` | List bundles |
 | `tq.createBundle(req)` | Create a bundle |
+| `tq.bulkCreateBundles(rows)` | Bulk-import bundles; returns a partial-success `BulkImportResult` |
 | `tq.getBundle(id)` | Get bundle by ID |
 | `tq.updateBundle(id, req)` | Update a bundle |
 | `tq.deleteBundle(id)` | Delete a bundle |
 | `tq.duplicateBundle(id)` | Duplicate a bundle |
 | `tq.listCompanies(options)` | List companies |
 | `tq.createCompany(req)` | Create a company (contacts required) |
+| `tq.bulkCreateCompanies(rows)` | Bulk-import companies; returns a partial-success `BulkImportResult` |
 | `tq.getCompany(id)` | Get company by ID |
 | `tq.updateCompany(id, req)` | Update a company |
 | `tq.deleteCompany(id)` | Delete a company |
 | `tq.listCompanyContacts(companyId, options)` | List contacts belonging to a company |
 | `tq.listContacts(options)` | List contacts |
 | `tq.createContact(req)` | Create a contact |
+| `tq.bulkCreateContacts(rows)` | Bulk-import contacts; returns a partial-success `BulkImportResult` |
 | `tq.updateContact(id, req)` | Update a contact |
 | `tq.deleteContact(id)` | Delete a contact |
 | `tq.listTemplates(options)` | List quote templates |
@@ -730,6 +778,7 @@ try {
 | `tq.deleteTemplate(id)` | Delete a quote template |
 | `tq.listTypes(options)` | List quote types |
 | `tq.createType(req)` | Create a quote type |
+| `tq.bulkCreateTypes(rows)` | Bulk-import types/categories; returns a partial-success `BulkImportResult` |
 | `tq.updateType(id, req)` | Update a quote type |
 | `tq.deleteType(id)` | Delete a quote type |
 | `tq.createAndSend(req)` | Convenience: create quote + add line items + add bundles + send in one call |
@@ -757,5 +806,6 @@ try {
 - **TurboQuote decimal fields come back as numbers, not strings.** The Java `ResponseNormalizer` (`FlexIntAdapter`) coerces string-serialized decimals (`listPrice`, `unitPrice`, `discountPercent`, `grandTotal`, `subtotal`, etc.) to `double`. Do not attempt to parse them manually from the raw JSON.
 - **`PATCH` null-clears nullable fields.** On `updateQuote`, `updateLineItem`, and similar PATCH methods, explicitly setting a field to `null` sends `null` in the request body and clears the value on the server. Fields you never set are omitted from the request entirely and left unchanged. This matters for fields like `priceBookId`, `validUntil`, and `taxRate`.
 - **`discountType` must be `"percent"` or `"amount"`.** Use the `DiscountType` enum constants (`DiscountType.PERCENT` / `DiscountType.AMOUNT`) to avoid silent 400 errors. Passing a raw string bypasses compile-time checking.
+- **Bulk creates are partial-success, not transactional.** `bulkCreateProducts`/`bulkCreatePriceBooks`/`bulkCreateBundles`/`bulkCreateCompanies`/`bulkCreateContacts`/`bulkCreateTypes` never throw on a bad row — read `result.getFailed()` (`List<BulkImportRowIssue>` with 1-indexed `getRow()` + `getReason()`) and `result.getAdjusted()`; earlier rows are not rolled back. Cap is 500 rows/request (over → `ValidationException` 400). Admin + contributor keys only.
 
 **Full API reference:** https://docs.turbodocx.com/docs
