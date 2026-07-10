@@ -1,9 +1,9 @@
 ---
 name: turbodocx-sdk
-description: Install TurboDocx SDK and generate integration code for TurboSign (digital signatures), Deliverable (template-based document generation), TurboPartner (partner management), TurboWebhooks (signature event subscriptions), and/or TurboQuote (sales quotes and proposals). Use when the user wants to add e-signatures, document signing, generate documents from templates with variable substitution, partner organization management, signature webhooks, build quotes/proposals/CPQ with products and price books, or any TurboDocx/TurboSign/TurboPartner/Deliverable/TurboWebhooks/TurboQuote functionality to their project. Supports JavaScript, TypeScript, Python, Go, PHP, and Java.
+description: Install TurboDocx SDK and generate integration code for TurboSign (digital signatures), Deliverable (template-based document generation), TurboPartner (partner management), TurboWebhooks (signature event subscriptions), and/or TurboQuote (sales quotes and proposals). Use when the user wants to add e-signatures, document signing, generate documents from templates with variable substitution, partner organization management, signature webhooks, build quotes/proposals/CPQ with products and price books, or any TurboDocx/TurboSign/TurboPartner/Deliverable/TurboWebhooks/TurboQuote functionality to their project. Supports JavaScript, TypeScript, Python, Go, PHP, Java, and Ruby.
 metadata:
   author: TurboDocx
-  version: "1.5.0"
+  version: "1.6.0"
 license: MIT
 ---
 
@@ -26,8 +26,9 @@ Scan for project manifest files to detect the language. Check in this priority o
 | `go.mod` | Go |
 | `composer.json` | PHP |
 | `pom.xml` / `build.gradle` / `build.gradle.kts` | Java |
+| `Gemfile` / `*.gemspec` | Ruby |
 
-Use Glob to check for these files. If multiple languages are detected, ask which one. If none found, ask the user which language they want to use.
+Use Glob to check for these files. If multiple languages are detected, ask which one. If none found, ask the user which language they want to use. A `.ruby-version` file (alongside a `Gemfile`) also indicates a Ruby project.
 
 **Additional detection for JS/TS projects:**
 - `tsconfig.json` exists → TypeScript (use `.ts` extensions)
@@ -60,11 +61,11 @@ Both products share the same credentials (`TURBODOCX_API_KEY` + `TURBODOCX_ORG_I
 
 **TurboWebhooks is an opt-in add-on** to TurboSign — it subscribes a single per-org HTTPS endpoint (locked to the name `signature`) to events like `signature.document.completed`. Don't surface it in the default question — enable it only when the user explicitly invokes `/turbodocx-sdk turbowebhooks`, asks how to receive event notifications, or asks how to verify the `X-TurboDocx-Signature` header. Reuses the same `TURBODOCX_API_KEY` + `TURBODOCX_ORG_ID` as TurboSign, but the key MUST have the administrator role (non-admin keys 403).
 
-**Language coverage for TurboWebhooks:** PHP, JavaScript/TypeScript, Python, Go, and Java are fully covered today.
+**Language coverage for TurboWebhooks:** PHP, JavaScript/TypeScript, Python, Go, Java, and Ruby are fully covered today.
 
 **TurboQuote is a separate, opt-in product** for building sales quotes and proposals — quotes, line items, a product/bundle catalog, price books, companies/contacts, and quote templates. Don't surface it in the default question — only enable it when the user explicitly invokes `/turbodocx-sdk turboquote`, or asks about creating quotes, proposals, CPQ, product catalogs, or price books. It reuses the same `TURBODOCX_API_KEY` + `TURBODOCX_ORG_ID` as TurboSign and does **not** need `TURBODOCX_SENDER_EMAIL` (quotes are not signature emails).
 
-**Language coverage for TurboQuote:** JavaScript/TypeScript, Python, Go, PHP, and Java are fully covered.
+**Language coverage for TurboQuote:** JavaScript/TypeScript, Python, Go, PHP, Java, and Ruby are fully covered.
 
 ---
 
@@ -78,6 +79,7 @@ Run the install command for the detected language. Read the appropriate `referen
 - PHP: always composer
 - Go: always go get
 - Java: check for pom.xml (Maven) or build.gradle (Gradle)
+- Ruby: if a `Gemfile` exists, use Bundler (`bundle add turbodocx-sdk`); otherwise `gem install turbodocx-sdk`
 
 Run the install command with Bash.
 
@@ -126,6 +128,7 @@ Read the reference file for the detected language:
 - Go → read `references/go.md`
 - PHP → read `references/php.md`
 - Java → read `references/java.md`
+- Ruby → read `references/ruby.md`
 
 These files contain the exact code templates for configuration, usage examples, and framework integration patterns.
 
@@ -183,7 +186,7 @@ Create working route handlers / endpoint code for the selected product(s). The l
 - `getStatus()` endpoint — check document status by ID
 - `download()` endpoint — stream signed PDF (returns `Blob`/`ArrayBuffer` per language)
 - If the user mentioned a preview, review step, draft, or "verify field placement before sending": also generate a `createSignatureReviewLink()` endpoint. This prepares the document and returns a `previewUrl` **without sending signature emails** — pair it with `sendSignature()` as a two-step preview-then-send workflow.
-- Optionally: `void()`, `resend()`, `getAuditTrail()` if the user mentioned cancellation, reminders, or compliance/audit needs (per-language method names vary — consult the language reference; e.g. JS uses `void()`/`resend()`, Java uses `voidDocument()`/`resendEmail()`)
+- Optionally: `void()`, `resend()`, `getAuditTrail()` if the user mentioned cancellation, reminders, or compliance/audit needs (per-language method names vary — consult the language reference; e.g. JS uses `void()`/`resend()`, Java uses `voidDocument()`/`resendEmail()`, Ruby uses `void_document`/`resend_email`)
 
 **For Deliverable, generate:**
 - `generateDeliverable()` endpoint — accepts `templateId` + `variables`, returns the new deliverable ID
@@ -210,6 +213,7 @@ Once the basics are scaffolded, point the user at the language reference (`refer
 - Place route files where existing routes live
 - Wire routes into the main app file (add import + registration)
 - Use the typed error hierarchy from the reference — `ValidationError`, `AuthenticationError`, `NotFoundError`, `RateLimitError`, `NetworkError` all import directly from `@turbodocx/sdk` (or the language equivalent); they are not namespaced under a module.
+- **Match each language's method casing** — JS/PHP/Java camelCase, Python/Ruby snake_case (`send_signature`, `create_quote`), Go PascalCase. For **Ruby specifically**: methods and keyword args are snake_case, but the **keys inside a request hash stay camelCase verbatim** (`documentName`, `signingOrder`, `recipientEmail`, `companyId`) — the SDK does not convert payload keys, so a hash key written in snake_case silently drops the value. Errors are `TurboDocxSdk::*Error` with a `status_code`.
 - Include inline comments explaining each step
 
 ---
@@ -266,8 +270,8 @@ Support arguments to skip product selection:
 - `/turbodocx-sdk deliverable` — Deliverable only
 - `/turbodocx-sdk turbosign+deliverable` — generate-then-sign workflow
 - `/turbodocx-sdk turbopartner` — TurboPartner only (partner-portal use case; requires partner credentials)
-- `/turbodocx-sdk turbowebhooks` — TurboWebhooks only (subscribe to signature events; PHP, JS/TS, Python, Go, and Java supported)
-- `/turbodocx-sdk turboquote` — TurboQuote only (build quotes/proposals: quotes, line items, products, bundles, price books, companies/contacts; JS/TS, Python, Go, PHP, and Java supported)
+- `/turbodocx-sdk turbowebhooks` — TurboWebhooks only (subscribe to signature events; PHP, JS/TS, Python, Go, Java, and Ruby supported)
+- `/turbodocx-sdk turboquote` — TurboQuote only (build quotes/proposals: quotes, line items, products, bundles, price books, companies/contacts; JS/TS, Python, Go, PHP, Java, and Ruby supported)
 
 For backwards compatibility, `/turbodocx-sdk both` is treated as TurboSign + Deliverable.
 

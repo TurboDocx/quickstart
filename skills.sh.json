@@ -4,7 +4,7 @@
   "groupings": [
     {
       "title": "TurboDocx E-Signatures & SDK",
-      "description": "TurboDocx SDK skills — install the TurboDocx SDK to add TurboDocx e-signatures (TurboSign), TurboDocx template-based document generation (TurboDocx Deliverable), and TurboDocx partner management (TurboPartner) across JavaScript, TypeScript, Python, Go, PHP, and Java with TurboDocx.",
+      "description": "TurboDocx SDK skills — install the TurboDocx SDK to add TurboDocx e-signatures (TurboSign), TurboDocx template-based document generation (TurboDocx Deliverable), and TurboDocx partner management (TurboPartner) across JavaScript, TypeScript, Python, Go, PHP, Java, and Ruby with TurboDocx.",
       "skills": ["turbodocx-sdk"]
     },
     {

@@ -6,7 +6,7 @@ An [Agent Skills](https://agentskills.io) plugin containing two skills for Turbo
 
 ### Skills
 
-1. **`/turbodocx-sdk`** — Detects the user's project language, asks whether they need TurboSign (digital signatures), Deliverable (template-based document generation), or both, then installs the SDK, configures environment variables, and generates working integration code. Also supports TurboPartner (partner-portal provisioning) via the explicit `turbopartner` shortcut for reseller/integrator accounts. Supports JS/TS, Python, Go, PHP, and Java.
+1. **`/turbodocx-sdk`** — Detects the user's project language, asks whether they need TurboSign (digital signatures), Deliverable (template-based document generation), or both, then installs the SDK, configures environment variables, and generates working integration code. Also supports TurboPartner (partner-portal provisioning) via the explicit `turbopartner` shortcut for reseller/integrator accounts. Supports JS/TS, Python, Go, PHP, Java, and Ruby.
 
 2. **`/turbodocx-html-to-docx`** — Sets up `@turbodocx/html-to-docx` in a Node.js/TypeScript project to convert HTML strings to Word documents. Installs the package, creates a helper module, and generates framework-appropriate integration code.
 
@@ -25,6 +25,7 @@ skills/
       go.md                         # Go SDK code templates
       php.md                        # PHP SDK code templates
       java.md                       # Java SDK code templates
+      ruby.md                       # Ruby SDK code templates
       env-vars.md                   # Environment variable reference
   turbodocx-html-to-docx/
     SKILL.md                        # Skill instructions

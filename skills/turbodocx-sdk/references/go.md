@@ -176,51 +176,361 @@ for _, entry := range audit.AuditTrail {
 }
 ```
 
-## TurboPartner Configuration
+## Deliverable
+
+Document generation: render a TurboDocx template with variable substitution into a deliverable (DOCX/PPTX), then download it or hand its ID to TurboSign as the source document.
+
+### Configuration
+
+`NewDeliverableClientOnly` does NOT require `SenderEmail` — Deliverable never sends email. `OrgID` is required (the constructor returns an `AuthenticationError` without it); it falls back to `TURBODOCX_ORG_ID` when omitted.
 
 ```go
-partner, err := turbodocx.NewPartnerClient(turbodocx.PartnerConfig{
-    PartnerAPIKey: os.Getenv("TURBODOCX_PARTNER_API_KEY"),
-    PartnerID:     os.Getenv("TURBODOCX_PARTNER_ID"),
+dc, err := turbodocx.NewDeliverableClientOnly(turbodocx.ClientConfig{
+    APIKey: os.Getenv("TURBODOCX_API_KEY"),
+    OrgID:  os.Getenv("TURBODOCX_ORG_ID"),
 })
 if err != nil {
     log.Fatal(err)
 }
 ```
 
-## TurboPartner Usage
+The full `NewClientWithConfig` client also exposes `client.Deliverable` alongside `client.TurboSign`.
 
-### CreateOrganization
+### GenerateDeliverable
+
+Generate a document from a template with variable substitution. Struct fields are Go-idiomatic, but they serialize to the camelCase JSON keys (`templateId`, `mimeType`) the API expects verbatim.
 
 ```go
-org, err := partner.CreateOrganization(ctx, &turbodocx.CreateOrganizationRequest{
-    Name: "Acme Corp",
-    Features: &turbodocx.Features{
-        MaxUsers: turbodocx.IntPtr(50),
-        HasTDAI:  turbodocx.BoolPtr(true),
+created, err := dc.GenerateDeliverable(ctx, &turbodocx.CreateDeliverableRequest{
+    TemplateID: "template-uuid",
+    Name:       "Employee Contract - John Smith",
+    Variables: []turbodocx.DeliverableVariable{
+        {Placeholder: "{EmployeeName}", Text: "John Smith", MimeType: "text"},
+        {Placeholder: "{CompanyName}", Text: "TechCorp Inc.", MimeType: "text"},
+        {Placeholder: "{StartDate}", Text: "2026-06-01", MimeType: "text"},
+    },
+    Description: "Generated via API for HR onboarding", // optional
+    Tags:        []string{"hr", "contract"},           // optional
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+d := created.Results.Deliverable
+fmt.Printf("%s  %s  %s\n", d.ID, d.Name, d.FileType)
+```
+
+`MimeType` is one of `"text"`, `"html"`, `"image"`, or `"markdown"`. For repeating content (tables, lists), set `VariableStack` on a `DeliverableVariable`.
+
+### ListDeliverables
+
+```go
+list, err := dc.ListDeliverables(ctx, &turbodocx.ListDeliverablesOptions{
+    Limit:    20, // 1-100, default 6
+    Offset:   0,
+    Query:    "contract",
+    ShowTags: true,
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+fmt.Println(list.TotalRecords)
+for _, d := range list.Results {
+    fmt.Printf("  %s  %s  %s\n", d.ID, d.Name, d.CreatedOn)
+}
+```
+
+Pagination uses `Offset`, not a page number.
+
+### GetDeliverableDetails
+
+```go
+d, err := dc.GetDeliverableDetails(ctx, deliverableID, &turbodocx.GetDeliverableOptions{ShowTags: true})
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Println(d.Name, d.TemplateName, len(d.Variables), d.Tags)
+```
+
+Returns a full `*DeliverableRecord` (unwrapped from `results`), including `Variables` and (when `ShowTags` is true) `Tags`.
+
+### UpdateDeliverableInfo
+
+```go
+tags := []string{"hr", "contract", "finalized"} // replaces all existing tags
+updated, err := dc.UpdateDeliverableInfo(ctx, deliverableID, &turbodocx.UpdateDeliverableRequest{
+    Name:        "Employee Contract - John Smith (Final)",
+    Description: "Finalized version",
+    Tags:        &tags,
+})
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Println(updated.Message, updated.DeliverableID)
+```
+
+`Tags` is a `*[]string`: passing it **replaces** the full tag set. Point it at an empty slice to clear all tags; leave it `nil` to keep the existing tags untouched.
+
+### DeleteDeliverable
+
+```go
+deleted, err := dc.DeleteDeliverable(ctx, deliverableID)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Println(deleted.Message) // soft delete — data is retained but hidden from list
+```
+
+### DownloadSourceFile / DownloadPDF
+
+Both return raw `[]byte` — write them straight to disk.
+
+```go
+docxBytes, err := dc.DownloadSourceFile(ctx, deliverableID)
+if err != nil {
+    log.Fatal(err)
+}
+os.WriteFile("contract.docx", docxBytes, 0644)
+
+pdfBytes, err := dc.DownloadPDF(ctx, deliverableID)
+if err != nil {
+    log.Fatal(err)
+}
+os.WriteFile("contract.pdf", pdfBytes, 0644)
+```
+
+`DownloadSourceFile` returns the original DOCX/PPTX and requires the `hasFileDownload` entitlement.
+
+### Generate, then send for signature
+
+The full client exposes both modules, so you can generate and sign without downloading and re-uploading:
+
+```go
+client, err := turbodocx.NewClientWithConfig(turbodocx.ClientConfig{
+    APIKey:      os.Getenv("TURBODOCX_API_KEY"),
+    OrgID:       os.Getenv("TURBODOCX_ORG_ID"),
+    SenderEmail: os.Getenv("TURBODOCX_SENDER_EMAIL"),
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+created, err := client.Deliverable.GenerateDeliverable(ctx, &turbodocx.CreateDeliverableRequest{
+    TemplateID: "template-uuid",
+    Name:       "Consulting Agreement",
+    Variables: []turbodocx.DeliverableVariable{
+        {Placeholder: "{ClientName}", Text: "Acme Corp", MimeType: "text"},
     },
 })
 if err != nil {
     log.Fatal(err)
 }
 
-fmt.Printf("Org ID: %s\n", org.Data.ID)
-```
-
-### ListOrganizations
-
-```go
-orgs, err := partner.ListOrganizations(ctx, &turbodocx.ListOrganizationsRequest{
-    Page:  1,
-    Limit: 20,
+_, err = client.TurboSign.SendSignature(ctx, &turbodocx.SendSignatureRequest{
+    DeliverableID: created.Results.Deliverable.ID, // no download/re-upload
+    DocumentName:  "Consulting Agreement",
+    Recipients: []turbodocx.Recipient{
+        {Name: "John Doe", Email: "john@example.com", SigningOrder: 1},
+    },
+    Fields: []turbodocx.Field{
+        {
+            Type:           "signature",
+            RecipientEmail: "john@example.com",
+            Template: &turbodocx.TemplateAnchor{
+                Anchor:    "{signature1}",
+                Placement: "replace",
+                Size:      &turbodocx.Size{Width: 100, Height: 30},
+            },
+        },
+    },
 })
 if err != nil {
     log.Fatal(err)
 }
+```
 
-fmt.Printf("Total: %d\n", orgs.Total)
-for _, org := range orgs.Data {
-    fmt.Printf("  %s (%s)\n", org.Name, org.ID)
+---
+
+## TurboPartner
+
+Partner-portal operations: provision and manage customer organizations, their users, API keys, entitlements, and audit logs. Uses **separate partner credentials**.
+
+### Configuration
+
+```go
+partner, err := turbodocx.NewPartnerClient(turbodocx.PartnerConfig{
+    PartnerAPIKey: os.Getenv("TURBODOCX_PARTNER_API_KEY"), // starts with TDXP-
+    PartnerID:     os.Getenv("TURBODOCX_PARTNER_ID"),      // UUID
+})
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+### Organization management
+
+```go
+// Create
+org, err := partner.CreateOrganization(ctx, &turbodocx.CreateOrganizationRequest{
+    Name:     "Acme Corp",
+    Metadata: map[string]interface{}{"industry": "Technology"},
+    Features: &turbodocx.Features{ // optional initial entitlements
+        MaxUsers: turbodocx.IntPtr(50),
+        HasTDAI:  turbodocx.BoolPtr(true),
+    },
+})
+fmt.Println(org.Data.ID)
+
+// List (uses Limit/Offset, not page)
+orgs, _ := partner.ListOrganizations(ctx, &turbodocx.ListOrganizationsRequest{
+    Limit:  turbodocx.IntPtr(20),
+    Offset: turbodocx.IntPtr(0),
+    Search: "acme",
+})
+fmt.Println(orgs.Data.TotalRecords)
+for _, o := range orgs.Data.Results {
+    fmt.Println(o.ID, o.Name)
+}
+
+// Get details (includes features + tracking)
+details, _ := partner.GetOrganizationDetails(ctx, "org-uuid")
+fmt.Println(details.Data.Features, details.Data.Tracking)
+
+// Update name
+partner.UpdateOrganizationInfo(ctx, "org-uuid", &turbodocx.UpdateOrganizationRequest{Name: "Acme Holdings"})
+
+// Delete
+partner.DeleteOrganization(ctx, "org-uuid")
+
+// Update entitlements — Features and Tracking are separate keys
+partner.UpdateOrganizationEntitlements(ctx, "org-uuid", &turbodocx.UpdateEntitlementsRequest{
+    Features: &turbodocx.Features{
+        MaxUsers:      turbodocx.IntPtr(100),
+        HasTDAI:       turbodocx.BoolPtr(true),
+        HasSalesforce: turbodocx.BoolPtr(true),
+    },
+    Tracking: &turbodocx.Tracking{NumUsers: 12}, // optional: seed usage counters
+})
+```
+
+### Organization user management
+
+```go
+// List
+users, _ := partner.ListOrganizationUsers(ctx, "org-uuid", &turbodocx.ListOrgUsersRequest{
+    Limit: turbodocx.IntPtr(25), Offset: turbodocx.IntPtr(0),
+})
+
+// Invite ("admin" | "contributor" | "user" | "viewer")
+partner.AddUserToOrganization(ctx, "org-uuid", &turbodocx.AddOrgUserRequest{
+    Email: "newhire@acme.com", Role: "contributor",
+})
+
+// Update role
+partner.UpdateOrganizationUserRole(ctx, "org-uuid", "user-uuid", &turbodocx.UpdateOrgUserRequest{Role: "admin"})
+
+// Remove
+partner.RemoveUserFromOrganization(ctx, "org-uuid", "user-uuid")
+
+// Resend invitation email
+partner.ResendOrganizationInvitationToUser(ctx, "org-uuid", "user-uuid")
+```
+
+### Organization API key management
+
+```go
+// List
+keys, _ := partner.ListOrganizationAPIKeys(ctx, "org-uuid", &turbodocx.ListOrgAPIKeysRequest{Limit: turbodocx.IntPtr(10)})
+
+// Create — the full key value is returned ONLY on creation, store it immediately
+created, _ := partner.CreateOrganizationAPIKey(ctx, "org-uuid", &turbodocx.CreateOrgAPIKeyRequest{
+    Name: "Production Key", Role: "admin",
+})
+fmt.Println(created.Data.Key) // capture this once, it won't be shown again
+
+// Update (rename or change role)
+partner.UpdateOrganizationAPIKey(ctx, "org-uuid", "key-uuid", &turbodocx.UpdateOrgAPIKeyRequest{Name: "Renamed"})
+
+// Revoke
+partner.RevokeOrganizationAPIKey(ctx, "org-uuid", "key-uuid")
+```
+
+### Partner API key management
+
+```go
+// List
+keys, _ := partner.ListPartnerAPIKeys(ctx, &turbodocx.ListPartnerAPIKeysRequest{Limit: turbodocx.IntPtr(10)})
+
+// Create with scopes — full key returned only on creation
+created, _ := partner.CreatePartnerAPIKey(ctx, &turbodocx.CreatePartnerAPIKeyRequest{
+    Name:        "CI/CD Key",
+    Scopes:      []string{turbodocx.ScopeOrgCreate, turbodocx.ScopeOrgRead, turbodocx.ScopeEntitlementsUpdate},
+    Description: "Used by GitHub Actions",
+})
+fmt.Println(created.Data.Key) // store this immediately
+
+// Update name / scopes
+partner.UpdatePartnerAPIKey(ctx, "key-uuid", &turbodocx.UpdatePartnerAPIKeyRequest{
+    Name:   "CI/CD Key (extended)",
+    Scopes: []string{turbodocx.ScopeOrgCreate, turbodocx.ScopeOrgRead, turbodocx.ScopeOrgUpdate, turbodocx.ScopeEntitlementsUpdate},
+})
+
+// Revoke
+partner.RevokePartnerAPIKey(ctx, "key-uuid")
+```
+
+Scope constants (`turbodocx.Scope*`) cover `org:*`, `entitlements:update`, `org-users:*`, `partner-users:*`, `org-apikeys:*`, `partner-apikeys:*`, and `audit:read`.
+
+### Partner-portal user management
+
+```go
+// List
+users, _ := partner.ListPartnerPortalUsers(ctx, &turbodocx.ListPartnerUsersRequest{Limit: turbodocx.IntPtr(25)})
+
+// Add (permissions are required on add — set every flag explicitly)
+partner.AddUserToPartnerPortal(ctx, &turbodocx.AddPartnerUserRequest{
+    Email: "admin@partner.com",
+    Role:  "admin", // "admin" | "member" | "viewer"
+    Permissions: turbodocx.PartnerPermissions{
+        CanManageOrgs:           true,
+        CanManageOrgUsers:       true,
+        CanManagePartnerUsers:   false,
+        CanManageOrgAPIKeys:     true,
+        CanManagePartnerAPIKeys: false,
+        CanUpdateEntitlements:   true,
+        CanViewAuditLogs:        true,
+    },
+})
+
+// Update — permissions can be partial here
+partner.UpdatePartnerUserPermissions(ctx, "user-uuid", &turbodocx.UpdatePartnerUserRequest{
+    Role:        "member",
+    Permissions: &turbodocx.PartnerPermissions{CanManageOrgs: true, CanManageOrgUsers: true},
+})
+
+// Remove
+partner.RemoveUserFromPartnerPortal(ctx, "user-uuid")
+
+// Resend invitation
+partner.ResendPartnerPortalInvitationToUser(ctx, "user-uuid")
+```
+
+### Audit logs
+
+```go
+logs, _ := partner.GetPartnerAuditLogs(ctx, &turbodocx.ListAuditLogsRequest{
+    Action:       "org.created",
+    ResourceType: "organization",
+    StartDate:    "2026-01-01",
+    EndDate:      "2026-12-31",
+    Success:      turbodocx.BoolPtr(true),
+    Limit:        turbodocx.IntPtr(100),
+    Offset:       turbodocx.IntPtr(0),
+})
+fmt.Println(logs.Data.TotalRecords)
+for _, entry := range logs.Data.Results {
+    fmt.Println(entry.CreatedOn, entry.Action, entry.ResourceID, entry.Success)
 }
 ```
 
@@ -600,6 +910,69 @@ if err != nil {
 fmt.Printf("Quote %s sent\n", result.Quote.QuoteNumber)
 ```
 
+### GetQuoteNumberConfig / UpdateQuoteNumberConfig
+
+Admin-only. Customize how new quote numbers are generated — prefix, year/month tokens, separator, zero-padding, suffix, starting number, and reset cadence.
+
+```go
+// Fetch the org's current quote-number config
+cfg, err := qc.GetQuoteNumberConfig(ctx)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("Current prefix: %s  Floor: %d\n", cfg.Format.Prefix, cfg.CurrentFloor)
+
+// Update with a custom format: e.g. INV-1000, INV-1001, ...
+updated, err := qc.UpdateQuoteNumberConfig(ctx, &turbodocx.QuoteNumberFormat{
+    Prefix:       "INV",
+    YearToken:    turbodocx.QuoteNumberYearTokenNone, // "none" | "two" | "four"
+    MonthToken:   turbodocx.QuoteNumberMonthTokenOff, // "off" | "two"
+    Separator:    "-",
+    PadWidth:     4, // zero-pad sequence to 4 digits (0-12)
+    Suffix:       "",
+    StartNumber:  1000, // can't be set below CurrentFloor
+    ResetCadence: turbodocx.QuoteNumberResetCadenceNever, // "never" | "yearly" | "monthly"
+})
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("New prefix: %s  Floor: %d\n", updated.Format.Prefix, updated.CurrentFloor)
+```
+
+Both methods return `{ format, currentFloor }`. `currentFloor` is the per-period issued floor (a read-only value the backend tracks — never sent in the PATCH body). Request-body keys stay camelCase verbatim: `prefix`, `yearToken`, `monthToken`, `separator`, `padWidth`, `suffix`, `startNumber`, `resetCadence` (`padWidth`/`startNumber` are integers).
+
+### Bulk create (CSV-style imports)
+
+Six catalog resources support bulk creation from a slice of typed request rows (e.g. a parsed CSV): `BulkCreateProducts`, `BulkCreatePriceBooks`, `BulkCreateBundles`, `BulkCreateCompanies`, `BulkCreateContacts`, and `BulkCreateTypes`. Each takes the same request struct as the matching single `Create*` call; the SDK wraps the rows in the `{ "rows": [...] }` envelope the `POST {resource}/bulk` endpoint expects. Each returns `(*BulkImportResult, error)`.
+
+```go
+result, err := qc.BulkCreateProducts(ctx, []turbodocx.CreateProductRequest{
+    {Name: "Basic Plan",   ListPrice: 10,  BillingFrequency: "monthly", CategoryID: "category-uuid"},
+    {Name: "Premium Plan", ListPrice: 100, BillingFrequency: "monthly", CategoryID: "category-uuid"},
+})
+if err != nil {
+    log.Fatal(err) // only a transport/validation error (e.g. >500 rows) — NOT a per-row failure
+}
+
+fmt.Printf("Imported: %d\n", result.Imported)
+
+// Partial success: inspect failed rows instead of assuming all-or-nothing
+for _, f := range result.Failed {
+    fmt.Printf("Row %d failed: %s\n", f.Row, f.Reason)     // Row is 1-indexed
+}
+for _, a := range result.Adjusted {
+    fmt.Printf("Row %d adjusted: %s\n", a.Row, a.Reason)   // imported with a server-side tweak
+}
+```
+
+Response: `*BulkImportResult` — `{ Imported int; Failed []BulkImportRowIssue; Adjusted []BulkImportRowIssue }`, where each `BulkImportRowIssue` is `{ Row int; Reason string }` (`Row` is 1-indexed into the rows you sent).
+
+Bulk-create semantics:
+
+- **Partial success** — a failed row does **not** return an error and does **not** roll back the rows before it. It is reported in `result.Failed` with a 1-indexed `Row` and a `Reason`. Rows the server tweaked (e.g. an unknown bundle item dropped) appear in `result.Adjusted`. Always read `result.Failed` rather than assuming every row imported — a non-nil `err` only signals a transport-level or request-level failure (e.g. exceeding the cap).
+- **500-row cap per request** — more than 500 rows returns a 400 `*turbodocx.ValidationError`. The SDK does not validate the rows or the cap client-side.
+- **Roles** — available to administrator and contributor API keys.
+
 ### TurboQuote error handling
 
 ```go
@@ -658,10 +1031,40 @@ if err != nil {
 | `client.TurboSign.VoidDocument(ctx, id, reason)` | Cancel a signature request (reason required) |
 | `client.TurboSign.ResendEmail(ctx, id, recipientIDs)` | Resend signature email to recipient UUIDs |
 | `client.TurboSign.GetAuditTrail(ctx, id)` | Get complete audit trail |
+| `turbodocx.NewDeliverableClientOnly(cfg)` | Construct a Deliverable client (no SenderEmail required) |
+| `dc.GenerateDeliverable(ctx, req)` | Render a template with variables into a new deliverable |
+| `dc.ListDeliverables(ctx, opts)` | Paginated list with search and tag filters |
+| `dc.GetDeliverableDetails(ctx, id, opts)` | Get full record including variables and fonts |
+| `dc.UpdateDeliverableInfo(ctx, id, req)` | Update name, description, or tags (tags replace) |
+| `dc.DeleteDeliverable(ctx, id)` | Soft-delete (data retained, hidden from list) |
+| `dc.DownloadSourceFile(ctx, id)` | Download original DOCX/PPTX as []byte |
+| `dc.DownloadPDF(ctx, id)` | Download rendered PDF as []byte |
+| `turbodocx.NewPartnerClient(cfg)` | Construct a partner client (PartnerAPIKey, PartnerID) |
 | `partner.CreateOrganization(ctx, req)` | Provision a new customer org |
-| `partner.ListOrganizations(ctx, req)` | List managed organizations |
-| `partner.GetOrganization(ctx, id)` | Get org details |
-| `partner.UpdateEntitlements(ctx, id, features)` | Update org entitlements |
+| `partner.ListOrganizations(ctx, req)` | List managed orgs (uses Limit/Offset, not page) |
+| `partner.GetOrganizationDetails(ctx, id)` | Get org details including features + tracking |
+| `partner.UpdateOrganizationInfo(ctx, id, req)` | Rename an org |
+| `partner.DeleteOrganization(ctx, id)` | Delete an org |
+| `partner.UpdateOrganizationEntitlements(ctx, id, req)` | Update features and/or tracking |
+| `partner.ListOrganizationUsers(ctx, id, req)` | Paginated org-user list |
+| `partner.AddUserToOrganization(ctx, id, req)` | Invite a user with role |
+| `partner.UpdateOrganizationUserRole(ctx, id, userID, req)` | Change a user's role |
+| `partner.RemoveUserFromOrganization(ctx, id, userID)` | Remove user from org |
+| `partner.ResendOrganizationInvitationToUser(ctx, id, userID)` | Resend invite email |
+| `partner.ListOrganizationAPIKeys(ctx, id, req)` | Paginated org API-key list |
+| `partner.CreateOrganizationAPIKey(ctx, id, req)` | Create org key (value returned only on creation) |
+| `partner.UpdateOrganizationAPIKey(ctx, id, keyID, req)` | Rename or change role |
+| `partner.RevokeOrganizationAPIKey(ctx, id, keyID)` | Revoke org key |
+| `partner.ListPartnerAPIKeys(ctx, req)` | Paginated partner API-key list |
+| `partner.CreatePartnerAPIKey(ctx, req)` | Create partner key with scopes |
+| `partner.UpdatePartnerAPIKey(ctx, keyID, req)` | Rename, edit scopes |
+| `partner.RevokePartnerAPIKey(ctx, keyID)` | Revoke partner key |
+| `partner.ListPartnerPortalUsers(ctx, req)` | Paginated partner-portal user list |
+| `partner.AddUserToPartnerPortal(ctx, req)` | Invite with role and permissions |
+| `partner.UpdatePartnerUserPermissions(ctx, userID, req)` | Update role/permissions (partial OK) |
+| `partner.RemoveUserFromPartnerPortal(ctx, userID)` | Remove partner-portal user |
+| `partner.ResendPartnerPortalInvitationToUser(ctx, userID)` | Resend invite email |
+| `partner.GetPartnerAuditLogs(ctx, req)` | Filter audit logs by action/resource/date/success |
 | `turbodocx.NewWebhooksClientWithConfig(cfg)` | Construct an admin-scoped webhook client (no SenderEmail required) |
 | `wh.CreateWebhook(ctx, req)` | Subscribe the org to events (HTTPS URLs only) |
 | `wh.GetWebhook(ctx)` | Get the org's signature webhook + delivery stats |
@@ -690,6 +1093,8 @@ if err != nil {
 | `qc.VoidQuote(ctx, id, req)` | Void a quote (reason required) |
 | `qc.HandleExpiredQuote(ctx, id, req)` | Resend, extend, or void an expired sent quote |
 | `qc.CreateAndSend(ctx, req)` | Convenience: create + add items + send in one call |
+| `qc.GetQuoteNumberConfig(ctx)` | Get the org's quote-number config (admin; `{ format, currentFloor }`) |
+| `qc.UpdateQuoteNumberConfig(ctx, format)` | Update the org's quote-number format (admin; returns `{ format, currentFloor }`) |
 | `qc.ListLineItems(ctx, quoteID, opts)` | List line items for a quote |
 | `qc.AddLineItems(ctx, quoteID, items...)` | Add one or more product line items (variadic) |
 | `qc.AddBundleLineItems(ctx, quoteID, items...)` | Add one or more bundle line items (variadic) |
@@ -697,6 +1102,7 @@ if err != nil {
 | `qc.RemoveLineItem(ctx, quoteID, itemID)` | Remove a line item |
 | `qc.ListProducts(ctx, opts)` | Paginated product catalog |
 | `qc.CreateProduct(ctx, req)` | Create a product (multipart when images provided) |
+| `qc.BulkCreateProducts(ctx, rows)` | Bulk-import products; returns `(*BulkImportResult, error)` (partial success) |
 | `qc.GetProduct(ctx, id)` | Get a product by ID |
 | `qc.UpdateProduct(ctx, id, req)` | Update a product (multipart when images provided) |
 | `qc.DeleteProduct(ctx, id)` | Delete a product |
@@ -704,6 +1110,7 @@ if err != nil {
 | `qc.GetProductPrimaryImages(ctx, productIDs)` | Batch-fetch primary images by product ID |
 | `qc.ListPriceBooks(ctx, opts)` | Paginated price-book list |
 | `qc.CreatePriceBook(ctx, req)` | Create a price book |
+| `qc.BulkCreatePriceBooks(ctx, rows)` | Bulk-import price books; returns `(*BulkImportResult, error)` (partial success) |
 | `qc.GetPriceBook(ctx, id)` | Get a price book by ID |
 | `qc.UpdatePriceBook(ctx, id, req)` | Update a price book |
 | `qc.DeletePriceBook(ctx, id)` | Delete a price book |
@@ -711,18 +1118,21 @@ if err != nil {
 | `qc.ListPriceBookProducts(ctx, id, opts)` | List products associated with a price book |
 | `qc.ListBundles(ctx, opts)` | Paginated bundle list |
 | `qc.CreateBundle(ctx, req)` | Create a bundle |
+| `qc.BulkCreateBundles(ctx, rows)` | Bulk-import bundles; returns `(*BulkImportResult, error)` (partial success) |
 | `qc.GetBundle(ctx, id)` | Get a bundle by ID |
 | `qc.UpdateBundle(ctx, id, req)` | Update a bundle |
 | `qc.DeleteBundle(ctx, id)` | Delete a bundle |
 | `qc.DuplicateBundle(ctx, id)` | Duplicate a bundle |
 | `qc.ListCompanies(ctx, opts)` | Paginated company list |
 | `qc.CreateCompany(ctx, req)` | Create a company (contacts required ≥ 1) |
+| `qc.BulkCreateCompanies(ctx, rows)` | Bulk-import companies; returns `(*BulkImportResult, error)` (partial success) |
 | `qc.GetCompany(ctx, id)` | Get a company by ID |
 | `qc.UpdateCompany(ctx, id, req)` | Update a company |
 | `qc.DeleteCompany(ctx, id)` | Delete a company |
 | `qc.ListCompanyContacts(ctx, companyID, opts)` | List contacts for a specific company |
 | `qc.ListContacts(ctx, opts)` | Paginated contact list |
 | `qc.CreateContact(ctx, req)` | Create a contact |
+| `qc.BulkCreateContacts(ctx, rows)` | Bulk-import contacts; returns `(*BulkImportResult, error)` (partial success) |
 | `qc.UpdateContact(ctx, id, req)` | Update a contact |
 | `qc.DeleteContact(ctx, id)` | Delete a contact |
 | `qc.ListTemplates(ctx, opts)` | Paginated quote template list |
@@ -733,6 +1143,7 @@ if err != nil {
 | `qc.DeleteTemplate(ctx, id)` | Delete a quote template |
 | `qc.ListTypes(ctx, opts)` | Paginated quote types/categories list |
 | `qc.CreateType(ctx, req)` | Create a quote type/category |
+| `qc.BulkCreateTypes(ctx, rows)` | Bulk-import types/categories; returns `(*BulkImportResult, error)` (partial success) |
 | `qc.UpdateType(ctx, id, req)` | Update a quote type/category |
 | `qc.DeleteType(ctx, id)` | Delete a quote type/category |
 
@@ -755,5 +1166,6 @@ if err != nil {
 - **TurboQuote decimal fields are `float64`**, not strings — the response normalizer coerces backend string decimals (e.g. `"499.00"`) to `float64` before unmarshalling into `Quote`, `LineItem`, `Product`, etc. Do not expect string values for `unitPrice`, `listPrice`, `grandTotal`, `taxRate`, or any other monetary/percentage field.
 - **PATCH null-clears on `UpdateQuoteRequest` require explicit helper calls.** Go omits nil pointer fields by default. To send `"priceBookId": null`, `"validUntil": null`, `"taxRate": null`, or `"renewalPeriod": null`, call the corresponding method (`ClearPriceBookID()`, `ClearValidUntil()`, etc.) on the request before passing it to `UpdateQuote`. Setting the pointer to `nil` alone is not sufficient.
 - **`discountType` is `"percent"` or `"amount"`.** Use the typed constants `turbodocx.DiscountTypePercent` and `turbodocx.DiscountTypeAmount` when setting discounts on line items or bundles to avoid silent backend validation errors.
+- **Bulk creates are partial-success, not transactional.** `BulkCreateProducts`/`BulkCreatePriceBooks`/`BulkCreateBundles`/`BulkCreateCompanies`/`BulkCreateContacts`/`BulkCreateTypes` return a non-nil `err` only for transport/request-level failures (e.g. exceeding the 500-row cap → 400). A bad row does not error — read `result.Failed` (`[]BulkImportRowIssue{Row, Reason}`, `Row` 1-indexed) and `result.Adjusted`; earlier rows are not rolled back. Admin + contributor keys only.
 
 **Full API reference:** https://docs.turbodocx.com/docs

@@ -21,7 +21,7 @@
 
 An [Agent Skills](https://agentskills.io) plugin with two skills:
 
-- **`/turbodocx-sdk`** — Install the TurboDocx SDK and generate working integration code for **TurboSign** (digital signatures) and **Deliverable** (template-based document generation) in one command. Also supports **TurboPartner** (partner-portal provisioning) for TurboDocx reseller/integrator accounts. Supports JS/TS, Python, Go, PHP, and Java.
+- **`/turbodocx-sdk`** — Install the TurboDocx SDK and generate working integration code for **TurboSign** (digital signatures) and **Deliverable** (template-based document generation) in one command. Also supports **TurboPartner** (partner-portal provisioning) for TurboDocx reseller/integrator accounts. Supports JS/TS, Python, Go, PHP, Java, and Ruby.
 - **`/turbodocx-html-to-docx`** — Set up `@turbodocx/html-to-docx` to convert HTML to Word documents in Node.js/TypeScript projects.
 
 Works with any tool that supports the Agent Skills standard: Claude Code, GitHub Copilot, Cursor, OpenCode, OpenAI Codex CLI, Gemini CLI, and others.
@@ -37,6 +37,7 @@ Works with any tool that supports the Agent Skills standard: Claude Code, GitHub
 | <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/go/go-original.svg" width="20"/> **Go** | `github.com/turbodocx/sdk` | Gin, Echo, Fiber, net/http |
 | <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/php/php-original.svg" width="20"/> **PHP** | `turbodocx/sdk` | Laravel, Symfony |
 | <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/java/java-original.svg" width="20"/> **Java** | `com.turbodocx:turbodocx-sdk` | Spring Boot, Micronaut, Quarkus |
+| <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/ruby/ruby-original.svg" width="20"/> **Ruby** | `turbodocx-sdk` | Rails, Sinatra, Rack |
 
 ---
 
@@ -62,7 +63,7 @@ Available skills:
 
 | Skill | What it does |
 |:------|:-------------|
-| **`turbodocx-sdk`** | Installs the TurboDocx SDK and generates working **TurboSign** + **Deliverable** integration code in JS/TS, Python, Go, PHP, or Java. **TurboPartner** is also available via explicit shortcut for partner-portal use cases. |
+| **`turbodocx-sdk`** | Installs the TurboDocx SDK and generates working **TurboSign** + **Deliverable** integration code in JS/TS, Python, Go, PHP, Java, or Ruby. **TurboPartner** is also available via explicit shortcut for partner-portal use cases. |
 | **`turbodocx-html-to-docx`** | Sets up `@turbodocx/html-to-docx` to convert HTML strings to Word documents in Node.js/TypeScript projects. |
 
 ### Claude Code (plugin)

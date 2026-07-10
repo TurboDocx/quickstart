@@ -165,43 +165,346 @@ foreach ($audit->auditTrail as $entry) {
 }
 ```
 
-## TurboPartner Configuration
+## Deliverable
+
+Document generation: render a TurboDocx template with variable substitution into a deliverable (DOCX/PPTX), then download it or hand its ID to TurboSign as the source document.
+
+### configure
+
+```php
+use TurboDocx\Deliverable;
+use TurboDocx\Config\DeliverableConfig;
+
+Deliverable::configure(new DeliverableConfig(
+    apiKey: $_ENV['TURBODOCX_API_KEY'],
+    orgId: $_ENV['TURBODOCX_ORG_ID'],
+));
+
+// Or auto-configure from environment
+Deliverable::configure(DeliverableConfig::fromEnvironment());
+```
+
+No `senderEmail` needed — Deliverable never sends email.
+
+### generateDeliverable
+
+Generate a document from a template with variable substitution. The request is a plain array; its keys (and each variable's keys) are camelCase (`templateId`, `mimeType`) — they are forwarded to the API verbatim.
+
+```php
+$result = Deliverable::generateDeliverable([
+    'templateId' => 'template-uuid',
+    'name' => 'Employee Contract - John Smith',
+    'variables' => [
+        ['placeholder' => '{EmployeeName}', 'text' => 'John Smith', 'mimeType' => 'text'],
+        ['placeholder' => '{CompanyName}', 'text' => 'TechCorp Inc.', 'mimeType' => 'text'],
+        ['placeholder' => '{StartDate}', 'text' => '2026-06-01', 'mimeType' => 'text'],
+    ],
+    'description' => 'Generated via API for HR onboarding', // optional
+    'tags' => ['hr', 'contract'],                          // optional
+]);
+
+$deliverable = $result['results']['deliverable'];
+echo "{$deliverable['id']}  {$deliverable['name']}  {$deliverable['fileType']}\n";
+```
+
+`mimeType` is one of `'text'`, `'html'`, `'image'`, or `'markdown'`. For repeating content (tables, lists), pass a `variableStack` on a variable.
+
+### listDeliverables
+
+```php
+$list = Deliverable::listDeliverables([
+    'limit' => 20,      // 1-100, default 6
+    'offset' => 0,
+    'query' => 'contract',
+    'showTags' => true,
+]);
+
+echo "{$list['totalRecords']}\n";
+foreach ($list['results'] as $d) {
+    echo "  {$d['id']}  {$d['name']}  {$d['createdOn']}\n";
+}
+```
+
+Pagination uses `offset`, not a page number.
+
+### getDeliverableDetails
+
+```php
+$d = Deliverable::getDeliverableDetails('deliverable-uuid', showTags: true);
+echo "{$d['name']}  {$d['templateName']}\n";
+```
+
+Returns the full deliverable record (unwrapped from `results`), including `variables` and (when `showTags: true`) `tags`.
+
+### updateDeliverableInfo
+
+```php
+$result = Deliverable::updateDeliverableInfo('deliverable-uuid', [
+    'name' => 'Employee Contract - John Smith (Final)',
+    'description' => 'Finalized version',
+    'tags' => ['hr', 'contract', 'finalized'], // replaces all existing tags
+]);
+echo "{$result['message']}  {$result['deliverableId']}\n";
+```
+
+Passing `tags` **replaces** the full tag set. To remove all tags, pass `'tags' => []`. To add one, fetch existing tags first and append.
+
+### deleteDeliverable
+
+```php
+$result = Deliverable::deleteDeliverable('deliverable-uuid');
+echo $result['message'] . "\n"; // soft delete — data is retained but hidden from list
+```
+
+### downloadSourceFile / downloadPDF
+
+Both return raw bytes as a string — write them straight to disk.
+
+```php
+$docxBytes = Deliverable::downloadSourceFile('deliverable-uuid');
+file_put_contents('contract.docx', $docxBytes);
+
+$pdfBytes = Deliverable::downloadPDF('deliverable-uuid');
+file_put_contents('contract.pdf', $pdfBytes);
+```
+
+`downloadSourceFile` returns the original DOCX/PPTX and requires the `hasFileDownload` entitlement.
+
+### Generate, then send for signature
+
+```php
+use TurboDocx\TurboSign;
+use TurboDocx\Types\Recipient;
+use TurboDocx\Types\Field;
+use TurboDocx\Types\SignatureFieldType;
+use TurboDocx\Types\TemplateConfig;
+use TurboDocx\Types\FieldPlacement;
+use TurboDocx\Types\Requests\SendSignatureRequest;
+
+$result = Deliverable::generateDeliverable([
+    'templateId' => 'template-uuid',
+    'name' => 'Consulting Agreement',
+    'variables' => [
+        ['placeholder' => '{ClientName}', 'text' => 'Acme Corp', 'mimeType' => 'text'],
+    ],
+]);
+
+TurboSign::sendSignature(
+    new SendSignatureRequest(
+        deliverableId: $result['results']['deliverable']['id'], // no download/re-upload
+        documentName: 'Consulting Agreement',
+        recipients: [
+            new Recipient('John Doe', 'john@example.com', 1),
+        ],
+        fields: [
+            new Field(
+                type: SignatureFieldType::SIGNATURE,
+                recipientEmail: 'john@example.com',
+                template: new TemplateConfig(
+                    anchor: '{signature1}',
+                    placement: FieldPlacement::REPLACE,
+                    size: ['width' => 100, 'height' => 30],
+                ),
+            ),
+        ],
+    )
+);
+```
+
+## TurboPartner
+
+Partner-portal operations: provision and manage customer organizations, their users, API keys, entitlements, and audit logs. Uses **separate partner credentials**. Request-body array values use **camelCase keys** (e.g. `maxUsers`, `canManageOrgs`).
+
+### Configuration
 
 ```php
 use TurboDocx\TurboPartner;
 use TurboDocx\Config\PartnerClientConfig;
 
 TurboPartner::configure(new PartnerClientConfig(
-    partnerApiKey: $_ENV['TURBODOCX_PARTNER_API_KEY'],
-    partnerId: $_ENV['TURBODOCX_PARTNER_ID'],
+    partnerApiKey: $_ENV['TURBODOCX_PARTNER_API_KEY'], // starts with TDXP-
+    partnerId: $_ENV['TURBODOCX_PARTNER_ID'],          // UUID
 ));
 ```
 
-## TurboPartner Usage
-
-### createOrganization
+### Organization management
 
 ```php
 use TurboDocx\Types\Requests\Partner\CreateOrganizationRequest;
+use TurboDocx\Types\Requests\Partner\ListOrganizationsRequest;
+use TurboDocx\Types\Requests\Partner\UpdateOrganizationRequest;
+use TurboDocx\Types\Requests\Partner\UpdateEntitlementsRequest;
 
-$result = TurboPartner::createOrganization(
-    new CreateOrganizationRequest(
-        name: 'Acme Corporation',
-        features: ['maxUsers' => 50, 'hasTDAI' => true],
-    )
-);
+// Create
+$org = TurboPartner::createOrganization(new CreateOrganizationRequest(
+    name: 'Acme Corp',
+    metadata: ['industry' => 'Technology'],
+    features: ['maxUsers' => 50, 'hasTDAI' => true], // optional initial entitlements; camelCase keys
+));
+echo $org->data->id;
 
-echo "Organization ID: {$result->data->id}\n";
+// List (uses limit/offset, not page)
+$orgs = TurboPartner::listOrganizations(new ListOrganizationsRequest(limit: 20, offset: 0, search: 'acme'));
+echo $orgs->totalRecords;
+foreach ($orgs->results as $o) {
+    echo "{$o->id} {$o->name}\n";
+}
+
+// Get details (includes features + tracking)
+$details = TurboPartner::getOrganizationDetails('org-uuid');
+
+// Update name
+TurboPartner::updateOrganizationInfo('org-uuid', new UpdateOrganizationRequest(name: 'Acme Holdings'));
+
+// Delete
+TurboPartner::deleteOrganization('org-uuid');
+
+// Update entitlements — features and tracking are separate keys
+TurboPartner::updateOrganizationEntitlements('org-uuid', new UpdateEntitlementsRequest(
+    features: ['maxUsers' => 100, 'hasTDAI' => true, 'hasSalesforce' => true],
+    tracking: ['numUsers' => 12], // optional: seed usage counters
+));
 ```
 
-### listOrganizations
+### Organization user management
 
 ```php
-$orgs = TurboPartner::listOrganizations(page: 1, limit: 20);
+use TurboDocx\Types\Requests\Partner\ListOrgUsersRequest;
+use TurboDocx\Types\Requests\Partner\AddOrgUserRequest;
+use TurboDocx\Types\Requests\Partner\UpdateOrgUserRequest;
+use TurboDocx\Types\Enums\OrgUserRole;
 
-echo "Total: {$orgs->total}\n";
-foreach ($orgs->data as $org) {
-    echo "  {$org->name} ({$org->id})\n";
+// List
+$users = TurboPartner::listOrganizationUsers('org-uuid', new ListOrgUsersRequest(limit: 25, offset: 0));
+
+// Invite (OrgUserRole: ADMIN | CONTRIBUTOR | USER | VIEWER)
+TurboPartner::addUserToOrganization('org-uuid', new AddOrgUserRequest(
+    email: 'newhire@acme.com',
+    role: OrgUserRole::CONTRIBUTOR,
+));
+
+// Update role
+TurboPartner::updateOrganizationUserRole('org-uuid', 'user-uuid', new UpdateOrgUserRequest(role: OrgUserRole::ADMIN));
+
+// Remove
+TurboPartner::removeUserFromOrganization('org-uuid', 'user-uuid');
+
+// Resend invitation email
+TurboPartner::resendOrganizationInvitationToUser('org-uuid', 'user-uuid');
+```
+
+### Organization API key management
+
+```php
+use TurboDocx\Types\Requests\Partner\ListOrgApiKeysRequest;
+use TurboDocx\Types\Requests\Partner\CreateOrgApiKeyRequest;
+use TurboDocx\Types\Requests\Partner\UpdateOrgApiKeyRequest;
+
+// List
+$keys = TurboPartner::listOrganizationApiKeys('org-uuid', new ListOrgApiKeysRequest(limit: 10));
+
+// Create — the full key value is returned ONLY on creation, store it immediately
+$created = TurboPartner::createOrganizationApiKey('org-uuid', new CreateOrgApiKeyRequest(
+    name: 'Production Key',
+    role: 'admin',
+));
+echo $created->data->key; // capture this once, it won't be shown again
+
+// Update (rename or change role)
+TurboPartner::updateOrganizationApiKey('org-uuid', 'key-uuid', new UpdateOrgApiKeyRequest(name: 'Renamed'));
+
+// Revoke
+TurboPartner::revokeOrganizationApiKey('org-uuid', 'key-uuid');
+```
+
+### Partner API key management
+
+```php
+use TurboDocx\Types\Requests\Partner\ListPartnerApiKeysRequest;
+use TurboDocx\Types\Requests\Partner\CreatePartnerApiKeyRequest;
+use TurboDocx\Types\Requests\Partner\UpdatePartnerApiKeyRequest;
+use TurboDocx\Types\Enums\PartnerScope;
+
+// List
+$keys = TurboPartner::listPartnerApiKeys(new ListPartnerApiKeysRequest(limit: 10));
+
+// Create with scopes — full key returned only on creation
+$created = TurboPartner::createPartnerApiKey(new CreatePartnerApiKeyRequest(
+    name: 'CI/CD Key',
+    scopes: [PartnerScope::ORG_CREATE, PartnerScope::ORG_READ, PartnerScope::ENTITLEMENTS_UPDATE],
+    description: 'Used by GitHub Actions',
+));
+echo $created->data->key; // store this immediately
+
+// Update name / scopes
+TurboPartner::updatePartnerApiKey('key-uuid', new UpdatePartnerApiKeyRequest(
+    name: 'CI/CD Key (extended)',
+    scopes: [PartnerScope::ORG_CREATE, PartnerScope::ORG_READ, PartnerScope::ORG_UPDATE, PartnerScope::ENTITLEMENTS_UPDATE],
+));
+
+// Revoke
+TurboPartner::revokePartnerApiKey('key-uuid');
+```
+
+Available scopes cover `org:*`, `entitlements:update`, `org-users:*`, `partner-users:*`, `org-apikeys:*`, `partner-apikeys:*`, and `audit:read`.
+
+### Partner-portal user management
+
+```php
+use TurboDocx\Types\Requests\Partner\ListPartnerUsersRequest;
+use TurboDocx\Types\Requests\Partner\AddPartnerUserRequest;
+use TurboDocx\Types\Requests\Partner\UpdatePartnerUserRequest;
+use TurboDocx\Types\Partner\PartnerPermissions;
+
+// List
+$users = TurboPartner::listPartnerPortalUsers(new ListPartnerUsersRequest(limit: 25));
+
+// Add (permissions are required on add — set every flag explicitly)
+TurboPartner::addUserToPartnerPortal(new AddPartnerUserRequest(
+    email: 'admin@partner.com',
+    role: 'admin', // 'admin' | 'member' | 'viewer'
+    permissions: new PartnerPermissions(
+        canManageOrgs: true,
+        canManageOrgUsers: true,
+        canManagePartnerUsers: false,
+        canManageOrgAPIKeys: true,
+        canManagePartnerAPIKeys: false,
+        canUpdateEntitlements: true,
+        canViewAuditLogs: true,
+    ),
+));
+
+// Update — role and/or permissions
+TurboPartner::updatePartnerUserPermissions('user-uuid', new UpdatePartnerUserRequest(
+    role: 'member',
+    permissions: new PartnerPermissions(canManageOrgs: true, canManageOrgUsers: true),
+));
+
+// Remove
+TurboPartner::removeUserFromPartnerPortal('user-uuid');
+
+// Resend invitation
+TurboPartner::resendPartnerPortalInvitationToUser('user-uuid');
+```
+
+### Audit logs
+
+```php
+use TurboDocx\Types\Requests\Partner\ListAuditLogsRequest;
+
+$logs = TurboPartner::getPartnerAuditLogs(new ListAuditLogsRequest(
+    action: 'org.created',
+    resourceType: 'organization',
+    startDate: '2026-01-01',
+    endDate: '2026-12-31',
+    success: true,
+    limit: 100,
+    offset: 0,
+));
+
+echo $logs->totalRecords;
+foreach ($logs->results as $entry) {
+    echo "{$entry->createdOn} {$entry->action} {$entry->resourceId}\n";
 }
 ```
 
@@ -498,6 +801,85 @@ TurboQuote::applyPriceBook($quote->id, $priceBook->id);
 // Returns ApplyPriceBookResponse: { quote, message, updatedCount, skippedCount }
 ```
 
+### getQuoteNumberConfig
+
+Admin-only. Reads the org's quote-number configuration — the format used to generate new quote numbers (prefix, year/month tokens, separator, zero-padding, suffix, starting number, reset cadence).
+
+```php
+$config = TurboQuote::getQuoteNumberConfig();
+
+echo "Prefix: {$config->format->prefix}\n";
+echo "Current floor: {$config->currentFloor}\n";   // lowest start number you can set this period
+```
+
+Response: a `QuoteNumberConfig` — `{ format, currentFloor }`. `format` is a `QuoteNumberFormat` (`prefix`, `yearToken`, `monthToken`, `separator`, `padWidth`, `suffix`, `startNumber`, `resetCadence`); `currentFloor` is the per-period issued floor (a new `startNumber` can't be set below it).
+
+### updateQuoteNumberConfig
+
+Admin-only. Updates the org's quote-number format. Pass the full format (all eight fields). Request-body keys stay camelCase verbatim.
+
+```php
+use TurboDocx\Types\Quote\QuoteNumberFormat;
+
+// e.g. INV0001000 — no year/month tokens, 4-digit zero-padding, starting at 1000, never resets
+$config = TurboQuote::updateQuoteNumberConfig(new QuoteNumberFormat(
+    prefix: 'INV',
+    yearToken: 'none',     // 'none' | 'two' | 'four'
+    monthToken: 'off',     // 'off' | 'two'
+    separator: '',
+    padWidth: 4,           // int 0-12
+    suffix: '',
+    startNumber: 1000,     // int >= 0 (must be >= currentFloor)
+    resetCadence: 'never', // 'never' | 'yearly' | 'monthly'
+));
+
+echo "New prefix: {$config->format->prefix}\n";
+echo "Current floor: {$config->currentFloor}\n";
+```
+
+Response: the updated `QuoteNumberConfig` — same `{ format, currentFloor }` shape as `getQuoteNumberConfig`.
+
+### Bulk create (CSV-style imports)
+
+Six catalog resources support bulk creation from an array of typed request rows (e.g. a parsed CSV): `bulkCreateProducts`, `bulkCreatePriceBooks`, `bulkCreateBundles`, `bulkCreateCompanies`, `bulkCreateContacts`, and `bulkCreateTypes`. Each takes an array of the same request objects the matching single `create*` call uses; the SDK wraps them in the `{ "rows": [...] }` envelope the `POST {resource}/bulk` endpoint expects. Each returns a `BulkImportResult`.
+
+```php
+use TurboDocx\Types\Requests\Quote\CreateProductRequest;
+
+$result = TurboQuote::bulkCreateProducts([
+    new CreateProductRequest(
+        name: 'Basic Plan',
+        listPrice: 10.00,
+        billingFrequency: 'monthly',
+        categoryId: 'category-uuid',
+    ),
+    new CreateProductRequest(
+        name: 'Premium Plan',
+        listPrice: 100.00,
+        billingFrequency: 'monthly',
+        categoryId: 'category-uuid',
+    ),
+]);
+
+echo "Imported: {$result->imported}\n";
+
+// Partial success: inspect failed rows instead of assuming all-or-nothing
+foreach ($result->failed as $issue) {
+    echo "Row {$issue->row} failed: {$issue->reason}\n";     // row is 1-indexed
+}
+foreach ($result->adjusted as $issue) {
+    echo "Row {$issue->row} adjusted: {$issue->reason}\n";   // imported with a server-side tweak
+}
+```
+
+Response: a `BulkImportResult` with `int $imported`, `BulkImportRowIssue[] $failed`, and `BulkImportRowIssue[] $adjusted`; each `BulkImportRowIssue` exposes `int $row` (1-indexed) and `string $reason`.
+
+Bulk-create semantics:
+
+- **Partial success** — a failed row does **not** throw and does **not** roll back the rows before it. It is reported in `$result->failed` with a 1-indexed `row` and a `reason`. Rows the server tweaked (e.g. an unknown bundle item dropped) appear in `$result->adjusted`. Always read `$result->failed` rather than assuming every row imported.
+- **500-row cap per request** — more than 500 rows throws `ValidationException` (400). The SDK does not validate the rows or the cap client-side.
+- **Roles** — available to administrator and contributor API keys.
+
 ### TurboQuote error handling
 
 ```php
@@ -643,15 +1025,46 @@ try {
 | `TurboSign::void($documentId, $reason)` | Cancel a signature request (reason required) |
 | `TurboSign::resend($documentId, $recipientIds)` | Resend signature email to recipient UUIDs |
 | `TurboSign::getAuditTrail($documentId)` | Get complete audit trail |
+| `Deliverable::configure($config)` | Configure the deliverable client (no senderEmail needed) |
+| `Deliverable::generateDeliverable($request)` | Render a template with variables into a new deliverable |
+| `Deliverable::listDeliverables($options)` | Paginated list with search and tag filters |
+| `Deliverable::getDeliverableDetails($id, $showTags)` | Get full record including variables and fonts |
+| `Deliverable::updateDeliverableInfo($id, $request)` | Update name, description, or tags (tags replace) |
+| `Deliverable::deleteDeliverable($id)` | Soft-delete (data retained, hidden from list) |
+| `Deliverable::downloadSourceFile($id)` | Download original DOCX/PPTX as a byte string |
+| `Deliverable::downloadPDF($id)` | Download rendered PDF as a byte string |
+| `TurboPartner::configure($config)` | Set partner credentials (PartnerClientConfig) |
 | `TurboPartner::createOrganization($request)` | Provision a new customer org |
-| `TurboPartner::listOrganizations(...)` | List managed organizations |
-| `TurboPartner::getOrganization($orgId)` | Get org details |
-| `TurboPartner::updateEntitlements($orgId, $features)` | Update org entitlements |
+| `TurboPartner::listOrganizations($request?)` | List managed orgs (uses limit/offset, not page) |
+| `TurboPartner::getOrganizationDetails($orgId)` | Get org details including features + tracking |
+| `TurboPartner::updateOrganizationInfo($orgId, $request)` | Rename an org |
+| `TurboPartner::deleteOrganization($orgId)` | Delete an org |
+| `TurboPartner::updateOrganizationEntitlements($orgId, $request)` | Update features and/or tracking |
+| `TurboPartner::listOrganizationUsers($orgId, $request?)` | Paginated org-user list |
+| `TurboPartner::addUserToOrganization($orgId, $request)` | Invite a user with role |
+| `TurboPartner::updateOrganizationUserRole($orgId, $userId, $request)` | Change a user's role |
+| `TurboPartner::removeUserFromOrganization($orgId, $userId)` | Remove user from org |
+| `TurboPartner::resendOrganizationInvitationToUser($orgId, $userId)` | Resend invite email |
+| `TurboPartner::listOrganizationApiKeys($orgId, $request?)` | Paginated org API-key list |
+| `TurboPartner::createOrganizationApiKey($orgId, $request)` | Create org key (value returned only on creation) |
+| `TurboPartner::updateOrganizationApiKey($orgId, $keyId, $request)` | Rename or change role |
+| `TurboPartner::revokeOrganizationApiKey($orgId, $keyId)` | Revoke org key |
+| `TurboPartner::listPartnerApiKeys($request?)` | Paginated partner API-key list |
+| `TurboPartner::createPartnerApiKey($request)` | Create partner key with scopes |
+| `TurboPartner::updatePartnerApiKey($keyId, $request)` | Rename, edit scopes |
+| `TurboPartner::revokePartnerApiKey($keyId)` | Revoke partner key |
+| `TurboPartner::listPartnerPortalUsers($request?)` | Paginated partner-portal user list |
+| `TurboPartner::addUserToPartnerPortal($request)` | Invite with role and permissions |
+| `TurboPartner::updatePartnerUserPermissions($userId, $request)` | Update role/permissions (partial OK) |
+| `TurboPartner::removeUserFromPartnerPortal($userId)` | Remove partner-portal user |
+| `TurboPartner::resendPartnerPortalInvitationToUser($userId)` | Resend invite email |
+| `TurboPartner::getPartnerAuditLogs($request?)` | Filter audit logs by action/resource/date/success |
 | `TurboWebhooks::createWebhook($urls, $events)` | Subscribe the org to events (HTTPS URLs only) |
 | `TurboWebhooks::getWebhook()` | Get the org's signature webhook + delivery stats |
 | `TurboWebhooks::updateWebhook(...)` | Patch URLs / events / isActive |
 | `TurboWebhooks::deleteWebhook()` | Soft-delete the webhook |
 | `TurboWebhooks::testWebhook($eventType, $payload)` | Fire a test delivery to all URLs |
+| `TurboWebhooks::notifyWebhook($eventType, $payload)` | Manual notify; same handler as testWebhook |
 | `TurboWebhooks::regenerateWebhookSecret()` | Rotate the HMAC secret (shown once) |
 | `TurboWebhooks::listWebhookDeliveries(...)` | Page through delivery history with filters |
 | `TurboWebhooks::replayWebhookDelivery($id)` | Manually retry a past delivery |
@@ -682,6 +1095,7 @@ try {
 | **TurboQuote — Products** | |
 | `TurboQuote::listProducts($request?)` | List catalog products |
 | `TurboQuote::createProduct($request)` | Create a product (supports image upload via multipart) |
+| `TurboQuote::bulkCreateProducts($rows)` | Bulk-import products; returns a partial-success `BulkImportResult` |
 | `TurboQuote::getProduct($id)` | Get product by ID |
 | `TurboQuote::updateProduct($id, $request)` | Update a product |
 | `TurboQuote::deleteProduct($id)` | Delete a product |
@@ -690,6 +1104,7 @@ try {
 | **TurboQuote — Price Books** | |
 | `TurboQuote::listPriceBooks($request?)` | List price books |
 | `TurboQuote::createPriceBook($request)` | Create a price book |
+| `TurboQuote::bulkCreatePriceBooks($rows)` | Bulk-import price books; returns a partial-success `BulkImportResult` |
 | `TurboQuote::getPriceBook($id)` | Get price book by ID |
 | `TurboQuote::updatePriceBook($id, $request)` | Update a price book |
 | `TurboQuote::deletePriceBook($id)` | Delete a price book |
@@ -698,6 +1113,7 @@ try {
 | **TurboQuote — Bundles** | |
 | `TurboQuote::listBundles($request?)` | List catalog bundles |
 | `TurboQuote::createBundle($request)` | Create a bundle |
+| `TurboQuote::bulkCreateBundles($rows)` | Bulk-import bundles; returns a partial-success `BulkImportResult` |
 | `TurboQuote::getBundle($id)` | Get bundle by ID |
 | `TurboQuote::updateBundle($id, $request)` | Update a bundle |
 | `TurboQuote::deleteBundle($id)` | Delete a bundle |
@@ -705,6 +1121,7 @@ try {
 | **TurboQuote — Companies** | |
 | `TurboQuote::listCompanies($request?)` | List companies |
 | `TurboQuote::createCompany($request)` | Create a company (requires at least one contact in `contacts`) |
+| `TurboQuote::bulkCreateCompanies($rows)` | Bulk-import companies; returns a partial-success `BulkImportResult` |
 | `TurboQuote::getCompany($id)` | Get company by ID |
 | `TurboQuote::updateCompany($id, $request)` | Update a company |
 | `TurboQuote::deleteCompany($id)` | Delete a company |
@@ -712,6 +1129,7 @@ try {
 | **TurboQuote — Contacts** | |
 | `TurboQuote::listContacts($request?)` | List contacts |
 | `TurboQuote::createContact($request)` | Create a contact |
+| `TurboQuote::bulkCreateContacts($rows)` | Bulk-import contacts; returns a partial-success `BulkImportResult` |
 | `TurboQuote::updateContact($id, $request)` | Update a contact |
 | `TurboQuote::deleteContact($id)` | Delete a contact |
 | **TurboQuote — Templates** | |
@@ -724,8 +1142,12 @@ try {
 | **TurboQuote — Types** | |
 | `TurboQuote::listTypes($request?)` | List quote types/categories |
 | `TurboQuote::createType($request)` | Create a type/category |
+| `TurboQuote::bulkCreateTypes($rows)` | Bulk-import types/categories; returns a partial-success `BulkImportResult` |
 | `TurboQuote::updateType($id, $request)` | Update a type/category |
 | `TurboQuote::deleteType($id)` | Delete a type/category |
+| **TurboQuote — Quote Numbering** | |
+| `TurboQuote::getQuoteNumberConfig()` | Get the org's quote-number config (admin only) |
+| `TurboQuote::updateQuoteNumberConfig($format)` | Update the quote-number format (admin only) |
 
 ## Gotchas
 
@@ -745,5 +1167,6 @@ try {
 - **TurboQuote decimal fields come back as numbers**, not strings — the response normalizer coerces `listPrice`, `unitPrice`, `discountPercent`, `subtotal`, `grandTotal`, `taxRate`, and related fields from the backend's string representation to PHP floats. Do not try to parse them yourself.
 - **PATCH null-clears nullable fields** — `updateQuote` (and other PATCH methods) include explicitly-set `null` values in the request body, which clears that field on the server. Only fields you actually pass are sent; fields you omit are left unchanged.
 - **`discountType` is `'percent'` or `'amount'`** — use the string literals or `DiscountType::PERCENT->value` / `DiscountType::AMOUNT->value`; mixing them up silently falls back to the backend default.
+- **Bulk creates are partial-success, not transactional.** `bulkCreateProducts`/`bulkCreatePriceBooks`/`bulkCreateBundles`/`bulkCreateCompanies`/`bulkCreateContacts`/`bulkCreateTypes` never throw on a bad row — read `$result->failed` (`BulkImportRowIssue[]` with 1-indexed `$row` + `$reason`) and `$result->adjusted`; earlier rows are not rolled back. Cap is 500 rows/request (over → `ValidationException` 400). Admin + contributor keys only.
 
 **Full API reference:** https://docs.turbodocx.com/docs

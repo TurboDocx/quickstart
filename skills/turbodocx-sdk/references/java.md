@@ -8,20 +8,20 @@
 <dependency>
     <groupId>com.turbodocx</groupId>
     <artifactId>turbodocx-sdk</artifactId>
-    <version>0.2.0</version>
+    <version>0.4.0</version>
 </dependency>
 ```
 
 ### Gradle
 
 ```groovy
-implementation 'com.turbodocx:turbodocx-sdk:0.2.0'
+implementation 'com.turbodocx:turbodocx-sdk:0.4.0'
 ```
 
 ### Gradle (Kotlin DSL)
 
 ```kotlin
-implementation("com.turbodocx:turbodocx-sdk:0.2.0")
+implementation("com.turbodocx:turbodocx-sdk:0.4.0")
 ```
 
 ## Imports
@@ -156,39 +156,308 @@ for (AuditTrailEntry entry : audit.getAuditTrail()) {
 }
 ```
 
-## TurboPartner Configuration
+## Deliverable
+
+Document generation: render a TurboDocx template with variable substitution into a deliverable (DOCX/PPTX), then download it or hand its ID to TurboSign as the source document.
+
+### Configuration
+
+Build a Deliverable-only client with `buildDeliverableClient()` — it does NOT require `senderEmail`, since Deliverable never sends email.
+
+```java
+import com.turbodocx.DeliverableClient;
+import com.turbodocx.models.deliverable.*;
+
+DeliverableClient deliverable = new TurboDocxClient.Builder()
+    .apiKey(System.getenv("TURBODOCX_API_KEY"))
+    .orgId(System.getenv("TURBODOCX_ORG_ID"))
+    .buildDeliverableClient();
+```
+
+A full `TurboDocxClient` (built with `.build()`) also exposes `client.deliverable()` alongside `client.turboSign()`.
+
+### generateDeliverable
+
+Generate a document from a template with variable substitution. Method and setter names are camelCase, and they serialize to the camelCase JSON keys (`templateId`, `mimeType`) the API expects verbatim.
+
+```java
+DeliverableVariable employeeVar = new DeliverableVariable();
+employeeVar.setPlaceholder("{EmployeeName}");
+employeeVar.setText("John Smith");
+employeeVar.setMimeType("text");
+
+DeliverableVariable companyVar = new DeliverableVariable();
+companyVar.setPlaceholder("{CompanyName}");
+companyVar.setText("TechCorp Inc.");
+companyVar.setMimeType("text");
+
+CreateDeliverableRequest createReq = new CreateDeliverableRequest();
+createReq.setName("Employee Contract - John Smith");
+createReq.setTemplateId("template-uuid");
+createReq.setVariables(List.of(employeeVar, companyVar));
+createReq.setDescription("Generated via API for HR onboarding"); // optional
+createReq.setTags(List.of("hr", "contract"));                    // optional
+
+CreateDeliverableResponse created = deliverable.generateDeliverable(createReq);
+DeliverableRecord d = created.getResults().getDeliverable();
+System.out.println(d.getId() + "  " + d.getName() + "  " + d.getFileType());
+```
+
+`mimeType` is one of `"text"`, `"html"`, `"image"`, or `"markdown"`. For repeating content (tables, lists), set a variable stack on a `DeliverableVariable`.
+
+### listDeliverables
+
+```java
+ListDeliverablesRequest listReq = new ListDeliverablesRequest();
+listReq.setLimit(20);   // 1-100, default 6
+listReq.setOffset(0);
+listReq.setQuery("contract");
+listReq.setShowTags(true);
+
+DeliverableListResponse list = deliverable.listDeliverables(listReq);
+System.out.println(list.getTotalRecords());
+for (DeliverableRecord record : list.getResults()) {
+    System.out.println("  " + record.getId() + "  " + record.getName());
+}
+```
+
+Pagination uses `offset`, not a page number. Call `deliverable.listDeliverables()` (no args) for defaults.
+
+### getDeliverableDetails
+
+```java
+DeliverableRecord details = deliverable.getDeliverableDetails(deliverableId, true);
+System.out.println(details.getName() + "  " + details.getTemplateName());
+```
+
+Returns a full `DeliverableRecord` (unwrapped from `results`), including variables and (when `showTags` is true) tags.
+
+### updateDeliverableInfo
+
+```java
+UpdateDeliverableRequest updateReq = new UpdateDeliverableRequest();
+updateReq.setName("Employee Contract - John Smith (Final)");
+updateReq.setDescription("Finalized version");
+updateReq.setTags(List.of("hr", "contract", "finalized")); // replaces all existing tags
+
+UpdateDeliverableResponse updated = deliverable.updateDeliverableInfo(deliverableId, updateReq);
+System.out.println(updated.getMessage() + "  " + updated.getDeliverableId());
+```
+
+Setting `tags` **replaces** the full tag set. Pass an empty list to clear all tags; leave it unset to keep existing tags untouched.
+
+### deleteDeliverable
+
+```java
+DeleteDeliverableResponse deleted = deliverable.deleteDeliverable(deliverableId);
+System.out.println(deleted.getMessage()); // soft delete — data is retained but hidden from list
+```
+
+### downloadSourceFile / downloadPDF
+
+Both return a raw `byte[]` — write it straight to disk.
+
+```java
+byte[] docxBytes = deliverable.downloadSourceFile(deliverableId);
+Files.write(Paths.get("contract.docx"), docxBytes);
+
+byte[] pdfBytes = deliverable.downloadPDF(deliverableId);
+Files.write(Paths.get("contract.pdf"), pdfBytes);
+```
+
+`downloadSourceFile` returns the original DOCX/PPTX and requires the `hasFileDownload` entitlement.
+
+### Generate, then send for signature
+
+A full `TurboDocxClient` exposes both modules, so you can generate and sign without downloading and re-uploading:
+
+```java
+TurboDocxClient client = new TurboDocxClient.Builder()
+    .apiKey(System.getenv("TURBODOCX_API_KEY"))
+    .orgId(System.getenv("TURBODOCX_ORG_ID"))
+    .senderEmail(System.getenv("TURBODOCX_SENDER_EMAIL"))
+    .build();
+
+DeliverableVariable clientVar = new DeliverableVariable();
+clientVar.setPlaceholder("{ClientName}");
+clientVar.setText("Acme Corp");
+clientVar.setMimeType("text");
+
+CreateDeliverableRequest genReq = new CreateDeliverableRequest();
+genReq.setName("Consulting Agreement");
+genReq.setTemplateId("template-uuid");
+genReq.setVariables(List.of(clientVar));
+
+CreateDeliverableResponse gen = client.deliverable().generateDeliverable(genReq);
+
+SendSignatureResponse signed = client.turboSign().sendSignature(
+    new SendSignatureRequest.Builder()
+        .deliverableId(gen.getResults().getDeliverable().getId()) // no download/re-upload
+        .documentName("Consulting Agreement")
+        .recipients(Arrays.asList(
+            new Recipient("John Doe", "john@example.com", 1)
+        ))
+        .fields(Arrays.asList(
+            new Field.Builder()
+                .type("signature")
+                .recipientEmail("john@example.com")
+                .template(new Field.TemplateAnchor.Builder()
+                    .anchor("{signature1}")
+                    .placement("replace")
+                    .size(new Field.Size(100, 30))
+                    .build())
+                .build()
+        ))
+        .build()
+);
+```
+
+## TurboPartner
+
+Partner-portal operations: provision and manage customer organizations, their users, API keys, entitlements, and audit logs. Uses **separate partner credentials**. Every method returns a Gson `JsonObject` with `success`, `data`, and optionally `message`. Request-body map keys are **camelCase** (e.g. `maxUsers`, `canManageOrgs`).
+
+### Configuration
 
 ```java
 TurboPartnerClient partner = new TurboPartnerClient.Builder()
-    .partnerApiKey(System.getenv("TURBODOCX_PARTNER_API_KEY"))
-    .partnerId(System.getenv("TURBODOCX_PARTNER_ID"))
+    .partnerApiKey(System.getenv("TURBODOCX_PARTNER_API_KEY")) // starts with TDXP-
+    .partnerId(System.getenv("TURBODOCX_PARTNER_ID"))          // UUID
     .build();
+
+TurboPartner tp = partner.turboPartner();
 ```
 
-## TurboPartner Usage
-
-### createOrganization
+### Organization management
 
 ```java
-CreateOrganizationResponse org = partner.turboPartner().createOrganization(
-    new CreateOrganizationRequest.Builder()
-        .name("Acme Corp")
-        .features(Map.of("maxUsers", 50, "hasTDAI", true))
-        .build()
-);
+// Create
+JsonObject org = tp.createOrganization(
+    "Acme Corp",
+    Map.of("industry", "Technology"),           // metadata (or null)
+    Map.of("maxUsers", 50, "hasTDAI", true));   // optional initial entitlements; camelCase keys
+System.out.println(org.getAsJsonObject("data").get("id").getAsString());
 
-System.out.println("Org ID: " + org.getData().getId());
+// List (uses limit/offset, not page)
+JsonObject orgs = tp.listOrganizations(20, 0, "acme");
+System.out.println(orgs.getAsJsonObject("data").get("totalRecords"));
+
+// Get details (includes features + tracking)
+JsonObject details = tp.getOrganizationDetails("org-uuid");
+
+// Update name
+tp.updateOrganizationInfo("org-uuid", "Acme Holdings");
+
+// Delete
+tp.deleteOrganization("org-uuid");
+
+// Update entitlements — features and tracking are separate maps
+tp.updateOrganizationEntitlements(
+    "org-uuid",
+    Map.of("maxUsers", 100, "hasTDAI", true, "hasSalesforce", true), // features
+    Map.of("numUsers", 12));                                          // tracking (or null)
 ```
 
-### listOrganizations
+### Organization user management
 
 ```java
-ListOrganizationsResponse orgs = partner.turboPartner().listOrganizations(1, 20);
+// List
+JsonObject users = tp.listOrganizationUsers("org-uuid", 25, 0, null);
 
-System.out.println("Total: " + orgs.getTotal());
-for (Organization o : orgs.getData()) {
-    System.out.println("  " + o.getName() + " (" + o.getId() + ")");
-}
+// Invite ("admin" | "contributor" | "user" | "viewer")
+tp.addUserToOrganization("org-uuid", "newhire@acme.com", "contributor");
+
+// Update role
+tp.updateOrganizationUserRole("org-uuid", "user-uuid", "admin");
+
+// Remove
+tp.removeUserFromOrganization("org-uuid", "user-uuid");
+
+// Resend invitation email
+tp.resendOrganizationInvitationToUser("org-uuid", "user-uuid");
+```
+
+### Organization API key management
+
+```java
+// List
+JsonObject keys = tp.listOrganizationApiKeys("org-uuid", 10, 0, null);
+
+// Create — the full key value is returned ONLY on creation, store it immediately
+JsonObject created = tp.createOrganizationApiKey("org-uuid", "Production Key", "admin");
+System.out.println(created.getAsJsonObject("data").get("key").getAsString()); // capture once
+
+// Update (rename or change role)
+tp.updateOrganizationApiKey("org-uuid", "key-uuid", "Renamed", null);
+
+// Revoke
+tp.revokeOrganizationApiKey("org-uuid", "key-uuid");
+```
+
+### Partner API key management
+
+```java
+// List
+JsonObject keys = tp.listPartnerApiKeys(10, 0, null);
+
+// Create with scopes — full key returned only on creation
+JsonObject created = tp.createPartnerApiKey(
+    "CI/CD Key",
+    List.of("org:create", "org:read", "entitlements:update"),
+    "Used by GitHub Actions");
+System.out.println(created.getAsJsonObject("data").get("key").getAsString()); // store immediately
+
+// Update name / description / scopes
+tp.updatePartnerApiKey(
+    "key-uuid",
+    "CI/CD Key (extended)",
+    null,
+    List.of("org:create", "org:read", "org:update", "entitlements:update"));
+
+// Revoke
+tp.revokePartnerApiKey("key-uuid");
+```
+
+Available scopes cover `org:*`, `entitlements:update`, `org-users:*`, `partner-users:*`, `org-apikeys:*`, `partner-apikeys:*`, and `audit:read` (see `PartnerScope`).
+
+### Partner-portal user management
+
+```java
+// List
+JsonObject users = tp.listPartnerPortalUsers(25, 0, null);
+
+// Add (permissions are required on add — set every flag explicitly)
+tp.addUserToPartnerPortal(
+    "admin@partner.com",
+    "admin", // "admin" | "member" | "viewer"
+    Map.of(
+        "canManageOrgs", true,
+        "canManageOrgUsers", true,
+        "canManagePartnerUsers", false,
+        "canManageOrgAPIKeys", true,
+        "canManagePartnerAPIKeys", false,
+        "canUpdateEntitlements", true,
+        "canViewAuditLogs", true));
+
+// Update — role and/or permissions
+tp.updatePartnerUserPermissions(
+    "user-uuid",
+    "member",
+    Map.of("canManageOrgs", true, "canManageOrgUsers", true));
+
+// Remove
+tp.removeUserFromPartnerPortal("user-uuid");
+
+// Resend invitation
+tp.resendPartnerPortalInvitationToUser("user-uuid");
+```
+
+### Audit logs
+
+```java
+// (limit, offset, search, action, resourceType, resourceId, success, startDate, endDate)
+JsonObject logs = tp.getPartnerAuditLogs(
+    100, 0, null, "org.created", "organization", null, true, "2026-01-01", "2026-12-31");
+System.out.println(logs.getAsJsonObject("data").get("totalRecords"));
 ```
 
 ## Spring Boot Integration Example
@@ -568,6 +837,83 @@ System.out.println("Updated items: " + applied.getUpdatedCount());
 System.out.println("Skipped items: " + applied.getSkippedCount());
 ```
 
+### getQuoteNumberConfig
+
+Admin-only. Reads the org's quote-numbering config — the `format` plus the per-period `currentFloor`.
+
+```java
+QuoteNumberConfig config = tq.getQuoteNumberConfig();
+System.out.println("Prefix: "        + config.getFormat().getPrefix());
+System.out.println("Current floor: " + config.getCurrentFloor()); // startNumber can't be set below this
+```
+
+Response: `{ format, currentFloor }`. `format` carries `prefix`, `yearToken`, `monthToken`, `separator`, `padWidth`, `suffix`, `startNumber`, `resetCadence` (field keys are camelCase verbatim); `currentFloor` is the highest number already issued for the current period.
+
+### updateQuoteNumberConfig
+
+Admin-only. Replaces the org's quote-number format (all eight fields are sent) so you can customize how new quote numbers are generated — prefix, year/month tokens, separator, zero-padding, suffix, starting number, and reset cadence.
+
+```java
+QuoteNumberFormat format = new QuoteNumberFormat();
+format.setPrefix("INV");
+format.setYearToken(QuoteNumberYearToken.NONE);
+format.setMonthToken(QuoteNumberMonthToken.OFF);
+format.setSeparator("-");
+format.setPadWidth(4);                                  // integer 0-12
+format.setSuffix("");
+format.setStartNumber(1000);                            // integer >= 0, can't be below currentFloor
+format.setResetCadence(QuoteNumberResetCadence.NEVER);
+
+QuoteNumberConfig updated = tq.updateQuoteNumberConfig(format);
+System.out.println("New prefix: "    + updated.getFormat().getPrefix());   // "INV"
+System.out.println("Current floor: " + updated.getCurrentFloor());
+```
+
+Response: `{ format, currentFloor }` — the same shape as `getQuoteNumberConfig`. Request-body keys stay camelCase verbatim (`prefix`, `yearToken`, `monthToken`, `separator`, `padWidth`, `suffix`, `startNumber`, `resetCadence`); `padWidth` and `startNumber` are integers.
+
+### Bulk create (CSV-style imports)
+
+Six catalog resources support bulk creation from a `List` of typed request rows (e.g. a parsed CSV): `bulkCreateProducts`, `bulkCreatePriceBooks`, `bulkCreateBundles`, `bulkCreateCompanies`, `bulkCreateContacts`, and `bulkCreateTypes`. Each takes a `List` of the same request objects the matching single `create*` call uses; the SDK wraps them in the `{ "rows": [...] }` envelope the `POST {resource}/bulk` endpoint expects. Each returns a `BulkImportResult`.
+
+```java
+import com.turbodocx.models.quote.CreateProductRequest;
+import com.turbodocx.models.quote.BulkImportResult;
+import com.turbodocx.models.quote.BulkImportRowIssue;
+import java.util.List;
+
+CreateProductRequest basic = new CreateProductRequest();
+basic.setName("Basic Plan");
+basic.setListPrice(10.00);
+basic.setBillingFrequency("monthly");
+basic.setCategoryId("category-uuid");
+
+CreateProductRequest premium = new CreateProductRequest();
+premium.setName("Premium Plan");
+premium.setListPrice(100.00);
+premium.setBillingFrequency("monthly");
+premium.setCategoryId("category-uuid");
+
+BulkImportResult result = tq.bulkCreateProducts(List.of(basic, premium));
+
+System.out.println("Imported: " + result.getImported());
+
+// Partial success: inspect failed rows instead of assuming all-or-nothing
+for (BulkImportRowIssue issue : result.getFailed()) {
+    System.err.println("Row " + issue.getRow() + " failed: " + issue.getReason());   // row is 1-indexed
+}
+for (BulkImportRowIssue issue : result.getAdjusted()) {
+    System.out.println("Row " + issue.getRow() + " adjusted: " + issue.getReason()); // imported with a server-side tweak
+}
+```
+
+Response: a `BulkImportResult` — `getImported()` (int), `getFailed()` and `getAdjusted()` (`List<BulkImportRowIssue>`); each `BulkImportRowIssue` exposes `getRow()` (1-indexed int) and `getReason()` (String).
+
+Bulk-create semantics:
+
+- **Partial success** — a failed row does **not** throw and does **not** roll back the rows before it. It is reported by `result.getFailed()` with a 1-indexed row and a reason. Rows the server tweaked (e.g. an unknown bundle item dropped) appear in `result.getAdjusted()`. Always read `getFailed()` rather than assuming every row imported.
+- **500-row cap per request** — more than 500 rows throws `ValidationException` (400). The SDK does not validate the rows or the cap client-side.
+- **Roles** — available to administrator and contributor API keys.
+
 ### TurboQuote error handling
 
 ```java
@@ -622,10 +968,40 @@ try {
 | `client.turboSign().voidDocument(id)` | Cancel a signature request |
 | `client.turboSign().resendEmail(id, recipientIds)` | Resend signature email to recipient UUIDs |
 | `client.turboSign().getAuditTrail(id)` | Get complete audit trail |
-| `partner.turboPartner().createOrganization(req)` | Provision a new customer org |
-| `partner.turboPartner().listOrganizations(page, limit)` | List managed organizations |
-| `partner.turboPartner().getOrganization(id)` | Get org details |
-| `partner.turboPartner().updateEntitlements(id, features)` | Update org entitlements |
+| `builder.buildDeliverableClient()` | Build a Deliverable client (no senderEmail needed) |
+| `deliverable.generateDeliverable(req)` | Render a template with variables into a new deliverable |
+| `deliverable.listDeliverables(req)` | Paginated list with search and tag filters |
+| `deliverable.getDeliverableDetails(id, showTags)` | Get full record including variables and fonts |
+| `deliverable.updateDeliverableInfo(id, req)` | Update name, description, or tags (tags replace) |
+| `deliverable.deleteDeliverable(id)` | Soft-delete (data retained, hidden from list) |
+| `deliverable.downloadSourceFile(id)` | Download original DOCX/PPTX as `byte[]` |
+| `deliverable.downloadPDF(id)` | Download rendered PDF as `byte[]` |
+| `new TurboPartnerClient.Builder()...build().turboPartner()` | Construct a `TurboPartner` (partnerApiKey, partnerId) |
+| `tp.createOrganization(name, metadata, features)` | Provision a new customer org |
+| `tp.listOrganizations(limit, offset, search)` | List managed orgs (uses limit/offset, not page) |
+| `tp.getOrganizationDetails(id)` | Get org details including features + tracking |
+| `tp.updateOrganizationInfo(id, name)` | Rename an org |
+| `tp.deleteOrganization(id)` | Delete an org |
+| `tp.updateOrganizationEntitlements(id, features, tracking)` | Update features and/or tracking |
+| `tp.listOrganizationUsers(id, limit, offset, search)` | Paginated org-user list |
+| `tp.addUserToOrganization(id, email, role)` | Invite a user with role |
+| `tp.updateOrganizationUserRole(id, userId, role)` | Change a user's role |
+| `tp.removeUserFromOrganization(id, userId)` | Remove user from org |
+| `tp.resendOrganizationInvitationToUser(id, userId)` | Resend invite email |
+| `tp.listOrganizationApiKeys(id, limit, offset, search)` | Paginated org API-key list |
+| `tp.createOrganizationApiKey(id, name, role)` | Create org key (value returned only on creation) |
+| `tp.updateOrganizationApiKey(id, keyId, name, role)` | Rename or change role |
+| `tp.revokeOrganizationApiKey(id, keyId)` | Revoke org key |
+| `tp.listPartnerApiKeys(limit, offset, search)` | Paginated partner API-key list |
+| `tp.createPartnerApiKey(name, scopes, description)` | Create partner key with scopes |
+| `tp.updatePartnerApiKey(keyId, name, description, scopes)` | Rename, edit scopes |
+| `tp.revokePartnerApiKey(keyId)` | Revoke partner key |
+| `tp.listPartnerPortalUsers(limit, offset, search)` | Paginated partner-portal user list |
+| `tp.addUserToPartnerPortal(email, role, permissions)` | Invite with role and permissions |
+| `tp.updatePartnerUserPermissions(userId, role, permissions)` | Update role/permissions (partial OK) |
+| `tp.removeUserFromPartnerPortal(userId)` | Remove partner-portal user |
+| `tp.resendPartnerPortalInvitationToUser(userId)` | Resend invite email |
+| `tp.getPartnerAuditLogs(limit, offset, search, action, resourceType, resourceId, success, startDate, endDate)` | Filter audit logs |
 | `new TurboDocxClient.Builder()...buildWebhooksClient()` | Construct an admin-scoped `TurboWebhooks` (no `senderEmail` required) |
 | `webhooks.createWebhook(urls, events)` | Subscribe the org to events (HTTPS URLs only) |
 | `webhooks.getWebhook()` | Get the org's signature webhook + delivery stats |
@@ -660,6 +1036,7 @@ try {
 | `tq.removeLineItem(quoteId, itemId)` | Remove a line item |
 | `tq.listProducts(options)` | List products in the catalog |
 | `tq.createProduct(req)` | Create a product (supports image upload via multipart) |
+| `tq.bulkCreateProducts(rows)` | Bulk-import products; returns a partial-success `BulkImportResult` |
 | `tq.getProduct(id)` | Get product by ID |
 | `tq.updateProduct(id, req)` | Update a product |
 | `tq.deleteProduct(id)` | Delete a product |
@@ -667,6 +1044,7 @@ try {
 | `tq.getProductPrimaryImages(productIds)` | Batch-fetch primary images for product IDs |
 | `tq.listPriceBooks(options)` | List pricebooks |
 | `tq.createPriceBook(req)` | Create a pricebook |
+| `tq.bulkCreatePriceBooks(rows)` | Bulk-import price books; returns a partial-success `BulkImportResult` |
 | `tq.getPriceBook(id)` | Get pricebook by ID |
 | `tq.updatePriceBook(id, req)` | Update a pricebook |
 | `tq.deletePriceBook(id)` | Delete a pricebook |
@@ -674,18 +1052,21 @@ try {
 | `tq.listPriceBookProducts(id, options)` | List products in a pricebook |
 | `tq.listBundles(options)` | List bundles |
 | `tq.createBundle(req)` | Create a bundle |
+| `tq.bulkCreateBundles(rows)` | Bulk-import bundles; returns a partial-success `BulkImportResult` |
 | `tq.getBundle(id)` | Get bundle by ID |
 | `tq.updateBundle(id, req)` | Update a bundle |
 | `tq.deleteBundle(id)` | Delete a bundle |
 | `tq.duplicateBundle(id)` | Duplicate a bundle |
 | `tq.listCompanies(options)` | List companies |
 | `tq.createCompany(req)` | Create a company (contacts required) |
+| `tq.bulkCreateCompanies(rows)` | Bulk-import companies; returns a partial-success `BulkImportResult` |
 | `tq.getCompany(id)` | Get company by ID |
 | `tq.updateCompany(id, req)` | Update a company |
 | `tq.deleteCompany(id)` | Delete a company |
 | `tq.listCompanyContacts(companyId, options)` | List contacts belonging to a company |
 | `tq.listContacts(options)` | List contacts |
 | `tq.createContact(req)` | Create a contact |
+| `tq.bulkCreateContacts(rows)` | Bulk-import contacts; returns a partial-success `BulkImportResult` |
 | `tq.updateContact(id, req)` | Update a contact |
 | `tq.deleteContact(id)` | Delete a contact |
 | `tq.listTemplates(options)` | List quote templates |
@@ -696,9 +1077,12 @@ try {
 | `tq.deleteTemplate(id)` | Delete a quote template |
 | `tq.listTypes(options)` | List quote types |
 | `tq.createType(req)` | Create a quote type |
+| `tq.bulkCreateTypes(rows)` | Bulk-import types/categories; returns a partial-success `BulkImportResult` |
 | `tq.updateType(id, req)` | Update a quote type |
 | `tq.deleteType(id)` | Delete a quote type |
 | `tq.createAndSend(req)` | Convenience: create quote + add line items + add bundles + send in one call |
+| `tq.getQuoteNumberConfig()` | Admin: get the org's quote-number config (`format` + `currentFloor`) |
+| `tq.updateQuoteNumberConfig(format)` | Admin: replace the quote-number format; returns updated `{ format, currentFloor }` |
 
 ## Gotchas
 
@@ -721,5 +1105,6 @@ try {
 - **TurboQuote decimal fields come back as numbers, not strings.** The Java `ResponseNormalizer` (`FlexIntAdapter`) coerces string-serialized decimals (`listPrice`, `unitPrice`, `discountPercent`, `grandTotal`, `subtotal`, etc.) to `double`. Do not attempt to parse them manually from the raw JSON.
 - **`PATCH` null-clears nullable fields.** On `updateQuote`, `updateLineItem`, and similar PATCH methods, explicitly setting a field to `null` sends `null` in the request body and clears the value on the server. Fields you never set are omitted from the request entirely and left unchanged. This matters for fields like `priceBookId`, `validUntil`, and `taxRate`.
 - **`discountType` must be `"percent"` or `"amount"`.** Use the `DiscountType` enum constants (`DiscountType.PERCENT` / `DiscountType.AMOUNT`) to avoid silent 400 errors. Passing a raw string bypasses compile-time checking.
+- **Bulk creates are partial-success, not transactional.** `bulkCreateProducts`/`bulkCreatePriceBooks`/`bulkCreateBundles`/`bulkCreateCompanies`/`bulkCreateContacts`/`bulkCreateTypes` never throw on a bad row — read `result.getFailed()` (`List<BulkImportRowIssue>` with 1-indexed `getRow()` + `getReason()`) and `result.getAdjusted()`; earlier rows are not rolled back. Cap is 500 rows/request (over → `ValidationException` 400). Admin + contributor keys only.
 
 **Full API reference:** https://docs.turbodocx.com/docs
