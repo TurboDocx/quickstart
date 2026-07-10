@@ -149,6 +149,129 @@ for entry in audit["auditTrail"]:
     print(f"{entry['timestamp']}  {entry['actionType']}  {entry.get('user', {}).get('email', '')}")
 ```
 
+## Deliverable
+
+Document generation: render a TurboDocx template with variable substitution into a deliverable (DOCX/PPTX), then download it or hand its ID to TurboSign as the source document.
+
+### Deliverable.configure
+
+```python
+import os
+from turbodocx_sdk import Deliverable
+
+Deliverable.configure(
+    api_key=os.environ["TURBODOCX_API_KEY"],
+    org_id=os.environ["TURBODOCX_ORG_ID"],
+)
+```
+
+No `sender_email` needed — Deliverable never sends email. `org_id` is required (Deliverable raises `AuthenticationError` if it is missing).
+
+### generate_deliverable
+
+Generate a document from a template with variable substitution. Method args are snake_case, but each **variable dict** uses camelCase keys (`placeholder`, `mimeType`) — they are forwarded to the API verbatim, so a snake_case key would be silently dropped.
+
+```python
+result = await Deliverable.generate_deliverable(
+    template_id="template-uuid",
+    name="Employee Contract - John Smith",
+    variables=[
+        {"placeholder": "{EmployeeName}", "text": "John Smith", "mimeType": "text"},
+        {"placeholder": "{CompanyName}", "text": "TechCorp Inc.", "mimeType": "text"},
+        {"placeholder": "{StartDate}",   "text": "2026-06-01",  "mimeType": "text"},
+    ],
+    description="Generated via API for HR onboarding",   # optional
+    tags=["hr", "contract"],                             # optional
+)
+
+deliverable = result["results"]["deliverable"]
+print(deliverable["id"], deliverable["name"], deliverable["fileType"])
+```
+
+`mimeType` is one of `"text" | "html" | "image" | "markdown"`. For repeating content (tables, lists), pass a `variableStack` on a variable dict.
+
+### list_deliverables
+
+```python
+page = await Deliverable.list_deliverables(limit=20, offset=0, query="contract", show_tags=True)
+print(page["totalRecords"])
+for d in page["results"]:
+    print(d["id"], d["name"], d["createdOn"])
+```
+
+Response: `{"results": [...], "totalRecords": int}`. `limit` is 1–100 (default 6); pagination uses `offset`, not `page`.
+
+### get_deliverable_details
+
+```python
+d = await Deliverable.get_deliverable_details("deliverable-uuid", show_tags=True)
+print(d["name"], d.get("templateName"), d.get("variables"), d.get("tags"))
+```
+
+Returns the full deliverable record (unwrapped from `results`), including `variables` and (when `show_tags=True`) `tags`.
+
+### update_deliverable_info
+
+```python
+result = await Deliverable.update_deliverable_info(
+    "deliverable-uuid",
+    name="Employee Contract - John Smith (Final)",
+    description="Finalized version",
+    tags=["hr", "contract", "finalized"],   # replaces all existing tags
+)
+print(result["message"], result["deliverableId"])
+```
+
+Passing `tags` **replaces** the full tag set. To remove all tags, pass `tags=[]`. To add one, fetch existing tags first and append.
+
+### delete_deliverable
+
+```python
+result = await Deliverable.delete_deliverable("deliverable-uuid")
+print(result["message"])   # soft delete — data is retained but hidden from list
+```
+
+### download_source_file / download_pdf
+
+Both return raw `bytes` — write them straight to disk.
+
+```python
+docx_bytes = await Deliverable.download_source_file("deliverable-uuid")
+with open("contract.docx", "wb") as f:
+    f.write(docx_bytes)
+
+pdf_bytes = await Deliverable.download_pdf("deliverable-uuid")
+with open("contract.pdf", "wb") as f:
+    f.write(pdf_bytes)
+```
+
+`download_source_file` returns the original DOCX/PPTX and requires the `hasFileDownload` entitlement.
+
+### Generate, then send for signature
+
+```python
+result = await Deliverable.generate_deliverable(
+    template_id="template-uuid",
+    name="Consulting Agreement",
+    variables=[{"placeholder": "{ClientName}", "text": "Acme Corp", "mimeType": "text"}],
+)
+
+await TurboSign.send_signature(
+    deliverable_id=result["results"]["deliverable"]["id"],   # no download/re-upload
+    document_name="Consulting Agreement",
+    recipients=[{"name": "John Doe", "email": "john@example.com", "signingOrder": 1}],
+    fields=[
+        {
+            "type": "signature",
+            "recipientEmail": "john@example.com",
+            "template": {"anchor": "{signature1}", "placement": "replace", "size": {"width": 100, "height": 30}},
+        },
+    ],
+)
+```
+
+---
+
 ## TurboPartner Configuration
 
 ```python
@@ -647,6 +770,14 @@ except TurboDocxError as e:
 | `TurboSign.void_document(document_id, reason)` | Cancel a signature request (reason required) |
 | `TurboSign.resend_email(document_id, recipient_ids)` | Resend signature email to recipient UUIDs |
 | `TurboSign.get_audit_trail(document_id)` | Get complete audit trail |
+| `Deliverable.configure(api_key, org_id, base_url=...)` | Configure the deliverable client (no sender_email needed) |
+| `Deliverable.generate_deliverable(name, template_id, variables, ...)` | Render a template with variables into a new deliverable |
+| `Deliverable.list_deliverables(limit=, offset=, query=, show_tags=)` | Paginated list with search and tag filters |
+| `Deliverable.get_deliverable_details(deliverable_id, show_tags=)` | Get full record including variables and fonts |
+| `Deliverable.update_deliverable_info(deliverable_id, name=, description=, tags=)` | Update name, description, or tags (tags replace) |
+| `Deliverable.delete_deliverable(deliverable_id)` | Soft-delete (data retained, hidden from list) |
+| `Deliverable.download_source_file(deliverable_id)` | Download original DOCX/PPTX as bytes |
+| `Deliverable.download_pdf(deliverable_id)` | Download rendered PDF as bytes |
 | `TurboPartner.create_organization(...)` | Provision a new customer org |
 | `TurboPartner.list_organizations(...)` | List managed organizations |
 | `TurboPartner.get_organization(org_id)` | Get org details |

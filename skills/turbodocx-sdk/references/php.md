@@ -165,6 +165,152 @@ foreach ($audit->auditTrail as $entry) {
 }
 ```
 
+## Deliverable
+
+Document generation: render a TurboDocx template with variable substitution into a deliverable (DOCX/PPTX), then download it or hand its ID to TurboSign as the source document.
+
+### configure
+
+```php
+use TurboDocx\Deliverable;
+use TurboDocx\Config\DeliverableConfig;
+
+Deliverable::configure(new DeliverableConfig(
+    apiKey: $_ENV['TURBODOCX_API_KEY'],
+    orgId: $_ENV['TURBODOCX_ORG_ID'],
+));
+
+// Or auto-configure from environment
+Deliverable::configure(DeliverableConfig::fromEnvironment());
+```
+
+No `senderEmail` needed — Deliverable never sends email.
+
+### generateDeliverable
+
+Generate a document from a template with variable substitution. The request is a plain array; its keys (and each variable's keys) are camelCase (`templateId`, `mimeType`) — they are forwarded to the API verbatim.
+
+```php
+$result = Deliverable::generateDeliverable([
+    'templateId' => 'template-uuid',
+    'name' => 'Employee Contract - John Smith',
+    'variables' => [
+        ['placeholder' => '{EmployeeName}', 'text' => 'John Smith', 'mimeType' => 'text'],
+        ['placeholder' => '{CompanyName}', 'text' => 'TechCorp Inc.', 'mimeType' => 'text'],
+        ['placeholder' => '{StartDate}', 'text' => '2026-06-01', 'mimeType' => 'text'],
+    ],
+    'description' => 'Generated via API for HR onboarding', // optional
+    'tags' => ['hr', 'contract'],                          // optional
+]);
+
+$deliverable = $result['results']['deliverable'];
+echo "{$deliverable['id']}  {$deliverable['name']}  {$deliverable['fileType']}\n";
+```
+
+`mimeType` is one of `'text'`, `'html'`, `'image'`, or `'markdown'`. For repeating content (tables, lists), pass a `variableStack` on a variable.
+
+### listDeliverables
+
+```php
+$list = Deliverable::listDeliverables([
+    'limit' => 20,      // 1-100, default 6
+    'offset' => 0,
+    'query' => 'contract',
+    'showTags' => true,
+]);
+
+echo "{$list['totalRecords']}\n";
+foreach ($list['results'] as $d) {
+    echo "  {$d['id']}  {$d['name']}  {$d['createdOn']}\n";
+}
+```
+
+Pagination uses `offset`, not a page number.
+
+### getDeliverableDetails
+
+```php
+$d = Deliverable::getDeliverableDetails('deliverable-uuid', showTags: true);
+echo "{$d['name']}  {$d['templateName']}\n";
+```
+
+Returns the full deliverable record (unwrapped from `results`), including `variables` and (when `showTags: true`) `tags`.
+
+### updateDeliverableInfo
+
+```php
+$result = Deliverable::updateDeliverableInfo('deliverable-uuid', [
+    'name' => 'Employee Contract - John Smith (Final)',
+    'description' => 'Finalized version',
+    'tags' => ['hr', 'contract', 'finalized'], // replaces all existing tags
+]);
+echo "{$result['message']}  {$result['deliverableId']}\n";
+```
+
+Passing `tags` **replaces** the full tag set. To remove all tags, pass `'tags' => []`. To add one, fetch existing tags first and append.
+
+### deleteDeliverable
+
+```php
+$result = Deliverable::deleteDeliverable('deliverable-uuid');
+echo $result['message'] . "\n"; // soft delete — data is retained but hidden from list
+```
+
+### downloadSourceFile / downloadPDF
+
+Both return raw bytes as a string — write them straight to disk.
+
+```php
+$docxBytes = Deliverable::downloadSourceFile('deliverable-uuid');
+file_put_contents('contract.docx', $docxBytes);
+
+$pdfBytes = Deliverable::downloadPDF('deliverable-uuid');
+file_put_contents('contract.pdf', $pdfBytes);
+```
+
+`downloadSourceFile` returns the original DOCX/PPTX and requires the `hasFileDownload` entitlement.
+
+### Generate, then send for signature
+
+```php
+use TurboDocx\TurboSign;
+use TurboDocx\Types\Recipient;
+use TurboDocx\Types\Field;
+use TurboDocx\Types\SignatureFieldType;
+use TurboDocx\Types\TemplateConfig;
+use TurboDocx\Types\FieldPlacement;
+use TurboDocx\Types\Requests\SendSignatureRequest;
+
+$result = Deliverable::generateDeliverable([
+    'templateId' => 'template-uuid',
+    'name' => 'Consulting Agreement',
+    'variables' => [
+        ['placeholder' => '{ClientName}', 'text' => 'Acme Corp', 'mimeType' => 'text'],
+    ],
+]);
+
+TurboSign::sendSignature(
+    new SendSignatureRequest(
+        deliverableId: $result['results']['deliverable']['id'], // no download/re-upload
+        documentName: 'Consulting Agreement',
+        recipients: [
+            new Recipient('John Doe', 'john@example.com', 1),
+        ],
+        fields: [
+            new Field(
+                type: SignatureFieldType::SIGNATURE,
+                recipientEmail: 'john@example.com',
+                template: new TemplateConfig(
+                    anchor: '{signature1}',
+                    placement: FieldPlacement::REPLACE,
+                    size: ['width' => 100, 'height' => 30],
+                ),
+            ),
+        ],
+    )
+);
+```
+
 ## TurboPartner Configuration
 
 ```php
@@ -722,6 +868,14 @@ try {
 | `TurboSign::void($documentId, $reason)` | Cancel a signature request (reason required) |
 | `TurboSign::resend($documentId, $recipientIds)` | Resend signature email to recipient UUIDs |
 | `TurboSign::getAuditTrail($documentId)` | Get complete audit trail |
+| `Deliverable::configure($config)` | Configure the deliverable client (no senderEmail needed) |
+| `Deliverable::generateDeliverable($request)` | Render a template with variables into a new deliverable |
+| `Deliverable::listDeliverables($options)` | Paginated list with search and tag filters |
+| `Deliverable::getDeliverableDetails($id, $showTags)` | Get full record including variables and fonts |
+| `Deliverable::updateDeliverableInfo($id, $request)` | Update name, description, or tags (tags replace) |
+| `Deliverable::deleteDeliverable($id)` | Soft-delete (data retained, hidden from list) |
+| `Deliverable::downloadSourceFile($id)` | Download original DOCX/PPTX as a byte string |
+| `Deliverable::downloadPDF($id)` | Download rendered PDF as a byte string |
 | `TurboPartner::createOrganization($request)` | Provision a new customer org |
 | `TurboPartner::listOrganizations(...)` | List managed organizations |
 | `TurboPartner::getOrganization($orgId)` | Get org details |

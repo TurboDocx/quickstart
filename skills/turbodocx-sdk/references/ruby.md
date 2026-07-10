@@ -759,7 +759,7 @@ All errors extend `TurboDocxSdk::TurboDocxError` and carry a `status_code` (and 
 | `TurboDocxSdk::NetworkError` | (no status) |
 | `TurboDocxSdk::TurboDocxError` | base class |
 
-The error classes are **not** namespaced under a module — reference them directly as `TurboDocxSdk::ValidationError`, etc.
+The error classes are **not** nested under a sub-module (e.g. not `TurboDocxSdk::Errors`) — reference them directly as `TurboDocxSdk::ValidationError`.
 
 ---
 
@@ -830,7 +830,7 @@ The error classes are **not** namespaced under a module — reference them direc
 | `get_quote(id)` | Get quote details (statusInfo merged in) |
 | `update_quote(id, request)` | PATCH quote fields; explicit `nil` clears nullable fields |
 | `delete_quote(id)` / `duplicate_quote(id)` | Delete / clone a quote |
-| `send_quote(id, request)` | Email quote; returns `{ "quote", "message" }` |
+| `send_quote(id, request=nil)` | Email quote; returns `{ "quote", "message" }` |
 | `send_quote_with_deliverable(id, request)` | Send with attached deliverable; returns `{ quote, message, documentId }` |
 | `decline_quote(id, request)` / `void_quote(id, request)` | Decline / void a quote |
 | `handle_expired_quote(id, request)` | Extend, re-send, or void an expired sent quote |

@@ -176,6 +176,182 @@ for _, entry := range audit.AuditTrail {
 }
 ```
 
+## Deliverable
+
+Document generation: render a TurboDocx template with variable substitution into a deliverable (DOCX/PPTX), then download it or hand its ID to TurboSign as the source document.
+
+### Configuration
+
+`NewDeliverableClientOnly` does NOT require `SenderEmail` — Deliverable never sends email. `OrgID` is required (the constructor returns an `AuthenticationError` without it); it falls back to `TURBODOCX_ORG_ID` when omitted.
+
+```go
+dc, err := turbodocx.NewDeliverableClientOnly(turbodocx.ClientConfig{
+    APIKey: os.Getenv("TURBODOCX_API_KEY"),
+    OrgID:  os.Getenv("TURBODOCX_ORG_ID"),
+})
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+The full `NewClientWithConfig` client also exposes `client.Deliverable` alongside `client.TurboSign`.
+
+### GenerateDeliverable
+
+Generate a document from a template with variable substitution. Struct fields are Go-idiomatic, but they serialize to the camelCase JSON keys (`templateId`, `mimeType`) the API expects verbatim.
+
+```go
+created, err := dc.GenerateDeliverable(ctx, &turbodocx.CreateDeliverableRequest{
+    TemplateID: "template-uuid",
+    Name:       "Employee Contract - John Smith",
+    Variables: []turbodocx.DeliverableVariable{
+        {Placeholder: "{EmployeeName}", Text: "John Smith", MimeType: "text"},
+        {Placeholder: "{CompanyName}", Text: "TechCorp Inc.", MimeType: "text"},
+        {Placeholder: "{StartDate}", Text: "2026-06-01", MimeType: "text"},
+    },
+    Description: "Generated via API for HR onboarding", // optional
+    Tags:        []string{"hr", "contract"},           // optional
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+d := created.Results.Deliverable
+fmt.Printf("%s  %s  %s\n", d.ID, d.Name, d.FileType)
+```
+
+`MimeType` is one of `"text"`, `"html"`, `"image"`, or `"markdown"`. For repeating content (tables, lists), set `VariableStack` on a `DeliverableVariable`.
+
+### ListDeliverables
+
+```go
+list, err := dc.ListDeliverables(ctx, &turbodocx.ListDeliverablesOptions{
+    Limit:    20, // 1-100, default 6
+    Offset:   0,
+    Query:    "contract",
+    ShowTags: true,
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+fmt.Println(list.TotalRecords)
+for _, d := range list.Results {
+    fmt.Printf("  %s  %s  %s\n", d.ID, d.Name, d.CreatedOn)
+}
+```
+
+Pagination uses `Offset`, not a page number.
+
+### GetDeliverableDetails
+
+```go
+d, err := dc.GetDeliverableDetails(ctx, deliverableID, &turbodocx.GetDeliverableOptions{ShowTags: true})
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Println(d.Name, d.TemplateName, len(d.Variables), d.Tags)
+```
+
+Returns a full `*DeliverableRecord` (unwrapped from `results`), including `Variables` and (when `ShowTags` is true) `Tags`.
+
+### UpdateDeliverableInfo
+
+```go
+tags := []string{"hr", "contract", "finalized"} // replaces all existing tags
+updated, err := dc.UpdateDeliverableInfo(ctx, deliverableID, &turbodocx.UpdateDeliverableRequest{
+    Name:        "Employee Contract - John Smith (Final)",
+    Description: "Finalized version",
+    Tags:        &tags,
+})
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Println(updated.Message, updated.DeliverableID)
+```
+
+`Tags` is a `*[]string`: passing it **replaces** the full tag set. Point it at an empty slice to clear all tags; leave it `nil` to keep the existing tags untouched.
+
+### DeleteDeliverable
+
+```go
+deleted, err := dc.DeleteDeliverable(ctx, deliverableID)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Println(deleted.Message) // soft delete — data is retained but hidden from list
+```
+
+### DownloadSourceFile / DownloadPDF
+
+Both return raw `[]byte` — write them straight to disk.
+
+```go
+docxBytes, err := dc.DownloadSourceFile(ctx, deliverableID)
+if err != nil {
+    log.Fatal(err)
+}
+os.WriteFile("contract.docx", docxBytes, 0644)
+
+pdfBytes, err := dc.DownloadPDF(ctx, deliverableID)
+if err != nil {
+    log.Fatal(err)
+}
+os.WriteFile("contract.pdf", pdfBytes, 0644)
+```
+
+`DownloadSourceFile` returns the original DOCX/PPTX and requires the `hasFileDownload` entitlement.
+
+### Generate, then send for signature
+
+The full client exposes both modules, so you can generate and sign without downloading and re-uploading:
+
+```go
+client, err := turbodocx.NewClientWithConfig(turbodocx.ClientConfig{
+    APIKey:      os.Getenv("TURBODOCX_API_KEY"),
+    OrgID:       os.Getenv("TURBODOCX_ORG_ID"),
+    SenderEmail: os.Getenv("TURBODOCX_SENDER_EMAIL"),
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+created, err := client.Deliverable.GenerateDeliverable(ctx, &turbodocx.CreateDeliverableRequest{
+    TemplateID: "template-uuid",
+    Name:       "Consulting Agreement",
+    Variables: []turbodocx.DeliverableVariable{
+        {Placeholder: "{ClientName}", Text: "Acme Corp", MimeType: "text"},
+    },
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+_, err = client.TurboSign.SendSignature(ctx, &turbodocx.SendSignatureRequest{
+    DeliverableID: created.Results.Deliverable.ID, // no download/re-upload
+    DocumentName:  "Consulting Agreement",
+    Recipients: []turbodocx.Recipient{
+        {Name: "John Doe", Email: "john@example.com", SigningOrder: 1},
+    },
+    Fields: []turbodocx.Field{
+        {
+            Type:           "signature",
+            RecipientEmail: "john@example.com",
+            Template: &turbodocx.TemplateAnchor{
+                Anchor:    "{signature1}",
+                Placement: "replace",
+                Size:      &turbodocx.Size{Width: 100, Height: 30},
+            },
+        },
+    },
+})
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+---
+
 ## TurboPartner Configuration
 
 ```go
@@ -721,6 +897,14 @@ if err != nil {
 | `client.TurboSign.VoidDocument(ctx, id, reason)` | Cancel a signature request (reason required) |
 | `client.TurboSign.ResendEmail(ctx, id, recipientIDs)` | Resend signature email to recipient UUIDs |
 | `client.TurboSign.GetAuditTrail(ctx, id)` | Get complete audit trail |
+| `turbodocx.NewDeliverableClientOnly(cfg)` | Construct a Deliverable client (no SenderEmail required) |
+| `dc.GenerateDeliverable(ctx, req)` | Render a template with variables into a new deliverable |
+| `dc.ListDeliverables(ctx, opts)` | Paginated list with search and tag filters |
+| `dc.GetDeliverableDetails(ctx, id, opts)` | Get full record including variables and fonts |
+| `dc.UpdateDeliverableInfo(ctx, id, req)` | Update name, description, or tags (tags replace) |
+| `dc.DeleteDeliverable(ctx, id)` | Soft-delete (data retained, hidden from list) |
+| `dc.DownloadSourceFile(ctx, id)` | Download original DOCX/PPTX as []byte |
+| `dc.DownloadPDF(ctx, id)` | Download rendered PDF as []byte |
 | `partner.CreateOrganization(ctx, req)` | Provision a new customer org |
 | `partner.ListOrganizations(ctx, req)` | List managed organizations |
 | `partner.GetOrganization(ctx, id)` | Get org details |

@@ -156,6 +156,162 @@ for (AuditTrailEntry entry : audit.getAuditTrail()) {
 }
 ```
 
+## Deliverable
+
+Document generation: render a TurboDocx template with variable substitution into a deliverable (DOCX/PPTX), then download it or hand its ID to TurboSign as the source document.
+
+### Configuration
+
+Build a Deliverable-only client with `buildDeliverableClient()` — it does NOT require `senderEmail`, since Deliverable never sends email.
+
+```java
+import com.turbodocx.DeliverableClient;
+import com.turbodocx.models.deliverable.*;
+
+DeliverableClient deliverable = new TurboDocxClient.Builder()
+    .apiKey(System.getenv("TURBODOCX_API_KEY"))
+    .orgId(System.getenv("TURBODOCX_ORG_ID"))
+    .buildDeliverableClient();
+```
+
+A full `TurboDocxClient` (built with `.build()`) also exposes `client.deliverable()` alongside `client.turboSign()`.
+
+### generateDeliverable
+
+Generate a document from a template with variable substitution. Method and setter names are camelCase, and they serialize to the camelCase JSON keys (`templateId`, `mimeType`) the API expects verbatim.
+
+```java
+DeliverableVariable employeeVar = new DeliverableVariable();
+employeeVar.setPlaceholder("{EmployeeName}");
+employeeVar.setText("John Smith");
+employeeVar.setMimeType("text");
+
+DeliverableVariable companyVar = new DeliverableVariable();
+companyVar.setPlaceholder("{CompanyName}");
+companyVar.setText("TechCorp Inc.");
+companyVar.setMimeType("text");
+
+CreateDeliverableRequest createReq = new CreateDeliverableRequest();
+createReq.setName("Employee Contract - John Smith");
+createReq.setTemplateId("template-uuid");
+createReq.setVariables(List.of(employeeVar, companyVar));
+createReq.setDescription("Generated via API for HR onboarding"); // optional
+createReq.setTags(List.of("hr", "contract"));                    // optional
+
+CreateDeliverableResponse created = deliverable.generateDeliverable(createReq);
+DeliverableRecord d = created.getResults().getDeliverable();
+System.out.println(d.getId() + "  " + d.getName() + "  " + d.getFileType());
+```
+
+`mimeType` is one of `"text"`, `"html"`, `"image"`, or `"markdown"`. For repeating content (tables, lists), set a variable stack on a `DeliverableVariable`.
+
+### listDeliverables
+
+```java
+ListDeliverablesRequest listReq = new ListDeliverablesRequest();
+listReq.setLimit(20);   // 1-100, default 6
+listReq.setOffset(0);
+listReq.setQuery("contract");
+listReq.setShowTags(true);
+
+DeliverableListResponse list = deliverable.listDeliverables(listReq);
+System.out.println(list.getTotalRecords());
+for (DeliverableRecord record : list.getResults()) {
+    System.out.println("  " + record.getId() + "  " + record.getName());
+}
+```
+
+Pagination uses `offset`, not a page number. Call `deliverable.listDeliverables()` (no args) for defaults.
+
+### getDeliverableDetails
+
+```java
+DeliverableRecord details = deliverable.getDeliverableDetails(deliverableId, true);
+System.out.println(details.getName() + "  " + details.getTemplateName());
+```
+
+Returns a full `DeliverableRecord` (unwrapped from `results`), including variables and (when `showTags` is true) tags.
+
+### updateDeliverableInfo
+
+```java
+UpdateDeliverableRequest updateReq = new UpdateDeliverableRequest();
+updateReq.setName("Employee Contract - John Smith (Final)");
+updateReq.setDescription("Finalized version");
+updateReq.setTags(List.of("hr", "contract", "finalized")); // replaces all existing tags
+
+UpdateDeliverableResponse updated = deliverable.updateDeliverableInfo(deliverableId, updateReq);
+System.out.println(updated.getMessage() + "  " + updated.getDeliverableId());
+```
+
+Setting `tags` **replaces** the full tag set. Pass an empty list to clear all tags; leave it unset to keep existing tags untouched.
+
+### deleteDeliverable
+
+```java
+DeleteDeliverableResponse deleted = deliverable.deleteDeliverable(deliverableId);
+System.out.println(deleted.getMessage()); // soft delete — data is retained but hidden from list
+```
+
+### downloadSourceFile / downloadPDF
+
+Both return a raw `byte[]` — write it straight to disk.
+
+```java
+byte[] docxBytes = deliverable.downloadSourceFile(deliverableId);
+Files.write(Paths.get("contract.docx"), docxBytes);
+
+byte[] pdfBytes = deliverable.downloadPDF(deliverableId);
+Files.write(Paths.get("contract.pdf"), pdfBytes);
+```
+
+`downloadSourceFile` returns the original DOCX/PPTX and requires the `hasFileDownload` entitlement.
+
+### Generate, then send for signature
+
+A full `TurboDocxClient` exposes both modules, so you can generate and sign without downloading and re-uploading:
+
+```java
+TurboDocxClient client = new TurboDocxClient.Builder()
+    .apiKey(System.getenv("TURBODOCX_API_KEY"))
+    .orgId(System.getenv("TURBODOCX_ORG_ID"))
+    .senderEmail(System.getenv("TURBODOCX_SENDER_EMAIL"))
+    .build();
+
+DeliverableVariable clientVar = new DeliverableVariable();
+clientVar.setPlaceholder("{ClientName}");
+clientVar.setText("Acme Corp");
+clientVar.setMimeType("text");
+
+CreateDeliverableRequest genReq = new CreateDeliverableRequest();
+genReq.setName("Consulting Agreement");
+genReq.setTemplateId("template-uuid");
+genReq.setVariables(List.of(clientVar));
+
+CreateDeliverableResponse gen = client.deliverable().generateDeliverable(genReq);
+
+SendSignatureResponse signed = client.turboSign().sendSignature(
+    new SendSignatureRequest.Builder()
+        .deliverableId(gen.getResults().getDeliverable().getId()) // no download/re-upload
+        .documentName("Consulting Agreement")
+        .recipients(Arrays.asList(
+            new Recipient("John Doe", "john@example.com", 1)
+        ))
+        .fields(Arrays.asList(
+            new Field.Builder()
+                .type("signature")
+                .recipientEmail("john@example.com")
+                .template(new Field.TemplateAnchor.Builder()
+                    .anchor("{signature1}")
+                    .placement("replace")
+                    .size(new Field.Size(100, 30))
+                    .build())
+                .build()
+        ))
+        .build()
+);
+```
+
 ## TurboPartner Configuration
 
 ```java
@@ -699,6 +855,14 @@ try {
 | `client.turboSign().voidDocument(id)` | Cancel a signature request |
 | `client.turboSign().resendEmail(id, recipientIds)` | Resend signature email to recipient UUIDs |
 | `client.turboSign().getAuditTrail(id)` | Get complete audit trail |
+| `builder.buildDeliverableClient()` | Build a Deliverable client (no senderEmail needed) |
+| `deliverable.generateDeliverable(req)` | Render a template with variables into a new deliverable |
+| `deliverable.listDeliverables(req)` | Paginated list with search and tag filters |
+| `deliverable.getDeliverableDetails(id, showTags)` | Get full record including variables and fonts |
+| `deliverable.updateDeliverableInfo(id, req)` | Update name, description, or tags (tags replace) |
+| `deliverable.deleteDeliverable(id)` | Soft-delete (data retained, hidden from list) |
+| `deliverable.downloadSourceFile(id)` | Download original DOCX/PPTX as `byte[]` |
+| `deliverable.downloadPDF(id)` | Download rendered PDF as `byte[]` |
 | `partner.turboPartner().createOrganization(req)` | Provision a new customer org |
 | `partner.turboPartner().listOrganizations(page, limit)` | List managed organizations |
 | `partner.turboPartner().getOrganization(id)` | Get org details |
