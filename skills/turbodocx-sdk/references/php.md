@@ -311,43 +311,199 @@ TurboSign::sendSignature(
 );
 ```
 
-## TurboPartner Configuration
+## TurboPartner
+
+Partner-portal operations: provision and manage customer organizations, their users, API keys, entitlements, and audit logs. Uses **separate partner credentials**. Request-body array values use **camelCase keys** (e.g. `maxUsers`, `canManageOrgs`).
+
+### Configuration
 
 ```php
 use TurboDocx\TurboPartner;
 use TurboDocx\Config\PartnerClientConfig;
 
 TurboPartner::configure(new PartnerClientConfig(
-    partnerApiKey: $_ENV['TURBODOCX_PARTNER_API_KEY'],
-    partnerId: $_ENV['TURBODOCX_PARTNER_ID'],
+    partnerApiKey: $_ENV['TURBODOCX_PARTNER_API_KEY'], // starts with TDXP-
+    partnerId: $_ENV['TURBODOCX_PARTNER_ID'],          // UUID
 ));
 ```
 
-## TurboPartner Usage
-
-### createOrganization
+### Organization management
 
 ```php
 use TurboDocx\Types\Requests\Partner\CreateOrganizationRequest;
+use TurboDocx\Types\Requests\Partner\ListOrganizationsRequest;
+use TurboDocx\Types\Requests\Partner\UpdateOrganizationRequest;
+use TurboDocx\Types\Requests\Partner\UpdateEntitlementsRequest;
 
-$result = TurboPartner::createOrganization(
-    new CreateOrganizationRequest(
-        name: 'Acme Corporation',
-        features: ['maxUsers' => 50, 'hasTDAI' => true],
-    )
-);
+// Create
+$org = TurboPartner::createOrganization(new CreateOrganizationRequest(
+    name: 'Acme Corp',
+    metadata: ['industry' => 'Technology'],
+    features: ['maxUsers' => 50, 'hasTDAI' => true], // optional initial entitlements; camelCase keys
+));
+echo $org->data->id;
 
-echo "Organization ID: {$result->data->id}\n";
+// List (uses limit/offset, not page)
+$orgs = TurboPartner::listOrganizations(new ListOrganizationsRequest(limit: 20, offset: 0, search: 'acme'));
+echo $orgs->data->totalRecords;
+foreach ($orgs->data->results as $o) {
+    echo "{$o->id} {$o->name}\n";
+}
+
+// Get details (includes features + tracking)
+$details = TurboPartner::getOrganizationDetails('org-uuid');
+
+// Update name
+TurboPartner::updateOrganizationInfo('org-uuid', new UpdateOrganizationRequest(name: 'Acme Holdings'));
+
+// Delete
+TurboPartner::deleteOrganization('org-uuid');
+
+// Update entitlements — features and tracking are separate keys
+TurboPartner::updateOrganizationEntitlements('org-uuid', new UpdateEntitlementsRequest(
+    features: ['maxUsers' => 100, 'hasTDAI' => true, 'hasSalesforce' => true],
+    tracking: ['numUsers' => 12], // optional: seed usage counters
+));
 ```
 
-### listOrganizations
+### Organization user management
 
 ```php
-$orgs = TurboPartner::listOrganizations(page: 1, limit: 20);
+use TurboDocx\Types\Requests\Partner\ListOrgUsersRequest;
+use TurboDocx\Types\Requests\Partner\AddOrgUserRequest;
+use TurboDocx\Types\Requests\Partner\UpdateOrgUserRequest;
+use TurboDocx\Types\Enums\OrgUserRole;
 
-echo "Total: {$orgs->total}\n";
-foreach ($orgs->data as $org) {
-    echo "  {$org->name} ({$org->id})\n";
+// List
+$users = TurboPartner::listOrganizationUsers('org-uuid', new ListOrgUsersRequest(limit: 25, offset: 0));
+
+// Invite (OrgUserRole: ADMIN | CONTRIBUTOR | USER | VIEWER)
+TurboPartner::addUserToOrganization('org-uuid', new AddOrgUserRequest(
+    email: 'newhire@acme.com',
+    role: OrgUserRole::CONTRIBUTOR,
+));
+
+// Update role
+TurboPartner::updateOrganizationUserRole('org-uuid', 'user-uuid', new UpdateOrgUserRequest(role: OrgUserRole::ADMIN));
+
+// Remove
+TurboPartner::removeUserFromOrganization('org-uuid', 'user-uuid');
+
+// Resend invitation email
+TurboPartner::resendOrganizationInvitationToUser('org-uuid', 'user-uuid');
+```
+
+### Organization API key management
+
+```php
+use TurboDocx\Types\Requests\Partner\ListOrgApiKeysRequest;
+use TurboDocx\Types\Requests\Partner\CreateOrgApiKeyRequest;
+use TurboDocx\Types\Requests\Partner\UpdateOrgApiKeyRequest;
+
+// List
+$keys = TurboPartner::listOrganizationApiKeys('org-uuid', new ListOrgApiKeysRequest(limit: 10));
+
+// Create — the full key value is returned ONLY on creation, store it immediately
+$created = TurboPartner::createOrganizationApiKey('org-uuid', new CreateOrgApiKeyRequest(
+    name: 'Production Key',
+    role: 'admin',
+));
+echo $created->data->key; // capture this once, it won't be shown again
+
+// Update (rename or change role)
+TurboPartner::updateOrganizationApiKey('org-uuid', 'key-uuid', new UpdateOrgApiKeyRequest(name: 'Renamed'));
+
+// Revoke
+TurboPartner::revokeOrganizationApiKey('org-uuid', 'key-uuid');
+```
+
+### Partner API key management
+
+```php
+use TurboDocx\Types\Requests\Partner\ListPartnerApiKeysRequest;
+use TurboDocx\Types\Requests\Partner\CreatePartnerApiKeyRequest;
+use TurboDocx\Types\Requests\Partner\UpdatePartnerApiKeyRequest;
+
+// List
+$keys = TurboPartner::listPartnerApiKeys(new ListPartnerApiKeysRequest(limit: 10));
+
+// Create with scopes — full key returned only on creation
+$created = TurboPartner::createPartnerApiKey(new CreatePartnerApiKeyRequest(
+    name: 'CI/CD Key',
+    scopes: ['org:create', 'org:read', 'entitlements:update'],
+    description: 'Used by GitHub Actions',
+));
+echo $created->data->key; // store this immediately
+
+// Update name / scopes
+TurboPartner::updatePartnerApiKey('key-uuid', new UpdatePartnerApiKeyRequest(
+    name: 'CI/CD Key (extended)',
+    scopes: ['org:create', 'org:read', 'org:update', 'entitlements:update'],
+));
+
+// Revoke
+TurboPartner::revokePartnerApiKey('key-uuid');
+```
+
+Available scopes cover `org:*`, `entitlements:update`, `org-users:*`, `partner-users:*`, `org-apikeys:*`, `partner-apikeys:*`, and `audit:read`.
+
+### Partner-portal user management
+
+```php
+use TurboDocx\Types\Requests\Partner\ListPartnerUsersRequest;
+use TurboDocx\Types\Requests\Partner\AddPartnerUserRequest;
+use TurboDocx\Types\Requests\Partner\UpdatePartnerUserRequest;
+use TurboDocx\Types\Partner\PartnerPermissions;
+
+// List
+$users = TurboPartner::listPartnerPortalUsers(new ListPartnerUsersRequest(limit: 25));
+
+// Add (permissions are required on add — set every flag explicitly)
+TurboPartner::addUserToPartnerPortal(new AddPartnerUserRequest(
+    email: 'admin@partner.com',
+    role: 'admin', // 'admin' | 'member' | 'viewer'
+    permissions: new PartnerPermissions(
+        canManageOrgs: true,
+        canManageOrgUsers: true,
+        canManagePartnerUsers: false,
+        canManageOrgAPIKeys: true,
+        canManagePartnerAPIKeys: false,
+        canUpdateEntitlements: true,
+        canViewAuditLogs: true,
+    ),
+));
+
+// Update — role and/or permissions
+TurboPartner::updatePartnerUserPermissions('user-uuid', new UpdatePartnerUserRequest(
+    role: 'member',
+    permissions: new PartnerPermissions(canManageOrgs: true, canManageOrgUsers: true),
+));
+
+// Remove
+TurboPartner::removeUserFromPartnerPortal('user-uuid');
+
+// Resend invitation
+TurboPartner::resendPartnerPortalInvitationToUser('user-uuid');
+```
+
+### Audit logs
+
+```php
+use TurboDocx\Types\Requests\Partner\ListAuditLogsRequest;
+
+$logs = TurboPartner::getPartnerAuditLogs(new ListAuditLogsRequest(
+    action: 'org.created',
+    resourceType: 'organization',
+    startDate: '2026-01-01',
+    endDate: '2026-12-31',
+    success: true,
+    limit: 100,
+    offset: 0,
+));
+
+echo $logs->data->totalRecords;
+foreach ($logs->data->results as $entry) {
+    echo "{$entry->createdOn} {$entry->action} {$entry->resourceId}\n";
 }
 ```
 
@@ -876,15 +1032,38 @@ try {
 | `Deliverable::deleteDeliverable($id)` | Soft-delete (data retained, hidden from list) |
 | `Deliverable::downloadSourceFile($id)` | Download original DOCX/PPTX as a byte string |
 | `Deliverable::downloadPDF($id)` | Download rendered PDF as a byte string |
+| `TurboPartner::configure($config)` | Set partner credentials (PartnerClientConfig) |
 | `TurboPartner::createOrganization($request)` | Provision a new customer org |
-| `TurboPartner::listOrganizations(...)` | List managed organizations |
-| `TurboPartner::getOrganization($orgId)` | Get org details |
-| `TurboPartner::updateEntitlements($orgId, $features)` | Update org entitlements |
+| `TurboPartner::listOrganizations($request?)` | List managed orgs (uses limit/offset, not page) |
+| `TurboPartner::getOrganizationDetails($orgId)` | Get org details including features + tracking |
+| `TurboPartner::updateOrganizationInfo($orgId, $request)` | Rename an org |
+| `TurboPartner::deleteOrganization($orgId)` | Delete an org |
+| `TurboPartner::updateOrganizationEntitlements($orgId, $request)` | Update features and/or tracking |
+| `TurboPartner::listOrganizationUsers($orgId, $request?)` | Paginated org-user list |
+| `TurboPartner::addUserToOrganization($orgId, $request)` | Invite a user with role |
+| `TurboPartner::updateOrganizationUserRole($orgId, $userId, $request)` | Change a user's role |
+| `TurboPartner::removeUserFromOrganization($orgId, $userId)` | Remove user from org |
+| `TurboPartner::resendOrganizationInvitationToUser($orgId, $userId)` | Resend invite email |
+| `TurboPartner::listOrganizationApiKeys($orgId, $request?)` | Paginated org API-key list |
+| `TurboPartner::createOrganizationApiKey($orgId, $request)` | Create org key (value returned only on creation) |
+| `TurboPartner::updateOrganizationApiKey($orgId, $keyId, $request)` | Rename or change role |
+| `TurboPartner::revokeOrganizationApiKey($orgId, $keyId)` | Revoke org key |
+| `TurboPartner::listPartnerApiKeys($request?)` | Paginated partner API-key list |
+| `TurboPartner::createPartnerApiKey($request)` | Create partner key with scopes |
+| `TurboPartner::updatePartnerApiKey($keyId, $request)` | Rename, edit scopes |
+| `TurboPartner::revokePartnerApiKey($keyId)` | Revoke partner key |
+| `TurboPartner::listPartnerPortalUsers($request?)` | Paginated partner-portal user list |
+| `TurboPartner::addUserToPartnerPortal($request)` | Invite with role and permissions |
+| `TurboPartner::updatePartnerUserPermissions($userId, $request)` | Update role/permissions (partial OK) |
+| `TurboPartner::removeUserFromPartnerPortal($userId)` | Remove partner-portal user |
+| `TurboPartner::resendPartnerPortalInvitationToUser($userId)` | Resend invite email |
+| `TurboPartner::getPartnerAuditLogs($request?)` | Filter audit logs by action/resource/date/success |
 | `TurboWebhooks::createWebhook($urls, $events)` | Subscribe the org to events (HTTPS URLs only) |
 | `TurboWebhooks::getWebhook()` | Get the org's signature webhook + delivery stats |
 | `TurboWebhooks::updateWebhook(...)` | Patch URLs / events / isActive |
 | `TurboWebhooks::deleteWebhook()` | Soft-delete the webhook |
 | `TurboWebhooks::testWebhook($eventType, $payload)` | Fire a test delivery to all URLs |
+| `TurboWebhooks::notifyWebhook($eventType, $payload)` | Manual notify; same handler as testWebhook |
 | `TurboWebhooks::regenerateWebhookSecret()` | Rotate the HMAC secret (shown once) |
 | `TurboWebhooks::listWebhookDeliveries(...)` | Page through delivery history with filters |
 | `TurboWebhooks::replayWebhookDelivery($id)` | Manually retry a past delivery |

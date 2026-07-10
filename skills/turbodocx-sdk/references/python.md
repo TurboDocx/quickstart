@@ -272,39 +272,171 @@ await TurboSign.send_signature(
 
 ---
 
-## TurboPartner Configuration
+## TurboPartner
+
+Partner-portal operations: provision and manage customer organizations, their users, API keys, entitlements, and audit logs. Uses **separate partner credentials**. Request-body values use **camelCase keys** (e.g. `maxUsers`, `canManageOrgs`) even though method arguments are snake_case.
+
+### TurboPartner.configure
 
 ```python
 import os
 from turbodocx_sdk import TurboPartner
 
 TurboPartner.configure(
-    partner_api_key=os.environ["TURBODOCX_PARTNER_API_KEY"],
-    partner_id=os.environ["TURBODOCX_PARTNER_ID"],
+    partner_api_key=os.environ["TURBODOCX_PARTNER_API_KEY"],  # starts with TDXP-
+    partner_id=os.environ["TURBODOCX_PARTNER_ID"],            # UUID
 )
 ```
 
-## TurboPartner Usage
-
-### create_organization
+### Organization management
 
 ```python
+# Create
 org = await TurboPartner.create_organization(
     name="Acme Corp",
-    features={"maxUsers": 50, "hasTDAI": True},
+    metadata={"industry": "Technology"},
+    features={"maxUsers": 50, "hasTDAI": True},  # optional initial entitlements; camelCase keys
 )
+print(org["data"]["id"])
 
-print(f"Org ID: {org['data']['id']}")
+# List (uses limit/offset, not page)
+orgs = await TurboPartner.list_organizations(limit=20, offset=0, search="acme")
+print(orgs["data"]["totalRecords"])
+for o in orgs["data"]["results"]:
+    print(o["id"], o["name"])
+
+# Get details (includes features + tracking)
+details = await TurboPartner.get_organization_details("org-uuid")
+print(details["data"]["features"], details["data"]["tracking"])
+
+# Update name
+await TurboPartner.update_organization_info("org-uuid", name="Acme Holdings")
+
+# Delete
+await TurboPartner.delete_organization("org-uuid")
+
+# Update entitlements — features and tracking are separate top-level keys
+await TurboPartner.update_organization_entitlements(
+    "org-uuid",
+    features={"maxUsers": 100, "hasTDAI": True, "hasSalesforce": True},
+    tracking={"numUsers": 12},  # optional: seed usage counters
+)
 ```
 
-### list_organizations
+### Organization user management
 
 ```python
-orgs = await TurboPartner.list_organizations(page=1, limit=20)
+# List
+users = await TurboPartner.list_organization_users("org-uuid", limit=25, offset=0)
 
-print(f"Total: {orgs['total']}")
-for org in orgs["data"]:
-    print(f"{org['name']} ({org['id']})")
+# Invite ("admin" | "contributor" | "user" | "viewer")
+user = await TurboPartner.add_user_to_organization("org-uuid", email="newhire@acme.com", role="contributor")
+
+# Update role
+await TurboPartner.update_organization_user_role("org-uuid", "user-uuid", role="admin")
+
+# Remove
+await TurboPartner.remove_user_from_organization("org-uuid", "user-uuid")
+
+# Resend invitation email
+await TurboPartner.resend_organization_invitation_to_user("org-uuid", "user-uuid")
+```
+
+### Organization API key management
+
+```python
+# List
+keys = await TurboPartner.list_organization_api_keys("org-uuid", limit=10)
+
+# Create — the full key value is returned ONLY on creation, store it immediately
+created = await TurboPartner.create_organization_api_key("org-uuid", name="Production Key", role="admin")
+print(created["data"]["key"])  # capture this once, it won't be shown again
+
+# Update (rename or change role)
+await TurboPartner.update_organization_api_key("org-uuid", "key-uuid", name="Renamed")
+
+# Revoke
+await TurboPartner.revoke_organization_api_key("org-uuid", "key-uuid")
+```
+
+### Partner API key management
+
+```python
+# List
+keys = await TurboPartner.list_partner_api_keys(limit=10)
+
+# Create with scopes — full key returned only on creation
+created = await TurboPartner.create_partner_api_key(
+    name="CI/CD Key",
+    scopes=["org:create", "org:read", "entitlements:update"],
+    description="Used by GitHub Actions",
+)
+print(created["data"]["key"])  # store this immediately
+
+# Update name / scopes
+await TurboPartner.update_partner_api_key(
+    "key-uuid",
+    name="CI/CD Key (extended)",
+    scopes=["org:create", "org:read", "org:update", "entitlements:update"],
+)
+
+# Revoke
+await TurboPartner.revoke_partner_api_key("key-uuid")
+```
+
+Available scopes cover `org:*`, `entitlements:update`, `org-users:*`, `partner-users:*`, `org-apikeys:*`, `partner-apikeys:*`, and `audit:read`.
+
+### Partner-portal user management
+
+```python
+# List
+users = await TurboPartner.list_partner_portal_users(limit=25)
+
+# Add (permissions are required on add — list every flag explicitly; camelCase keys)
+user = await TurboPartner.add_user_to_partner_portal(
+    email="admin@partner.com",
+    role="admin",  # "admin" | "member" | "viewer"
+    permissions={
+        "canManageOrgs": True,
+        "canManageOrgUsers": True,
+        "canManagePartnerUsers": False,
+        "canManageOrgAPIKeys": True,
+        "canManagePartnerAPIKeys": False,
+        "canUpdateEntitlements": True,
+        "canViewAuditLogs": True,
+    },
+)
+
+# Update — permissions can be partial here
+await TurboPartner.update_partner_user_permissions(
+    "user-uuid",
+    role="member",
+    permissions={"canManageOrgs": True, "canManageOrgUsers": True},
+)
+
+# Remove
+await TurboPartner.remove_user_from_partner_portal("user-uuid")
+
+# Resend invitation
+await TurboPartner.resend_partner_portal_invitation_to_user("user-uuid")
+```
+
+### Audit logs
+
+```python
+logs = await TurboPartner.get_partner_audit_logs(
+    action="org.created",
+    resource_type="organization",
+    start_date="2026-01-01",
+    end_date="2026-12-31",
+    success=True,
+    limit=100,
+    offset=0,
+)
+
+print(logs["data"]["totalRecords"])
+for entry in logs["data"]["results"]:
+    print(entry["createdOn"], entry["action"], entry["resourceId"], entry["success"])
 ```
 
 ## FastAPI Integration Example
@@ -778,10 +910,32 @@ except TurboDocxError as e:
 | `Deliverable.delete_deliverable(deliverable_id)` | Soft-delete (data retained, hidden from list) |
 | `Deliverable.download_source_file(deliverable_id)` | Download original DOCX/PPTX as bytes |
 | `Deliverable.download_pdf(deliverable_id)` | Download rendered PDF as bytes |
-| `TurboPartner.create_organization(...)` | Provision a new customer org |
-| `TurboPartner.list_organizations(...)` | List managed organizations |
-| `TurboPartner.get_organization(org_id)` | Get org details |
-| `TurboPartner.update_entitlements(org_id, ...)` | Update org entitlements |
+| `TurboPartner.configure(partner_api_key, partner_id, base_url=...)` | Set partner credentials |
+| `TurboPartner.create_organization(name, metadata=, features=)` | Provision a new customer org |
+| `TurboPartner.list_organizations(limit=, offset=, search=)` | List managed orgs (uses limit/offset, not page) |
+| `TurboPartner.get_organization_details(org_id)` | Get org details including features + tracking |
+| `TurboPartner.update_organization_info(org_id, name=)` | Rename an org |
+| `TurboPartner.delete_organization(org_id)` | Delete an org |
+| `TurboPartner.update_organization_entitlements(org_id, features=, tracking=)` | Update features and/or tracking |
+| `TurboPartner.list_organization_users(org_id, limit=, offset=, search=)` | Paginated org-user list |
+| `TurboPartner.add_user_to_organization(org_id, email=, role=)` | Invite a user with role |
+| `TurboPartner.update_organization_user_role(org_id, user_id, role=)` | Change a user's role |
+| `TurboPartner.remove_user_from_organization(org_id, user_id)` | Remove user from org |
+| `TurboPartner.resend_organization_invitation_to_user(org_id, user_id)` | Resend invite email |
+| `TurboPartner.list_organization_api_keys(org_id, limit=, offset=, search=)` | Paginated org API-key list |
+| `TurboPartner.create_organization_api_key(org_id, name=, role=)` | Create org key (value returned only on creation) |
+| `TurboPartner.update_organization_api_key(org_id, api_key_id, name=, role=)` | Rename or change role |
+| `TurboPartner.revoke_organization_api_key(org_id, api_key_id)` | Revoke org key |
+| `TurboPartner.list_partner_api_keys(limit=, offset=, search=)` | Paginated partner API-key list |
+| `TurboPartner.create_partner_api_key(name=, scopes=, description=)` | Create partner key with scopes |
+| `TurboPartner.update_partner_api_key(key_id, name=, description=, scopes=)` | Rename, edit scopes |
+| `TurboPartner.revoke_partner_api_key(key_id)` | Revoke partner key |
+| `TurboPartner.list_partner_portal_users(limit=, offset=, search=)` | Paginated partner-portal user list |
+| `TurboPartner.add_user_to_partner_portal(email=, role=, permissions=)` | Invite with role and permissions |
+| `TurboPartner.update_partner_user_permissions(user_id, role=, permissions=)` | Update role/permissions (partial OK) |
+| `TurboPartner.remove_user_from_partner_portal(user_id)` | Remove partner-portal user |
+| `TurboPartner.resend_partner_portal_invitation_to_user(user_id)` | Resend invite email |
+| `TurboPartner.get_partner_audit_logs(action=, resource_type=, success=, start_date=, end_date=, limit=, offset=)` | Filter audit logs |
 | `TurboWebhooks.configure(api_key, org_id, base_url=...)` | Configure the webhook client (skip_sender_validation is hardcoded) |
 | `TurboWebhooks.create_webhook(urls, events)` | Subscribe the org to events (HTTPS URLs only) |
 | `TurboWebhooks.get_webhook()` | Get the org's signature webhook + delivery stats |

@@ -352,51 +352,185 @@ if err != nil {
 
 ---
 
-## TurboPartner Configuration
+## TurboPartner
+
+Partner-portal operations: provision and manage customer organizations, their users, API keys, entitlements, and audit logs. Uses **separate partner credentials**.
+
+### Configuration
 
 ```go
 partner, err := turbodocx.NewPartnerClient(turbodocx.PartnerConfig{
-    PartnerAPIKey: os.Getenv("TURBODOCX_PARTNER_API_KEY"),
-    PartnerID:     os.Getenv("TURBODOCX_PARTNER_ID"),
+    PartnerAPIKey: os.Getenv("TURBODOCX_PARTNER_API_KEY"), // starts with TDXP-
+    PartnerID:     os.Getenv("TURBODOCX_PARTNER_ID"),      // UUID
 })
 if err != nil {
     log.Fatal(err)
 }
 ```
 
-## TurboPartner Usage
-
-### CreateOrganization
+### Organization management
 
 ```go
+// Create
 org, err := partner.CreateOrganization(ctx, &turbodocx.CreateOrganizationRequest{
-    Name: "Acme Corp",
-    Features: &turbodocx.Features{
+    Name:     "Acme Corp",
+    Metadata: map[string]interface{}{"industry": "Technology"},
+    Features: &turbodocx.Features{ // optional initial entitlements
         MaxUsers: turbodocx.IntPtr(50),
         HasTDAI:  turbodocx.BoolPtr(true),
     },
 })
-if err != nil {
-    log.Fatal(err)
+fmt.Println(org.Data.ID)
+
+// List (uses Limit/Offset, not page)
+orgs, _ := partner.ListOrganizations(ctx, &turbodocx.ListOrganizationsRequest{
+    Limit:  turbodocx.IntPtr(20),
+    Offset: turbodocx.IntPtr(0),
+    Search: "acme",
+})
+fmt.Println(orgs.Data.TotalRecords)
+for _, o := range orgs.Data.Results {
+    fmt.Println(o.ID, o.Name)
 }
 
-fmt.Printf("Org ID: %s\n", org.Data.ID)
+// Get details (includes features + tracking)
+details, _ := partner.GetOrganizationDetails(ctx, "org-uuid")
+fmt.Println(details.Data.Features, details.Data.Tracking)
+
+// Update name
+partner.UpdateOrganizationInfo(ctx, "org-uuid", &turbodocx.UpdateOrganizationRequest{Name: "Acme Holdings"})
+
+// Delete
+partner.DeleteOrganization(ctx, "org-uuid")
+
+// Update entitlements — Features and Tracking are separate keys
+partner.UpdateOrganizationEntitlements(ctx, "org-uuid", &turbodocx.UpdateEntitlementsRequest{
+    Features: &turbodocx.Features{
+        MaxUsers:      turbodocx.IntPtr(100),
+        HasTDAI:       turbodocx.BoolPtr(true),
+        HasSalesforce: turbodocx.BoolPtr(true),
+    },
+    Tracking: &turbodocx.Tracking{NumUsers: 12}, // optional: seed usage counters
+})
 ```
 
-### ListOrganizations
+### Organization user management
 
 ```go
-orgs, err := partner.ListOrganizations(ctx, &turbodocx.ListOrganizationsRequest{
-    Page:  1,
-    Limit: 20,
+// List
+users, _ := partner.ListOrganizationUsers(ctx, "org-uuid", &turbodocx.ListOrgUsersRequest{
+    Limit: turbodocx.IntPtr(25), Offset: turbodocx.IntPtr(0),
 })
-if err != nil {
-    log.Fatal(err)
-}
 
-fmt.Printf("Total: %d\n", orgs.Total)
-for _, org := range orgs.Data {
-    fmt.Printf("  %s (%s)\n", org.Name, org.ID)
+// Invite ("admin" | "contributor" | "user" | "viewer")
+partner.AddUserToOrganization(ctx, "org-uuid", &turbodocx.AddOrgUserRequest{
+    Email: "newhire@acme.com", Role: "contributor",
+})
+
+// Update role
+partner.UpdateOrganizationUserRole(ctx, "org-uuid", "user-uuid", &turbodocx.UpdateOrgUserRequest{Role: "admin"})
+
+// Remove
+partner.RemoveUserFromOrganization(ctx, "org-uuid", "user-uuid")
+
+// Resend invitation email
+partner.ResendOrganizationInvitationToUser(ctx, "org-uuid", "user-uuid")
+```
+
+### Organization API key management
+
+```go
+// List
+keys, _ := partner.ListOrganizationAPIKeys(ctx, "org-uuid", &turbodocx.ListOrgAPIKeysRequest{Limit: turbodocx.IntPtr(10)})
+
+// Create — the full key value is returned ONLY on creation, store it immediately
+created, _ := partner.CreateOrganizationAPIKey(ctx, "org-uuid", &turbodocx.CreateOrgAPIKeyRequest{
+    Name: "Production Key", Role: "admin",
+})
+fmt.Println(created.Data.Key) // capture this once, it won't be shown again
+
+// Update (rename or change role)
+partner.UpdateOrganizationAPIKey(ctx, "org-uuid", "key-uuid", &turbodocx.UpdateOrgAPIKeyRequest{Name: "Renamed"})
+
+// Revoke
+partner.RevokeOrganizationAPIKey(ctx, "org-uuid", "key-uuid")
+```
+
+### Partner API key management
+
+```go
+// List
+keys, _ := partner.ListPartnerAPIKeys(ctx, &turbodocx.ListPartnerAPIKeysRequest{Limit: turbodocx.IntPtr(10)})
+
+// Create with scopes — full key returned only on creation
+created, _ := partner.CreatePartnerAPIKey(ctx, &turbodocx.CreatePartnerAPIKeyRequest{
+    Name:        "CI/CD Key",
+    Scopes:      []string{turbodocx.ScopeOrgCreate, turbodocx.ScopeOrgRead, turbodocx.ScopeEntitlementsUpdate},
+    Description: "Used by GitHub Actions",
+})
+fmt.Println(created.Data.Key) // store this immediately
+
+// Update name / scopes
+partner.UpdatePartnerAPIKey(ctx, "key-uuid", &turbodocx.UpdatePartnerAPIKeyRequest{
+    Name:   "CI/CD Key (extended)",
+    Scopes: []string{turbodocx.ScopeOrgCreate, turbodocx.ScopeOrgRead, turbodocx.ScopeOrgUpdate, turbodocx.ScopeEntitlementsUpdate},
+})
+
+// Revoke
+partner.RevokePartnerAPIKey(ctx, "key-uuid")
+```
+
+Scope constants (`turbodocx.Scope*`) cover `org:*`, `entitlements:update`, `org-users:*`, `partner-users:*`, `org-apikeys:*`, `partner-apikeys:*`, and `audit:read`.
+
+### Partner-portal user management
+
+```go
+// List
+users, _ := partner.ListPartnerPortalUsers(ctx, &turbodocx.ListPartnerUsersRequest{Limit: turbodocx.IntPtr(25)})
+
+// Add (permissions are required on add — set every flag explicitly)
+partner.AddUserToPartnerPortal(ctx, &turbodocx.AddPartnerUserRequest{
+    Email: "admin@partner.com",
+    Role:  "admin", // "admin" | "member" | "viewer"
+    Permissions: turbodocx.PartnerPermissions{
+        CanManageOrgs:           true,
+        CanManageOrgUsers:       true,
+        CanManagePartnerUsers:   false,
+        CanManageOrgAPIKeys:     true,
+        CanManagePartnerAPIKeys: false,
+        CanUpdateEntitlements:   true,
+        CanViewAuditLogs:        true,
+    },
+})
+
+// Update — permissions can be partial here
+partner.UpdatePartnerUserPermissions(ctx, "user-uuid", &turbodocx.UpdatePartnerUserRequest{
+    Role:        "member",
+    Permissions: &turbodocx.PartnerPermissions{CanManageOrgs: true, CanManageOrgUsers: true},
+})
+
+// Remove
+partner.RemoveUserFromPartnerPortal(ctx, "user-uuid")
+
+// Resend invitation
+partner.ResendPartnerPortalInvitationToUser(ctx, "user-uuid")
+```
+
+### Audit logs
+
+```go
+logs, _ := partner.GetPartnerAuditLogs(ctx, &turbodocx.ListAuditLogsRequest{
+    Action:       "org.created",
+    ResourceType: "organization",
+    StartDate:    "2026-01-01",
+    EndDate:      "2026-12-31",
+    Success:      turbodocx.BoolPtr(true),
+    Limit:        turbodocx.IntPtr(100),
+    Offset:       turbodocx.IntPtr(0),
+})
+fmt.Println(logs.Data.TotalRecords)
+for _, entry := range logs.Data.Results {
+    fmt.Println(entry.CreatedOn, entry.Action, entry.ResourceID, entry.Success)
 }
 ```
 
@@ -905,10 +1039,32 @@ if err != nil {
 | `dc.DeleteDeliverable(ctx, id)` | Soft-delete (data retained, hidden from list) |
 | `dc.DownloadSourceFile(ctx, id)` | Download original DOCX/PPTX as []byte |
 | `dc.DownloadPDF(ctx, id)` | Download rendered PDF as []byte |
+| `turbodocx.NewPartnerClient(cfg)` | Construct a partner client (PartnerAPIKey, PartnerID) |
 | `partner.CreateOrganization(ctx, req)` | Provision a new customer org |
-| `partner.ListOrganizations(ctx, req)` | List managed organizations |
-| `partner.GetOrganization(ctx, id)` | Get org details |
-| `partner.UpdateEntitlements(ctx, id, features)` | Update org entitlements |
+| `partner.ListOrganizations(ctx, req)` | List managed orgs (uses Limit/Offset, not page) |
+| `partner.GetOrganizationDetails(ctx, id)` | Get org details including features + tracking |
+| `partner.UpdateOrganizationInfo(ctx, id, req)` | Rename an org |
+| `partner.DeleteOrganization(ctx, id)` | Delete an org |
+| `partner.UpdateOrganizationEntitlements(ctx, id, req)` | Update features and/or tracking |
+| `partner.ListOrganizationUsers(ctx, id, req)` | Paginated org-user list |
+| `partner.AddUserToOrganization(ctx, id, req)` | Invite a user with role |
+| `partner.UpdateOrganizationUserRole(ctx, id, userID, req)` | Change a user's role |
+| `partner.RemoveUserFromOrganization(ctx, id, userID)` | Remove user from org |
+| `partner.ResendOrganizationInvitationToUser(ctx, id, userID)` | Resend invite email |
+| `partner.ListOrganizationAPIKeys(ctx, id, req)` | Paginated org API-key list |
+| `partner.CreateOrganizationAPIKey(ctx, id, req)` | Create org key (value returned only on creation) |
+| `partner.UpdateOrganizationAPIKey(ctx, id, keyID, req)` | Rename or change role |
+| `partner.RevokeOrganizationAPIKey(ctx, id, keyID)` | Revoke org key |
+| `partner.ListPartnerAPIKeys(ctx, req)` | Paginated partner API-key list |
+| `partner.CreatePartnerAPIKey(ctx, req)` | Create partner key with scopes |
+| `partner.UpdatePartnerAPIKey(ctx, keyID, req)` | Rename, edit scopes |
+| `partner.RevokePartnerAPIKey(ctx, keyID)` | Revoke partner key |
+| `partner.ListPartnerPortalUsers(ctx, req)` | Paginated partner-portal user list |
+| `partner.AddUserToPartnerPortal(ctx, req)` | Invite with role and permissions |
+| `partner.UpdatePartnerUserPermissions(ctx, userID, req)` | Update role/permissions (partial OK) |
+| `partner.RemoveUserFromPartnerPortal(ctx, userID)` | Remove partner-portal user |
+| `partner.ResendPartnerPortalInvitationToUser(ctx, userID)` | Resend invite email |
+| `partner.GetPartnerAuditLogs(ctx, req)` | Filter audit logs by action/resource/date/success |
 | `turbodocx.NewWebhooksClientWithConfig(cfg)` | Construct an admin-scoped webhook client (no SenderEmail required) |
 | `wh.CreateWebhook(ctx, req)` | Subscribe the org to events (HTTPS URLs only) |
 | `wh.GetWebhook(ctx)` | Get the org's signature webhook + delivery stats |

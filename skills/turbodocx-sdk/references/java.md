@@ -312,39 +312,152 @@ SendSignatureResponse signed = client.turboSign().sendSignature(
 );
 ```
 
-## TurboPartner Configuration
+## TurboPartner
+
+Partner-portal operations: provision and manage customer organizations, their users, API keys, entitlements, and audit logs. Uses **separate partner credentials**. Every method returns a Gson `JsonObject` with `success`, `data`, and optionally `message`. Request-body map keys are **camelCase** (e.g. `maxUsers`, `canManageOrgs`).
+
+### Configuration
 
 ```java
 TurboPartnerClient partner = new TurboPartnerClient.Builder()
-    .partnerApiKey(System.getenv("TURBODOCX_PARTNER_API_KEY"))
-    .partnerId(System.getenv("TURBODOCX_PARTNER_ID"))
+    .partnerApiKey(System.getenv("TURBODOCX_PARTNER_API_KEY")) // starts with TDXP-
+    .partnerId(System.getenv("TURBODOCX_PARTNER_ID"))          // UUID
     .build();
+
+TurboPartner tp = partner.turboPartner();
 ```
 
-## TurboPartner Usage
-
-### createOrganization
+### Organization management
 
 ```java
-CreateOrganizationResponse org = partner.turboPartner().createOrganization(
-    new CreateOrganizationRequest.Builder()
-        .name("Acme Corp")
-        .features(Map.of("maxUsers", 50, "hasTDAI", true))
-        .build()
-);
+// Create
+JsonObject org = tp.createOrganization(
+    "Acme Corp",
+    Map.of("industry", "Technology"),           // metadata (or null)
+    Map.of("maxUsers", 50, "hasTDAI", true));   // optional initial entitlements; camelCase keys
+System.out.println(org.getAsJsonObject("data").get("id").getAsString());
 
-System.out.println("Org ID: " + org.getData().getId());
+// List (uses limit/offset, not page)
+JsonObject orgs = tp.listOrganizations(20, 0, "acme");
+System.out.println(orgs.getAsJsonObject("data").get("totalRecords"));
+
+// Get details (includes features + tracking)
+JsonObject details = tp.getOrganizationDetails("org-uuid");
+
+// Update name
+tp.updateOrganizationInfo("org-uuid", "Acme Holdings");
+
+// Delete
+tp.deleteOrganization("org-uuid");
+
+// Update entitlements — features and tracking are separate maps
+tp.updateOrganizationEntitlements(
+    "org-uuid",
+    Map.of("maxUsers", 100, "hasTDAI", true, "hasSalesforce", true), // features
+    Map.of("numUsers", 12));                                          // tracking (or null)
 ```
 
-### listOrganizations
+### Organization user management
 
 ```java
-ListOrganizationsResponse orgs = partner.turboPartner().listOrganizations(1, 20);
+// List
+JsonObject users = tp.listOrganizationUsers("org-uuid", 25, 0, null);
 
-System.out.println("Total: " + orgs.getTotal());
-for (Organization o : orgs.getData()) {
-    System.out.println("  " + o.getName() + " (" + o.getId() + ")");
-}
+// Invite ("admin" | "contributor" | "user" | "viewer")
+tp.addUserToOrganization("org-uuid", "newhire@acme.com", "contributor");
+
+// Update role
+tp.updateOrganizationUserRole("org-uuid", "user-uuid", "admin");
+
+// Remove
+tp.removeUserFromOrganization("org-uuid", "user-uuid");
+
+// Resend invitation email
+tp.resendOrganizationInvitationToUser("org-uuid", "user-uuid");
+```
+
+### Organization API key management
+
+```java
+// List
+JsonObject keys = tp.listOrganizationApiKeys("org-uuid", 10, 0, null);
+
+// Create — the full key value is returned ONLY on creation, store it immediately
+JsonObject created = tp.createOrganizationApiKey("org-uuid", "Production Key", "admin");
+System.out.println(created.getAsJsonObject("data").get("key").getAsString()); // capture once
+
+// Update (rename or change role)
+tp.updateOrganizationApiKey("org-uuid", "key-uuid", "Renamed", null);
+
+// Revoke
+tp.revokeOrganizationApiKey("org-uuid", "key-uuid");
+```
+
+### Partner API key management
+
+```java
+// List
+JsonObject keys = tp.listPartnerApiKeys(10, 0, null);
+
+// Create with scopes — full key returned only on creation
+JsonObject created = tp.createPartnerApiKey(
+    "CI/CD Key",
+    List.of("org:create", "org:read", "entitlements:update"),
+    "Used by GitHub Actions");
+System.out.println(created.getAsJsonObject("data").get("key").getAsString()); // store immediately
+
+// Update name / description / scopes
+tp.updatePartnerApiKey(
+    "key-uuid",
+    "CI/CD Key (extended)",
+    null,
+    List.of("org:create", "org:read", "org:update", "entitlements:update"));
+
+// Revoke
+tp.revokePartnerApiKey("key-uuid");
+```
+
+Available scopes cover `org:*`, `entitlements:update`, `org-users:*`, `partner-users:*`, `org-apikeys:*`, `partner-apikeys:*`, and `audit:read` (see `PartnerScope`).
+
+### Partner-portal user management
+
+```java
+// List
+JsonObject users = tp.listPartnerPortalUsers(25, 0, null);
+
+// Add (permissions are required on add — set every flag explicitly)
+tp.addUserToPartnerPortal(
+    "admin@partner.com",
+    "admin", // "admin" | "member" | "viewer"
+    Map.of(
+        "canManageOrgs", true,
+        "canManageOrgUsers", true,
+        "canManagePartnerUsers", false,
+        "canManageOrgAPIKeys", true,
+        "canManagePartnerAPIKeys", false,
+        "canUpdateEntitlements", true,
+        "canViewAuditLogs", true));
+
+// Update — role and/or permissions
+tp.updatePartnerUserPermissions(
+    "user-uuid",
+    "member",
+    Map.of("canManageOrgs", true, "canManageOrgUsers", true));
+
+// Remove
+tp.removeUserFromPartnerPortal("user-uuid");
+
+// Resend invitation
+tp.resendPartnerPortalInvitationToUser("user-uuid");
+```
+
+### Audit logs
+
+```java
+// (limit, offset, search, action, resourceType, resourceId, success, startDate, endDate)
+JsonObject logs = tp.getPartnerAuditLogs(
+    100, 0, null, "org.created", "organization", null, true, "2026-01-01", "2026-12-31");
+System.out.println(logs.getAsJsonObject("data").get("totalRecords"));
 ```
 
 ## Spring Boot Integration Example
@@ -863,10 +976,32 @@ try {
 | `deliverable.deleteDeliverable(id)` | Soft-delete (data retained, hidden from list) |
 | `deliverable.downloadSourceFile(id)` | Download original DOCX/PPTX as `byte[]` |
 | `deliverable.downloadPDF(id)` | Download rendered PDF as `byte[]` |
-| `partner.turboPartner().createOrganization(req)` | Provision a new customer org |
-| `partner.turboPartner().listOrganizations(page, limit)` | List managed organizations |
-| `partner.turboPartner().getOrganization(id)` | Get org details |
-| `partner.turboPartner().updateEntitlements(id, features)` | Update org entitlements |
+| `new TurboPartnerClient.Builder()...build().turboPartner()` | Construct a `TurboPartner` (partnerApiKey, partnerId) |
+| `tp.createOrganization(name, metadata, features)` | Provision a new customer org |
+| `tp.listOrganizations(limit, offset, search)` | List managed orgs (uses limit/offset, not page) |
+| `tp.getOrganizationDetails(id)` | Get org details including features + tracking |
+| `tp.updateOrganizationInfo(id, name)` | Rename an org |
+| `tp.deleteOrganization(id)` | Delete an org |
+| `tp.updateOrganizationEntitlements(id, features, tracking)` | Update features and/or tracking |
+| `tp.listOrganizationUsers(id, limit, offset, search)` | Paginated org-user list |
+| `tp.addUserToOrganization(id, email, role)` | Invite a user with role |
+| `tp.updateOrganizationUserRole(id, userId, role)` | Change a user's role |
+| `tp.removeUserFromOrganization(id, userId)` | Remove user from org |
+| `tp.resendOrganizationInvitationToUser(id, userId)` | Resend invite email |
+| `tp.listOrganizationApiKeys(id, limit, offset, search)` | Paginated org API-key list |
+| `tp.createOrganizationApiKey(id, name, role)` | Create org key (value returned only on creation) |
+| `tp.updateOrganizationApiKey(id, keyId, name, role)` | Rename or change role |
+| `tp.revokeOrganizationApiKey(id, keyId)` | Revoke org key |
+| `tp.listPartnerApiKeys(limit, offset, search)` | Paginated partner API-key list |
+| `tp.createPartnerApiKey(name, scopes, description)` | Create partner key with scopes |
+| `tp.updatePartnerApiKey(keyId, name, description, scopes)` | Rename, edit scopes |
+| `tp.revokePartnerApiKey(keyId)` | Revoke partner key |
+| `tp.listPartnerPortalUsers(limit, offset, search)` | Paginated partner-portal user list |
+| `tp.addUserToPartnerPortal(email, role, permissions)` | Invite with role and permissions |
+| `tp.updatePartnerUserPermissions(userId, role, permissions)` | Update role/permissions (partial OK) |
+| `tp.removeUserFromPartnerPortal(userId)` | Remove partner-portal user |
+| `tp.resendPartnerPortalInvitationToUser(userId)` | Resend invite email |
+| `tp.getPartnerAuditLogs(limit, offset, search, action, resourceType, resourceId, success, startDate, endDate)` | Filter audit logs |
 | `new TurboDocxClient.Builder()...buildWebhooksClient()` | Construct an admin-scoped `TurboWebhooks` (no `senderEmail` required) |
 | `webhooks.createWebhook(urls, events)` | Subscribe the org to events (HTTPS URLs only) |
 | `webhooks.getWebhook()` | Get the org's signature webhook + delivery stats |
