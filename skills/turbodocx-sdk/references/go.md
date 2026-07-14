@@ -98,6 +98,8 @@ if err != nil {
 os.WriteFile("signed.pdf", pdf, 0644)
 ```
 
+The download is a **two-step** operation and the SDK performs both for you: `GET /api/signature/:id/download` returns **JSON** (`{"downloadUrl": ..., "fileName": ...}`, not bytes), and the SDK then fetches the presigned `downloadUrl` **with no `Authorization` header** — S3 rejects a presigned request that also carries one. Replicate both steps if you ever call the REST endpoint directly.
+
 ### CreateSignatureReviewLink
 
 Prepares the document with recipients and fields but **does not send signature emails** — use this to preview field placement before sending.
@@ -422,7 +424,8 @@ users, _ := partner.ListOrganizationUsers(ctx, "org-uuid", &turbodocx.ListOrgUse
     Limit: turbodocx.IntPtr(25), Offset: turbodocx.IntPtr(0),
 })
 
-// Invite ("admin" | "contributor" | "user" | "viewer")
+// Invite — ORG role enum: "admin" | "contributor" | "user" | "viewer"
+// ("member" is a PARTNER-portal role and is rejected here with a 400.)
 partner.AddUserToOrganization(ctx, "org-uuid", &turbodocx.AddOrgUserRequest{
     Email: "newhire@acme.com", Role: "contributor",
 })
@@ -444,6 +447,7 @@ partner.ResendOrganizationInvitationToUser(ctx, "org-uuid", "user-uuid")
 keys, _ := partner.ListOrganizationAPIKeys(ctx, "org-uuid", &turbodocx.ListOrgAPIKeysRequest{Limit: turbodocx.IntPtr(10)})
 
 // Create — the full key value is returned ONLY on creation, store it immediately
+// Org API keys use the ORG role enum: "admin" | "contributor" | "user" | "viewer"
 created, _ := partner.CreateOrganizationAPIKey(ctx, "org-uuid", &turbodocx.CreateOrgAPIKeyRequest{
     Name: "Production Key", Role: "admin",
 })
@@ -488,10 +492,12 @@ Scope constants (`turbodocx.Scope*`) cover `org:*`, `entitlements:update`, `org-
 // List
 users, _ := partner.ListPartnerPortalUsers(ctx, &turbodocx.ListPartnerUsersRequest{Limit: turbodocx.IntPtr(25)})
 
-// Add (permissions are required on add — set every flag explicitly)
+// Add — PARTNER role enum: "admin" | "member" | "viewer"
+// ("contributor" / "user" are ORG roles and are rejected here with a 400.)
+// All SEVEN permission fields are required — set every flag explicitly.
 partner.AddUserToPartnerPortal(ctx, &turbodocx.AddPartnerUserRequest{
     Email: "admin@partner.com",
-    Role:  "admin", // "admin" | "member" | "viewer"
+    Role:  "admin",
     Permissions: turbodocx.PartnerPermissions{
         CanManageOrgs:           true,
         CanManageOrgUsers:       true,
@@ -503,10 +509,33 @@ partner.AddUserToPartnerPortal(ctx, &turbodocx.AddPartnerUserRequest{
     },
 })
 
-// Update — permissions can be partial here
+// Update — the Permissions pointer is optional, but there is NO partial update:
+// if it is non-nil the backend requires ALL SEVEN keys. Note that every field of
+// PartnerPermissions is a plain bool with no omitempty, so a partially-filled struct
+// literal still puts all 7 keys on the wire — the ones you left out go out as `false`,
+// silently REVOKING those permissions. Read the current permissions first, then flip
+// only what changes.
+users, _ := partner.ListPartnerPortalUsers(ctx, &turbodocx.ListPartnerUsersRequest{
+    Limit: turbodocx.IntPtr(100),
+})
+var perms turbodocx.PartnerPermissions
+for _, u := range users.Data.Results {
+    if u.ID == "user-uuid" && u.Permissions != nil {
+        perms = *u.Permissions // all 7 fields, straight from the server
+        break
+    }
+}
+perms.CanManageOrgs = true
+perms.CanManageOrgUsers = true
+
 partner.UpdatePartnerUserPermissions(ctx, "user-uuid", &turbodocx.UpdatePartnerUserRequest{
     Role:        "member",
-    Permissions: &turbodocx.PartnerPermissions{CanManageOrgs: true, CanManageOrgUsers: true},
+    Permissions: &perms,
+})
+
+// To change ONLY the role, leave Permissions nil:
+partner.UpdatePartnerUserPermissions(ctx, "user-uuid", &turbodocx.UpdatePartnerUserRequest{
+    Role: "viewer",
 })
 
 // Remove
@@ -630,8 +659,8 @@ if err != nil {
 
 ```go
 created, err := wh.CreateWebhook(ctx, turbodocx.CreateWebhookRequest{
-    URLs:   []string{"https://your-server.example.com/webhooks/turbodocx"},
-    Events: []string{"signature.document.completed", "signature.document.voided"},
+    URLs:   []string{"https://your-server.example.com/webhooks/turbodocx"}, // 1-10, HTTPS only
+    Events: []string{"signature.document.completed", "signature.document.voided"}, // at least 1
 })
 if err != nil {
     log.Fatal(err)
@@ -639,6 +668,8 @@ if err != nil {
 fmt.Printf("id: %s\n", created.ID)
 fmt.Printf("secret: %s\n", created.Secret) // shown ONCE — save immediately
 ```
+
+`URLs` must contain **1–10** HTTPS URLs and `Events` at least **1** event, or the backend returns a 400 `*turbodocx.ValidationError`. Webhook management requires an **administrator** API key.
 
 ### GetWebhook
 
@@ -654,10 +685,15 @@ Patch any subset of fields. Use `turbodocx.BoolPtr(false)` to toggle `IsActive`.
 
 ```go
 updated, err := wh.UpdateWebhook(ctx, turbodocx.UpdateWebhookRequest{
-    URLs:     []string{"https://new-server.example.com/hook"},
+    URLs:     []string{"https://new-server.example.com/hook"}, // 1-10 HTTPS URLs
     IsActive: turbodocx.BoolPtr(false),
 })
+
+// To pause deliveries without touching the routing, leave URLs/Events nil:
+wh.UpdateWebhook(ctx, turbodocx.UpdateWebhookRequest{IsActive: turbodocx.BoolPtr(false)})
 ```
+
+The fields are optional, but **optional does not mean "may be empty"**: if `URLs` is present it still has to hold 1–10 URLs, and if `Events` is present it still has to hold at least 1. Sending an empty slice is a 400 — leave the field nil so it is omitted entirely.
 
 ### DeleteWebhook
 
@@ -803,10 +839,12 @@ if err != nil {
 ### CreateQuote
 
 ```go
+termDays := 365 // optional; DEFAULT IS 60. Max 3650 (10 years). -1 = auto-renewal.
 quote, err := qc.CreateQuote(ctx, &turbodocx.CreateQuoteRequest{
     Name:      "Acme Annual Subscription",
     CompanyID: companyID,
     ContactID: contactID,
+    TermDays:  &termDays,
 })
 if err != nil {
     log.Fatal(err)
@@ -815,27 +853,71 @@ fmt.Printf("Quote ID: %s  Number: %s\n", quote.ID, quote.QuoteNumber)
 // quote.Status == "draft"
 ```
 
+**`TermDays` / `RenewalPeriod`** — `TermDays` defaults to **60** when nil, and may be any int up to **3650**, or the sentinel **`-1`** meaning auto-renewal. The two fields are coupled:
+
+- `TermDays == -1` → `RenewalPeriod` is **required** (`"weekly" | "monthly" | "quarterly" | "annually"`).
+- any other `TermDays` → `RenewalPeriod` must be **nil**; sending it is a 400.
+
+```go
+// Auto-renewing quote — RenewalPeriod is mandatory
+autoRenew, period := -1, "monthly"
+qc.CreateQuote(ctx, &turbodocx.CreateQuoteRequest{
+    Name:          "Managed Services - auto-renew",
+    CompanyID:     companyID,
+    ContactID:     contactID,
+    TermDays:      &autoRenew,
+    RenewalPeriod: &period,
+})
+
+// Fixed-term quote — leave RenewalPeriod nil
+fixed := 90
+qc.CreateQuote(ctx, &turbodocx.CreateQuoteRequest{
+    Name:      "Fixed 90-day engagement",
+    CompanyID: companyID,
+    ContactID: contactID,
+    TermDays:  &fixed,
+})
+```
+
+On `UpdateQuote`, use `ClearRenewalPeriod()` to explicitly null the field out when moving a quote off auto-renewal — a nil pointer alone is omitted from the PATCH body and leaves the old value in place.
+
 ### AddLineItems / AddBundleLineItems
 
-`AddLineItems` is variadic — pass one struct or many; both routes send an array to the backend.
+`AddLineItems` is variadic — pass one struct or many; both routes send an array to the backend. The array is capped at **50 items** per call (`Reorder` allows up to 200).
+
+`ProductID`, `ProductName`, `UnitPrice`, and `BillingFrequency` are all **required** by the API. `ProductID` is deliberately declared without `omitempty`, so the key is always on the wire: a non-nil pointer references a catalog product, and a **nil pointer sends `"productId": null`**, which is how you add an ad-hoc item with no catalog product behind it. `Quantity` defaults to 1.
 
 ```go
 qty := 3
+productID := "product-uuid"
 items, err := qc.AddLineItems(ctx, quote.ID, turbodocx.AddLineItemRequest{
-    ProductName:      "Professional License",
-    UnitPrice:        499.00,
-    BillingFrequency: "annual",
-    Quantity:         &qty,
+    ProductID:        &productID,  // REQUIRED key; nil sends null for an ad-hoc item
+    ProductName:      "Professional License", // REQUIRED
+    UnitPrice:        499.00,                 // REQUIRED
+    BillingFrequency: "annual",               // REQUIRED
+    Quantity:         &qty,                   // optional, defaults to 1
 })
 if err != nil {
     log.Fatal(err)
 }
 // Returns []LineItem — unitPrice, listPrice etc. are float64 (normalizer coerces strings)
 
-// Add a bundle instead:
+// Ad-hoc item with no catalog product: leave ProductID nil (it still marshals as null).
+setupQty := 1
+qc.AddLineItems(ctx, quote.ID, turbodocx.AddLineItemRequest{
+    ProductID:        nil,
+    ProductName:      "Setup Fee",
+    UnitPrice:        1500.00,
+    BillingFrequency: "one-time",
+    Quantity:         &setupQty,
+})
+
+// Add a bundle instead — BundleID and BundleName are both required. The server expands
+// the bundle's child products itself; you never send them.
 bundleItems, err := qc.AddBundleLineItems(ctx, quote.ID, turbodocx.AddBundleLineItemRequest{
-    BundleID: bundleID,
-    Quantity: &qty,
+    BundleID:   bundleID,         // REQUIRED
+    BundleName: "Starter Bundle", // REQUIRED
+    Quantity:   &qty,
 })
 ```
 
@@ -848,6 +930,20 @@ if err != nil {
 }
 fmt.Printf("Status: %s  Message: %s\n", sent.QuoteResult.Status, sent.Message)
 // sent.QuoteResult.Status == "sent"
+```
+
+### HandleExpiredQuote
+
+Act on a sent quote whose `validUntil` has passed. **`Action` accepts exactly two values: `"void"` and `"decline"`.** There is no `"extend"` and no `"resend"` — those are not implemented and return a 400. `Reason` (max 190 chars) and `NewValidUntil` (ISO date) are **both required**.
+
+The endpoint voids/declines the original quote and creates a duplicate carrying the new `validUntil` date — that duplicate is how you "extend" an expired quote.
+
+```go
+result, err := qc.HandleExpiredQuote(ctx, quote.ID, &turbodocx.HandleExpiredQuoteRequest{
+    Action:        "void",                     // "void" | "decline" — nothing else
+    Reason:        "Pricing refreshed for Q4", // REQUIRED, max 190 chars
+    NewValidUntil: "2026-12-31",               // REQUIRED, ISO date — carried by the new duplicate
+})
 ```
 
 ### DownloadQuotePdf
@@ -878,10 +974,15 @@ fmt.Printf("Updated %d items, skipped %d\n", applyResp.UpdatedCount, applyResp.S
 products, err := qc.ListProducts(ctx, nil)
 fmt.Printf("Total: %d\n", products.TotalRecords)
 
-// Create a product
+// Create a product.
+// Name, ListPrice, BillingFrequency and CategoryID are all REQUIRED.
+// CategoryID is a real UUID — get it from a CreateType with CategoryType "product_category".
 product, err := qc.CreateProduct(ctx, &turbodocx.CreateProductRequest{
-    Name:      "Enterprise Add-on",
-    ListPrice: 799.00,
+    Name:             "Enterprise Add-on",
+    ListPrice:        799.00,
+    BillingFrequency: "annual",
+    CategoryID:       categoryID,
+    // Images: []turbodocx.ProductImageInput{...},  // MAX 5 images per product, MAX 2 MB each
 })
 
 // Duplicate a bundle
@@ -901,7 +1002,9 @@ result, err := qc.CreateAndSend(ctx, &turbodocx.CreateAndSendRequest{
     CompanyID: companyID,
     ContactID: contactID,
     Items: []turbodocx.AddLineItemRequest{
-        {ProductName: "Starter Plan", UnitPrice: 99.00, BillingFrequency: "monthly"},
+        // ProductID is nil here — an ad-hoc item. The key still marshals as null,
+        // which is what the API requires; ProductName/UnitPrice/BillingFrequency are mandatory.
+        {ProductID: nil, ProductName: "Starter Plan", UnitPrice: 99.00, BillingFrequency: "monthly"},
     },
 })
 if err != nil {
@@ -945,10 +1048,33 @@ Both methods return `{ format, currentFloor }`. `currentFloor` is the per-period
 
 Six catalog resources support bulk creation from a slice of typed request rows (e.g. a parsed CSV): `BulkCreateProducts`, `BulkCreatePriceBooks`, `BulkCreateBundles`, `BulkCreateCompanies`, `BulkCreateContacts`, and `BulkCreateTypes`. Each takes the same request struct as the matching single `Create*` call; the SDK wraps the rows in the `{ "rows": [...] }` envelope the `POST {resource}/bulk` endpoint expects. Each returns `(*BulkImportResult, error)`.
 
+Every product row requires `Name`, `CategoryID`, `ListPrice`, and `BillingFrequency`. **`CategoryID` must be a real category UUID** — there is no category-by-name convenience field on the bulk row, and because the backend rejects unknown keys a `categoryName` field would 400 the row. Resolve (or create) the category first and pass its UUID:
+
 ```go
+// 1. Resolve the category UUID once — create it if it doesn't exist yet.
+var categoryID string
+types, err := qc.ListTypes(ctx, nil)
+for _, t := range types.Results {
+    if t.Name == "Subscriptions" && t.CategoryType == "product_category" {
+        categoryID = t.ID
+        break
+    }
+}
+if categoryID == "" {
+    created, err := qc.CreateType(ctx, &turbodocx.CreateQuoteTypeRequest{
+        Name:         "Subscriptions",
+        CategoryType: "product_category",
+    })
+    if err != nil {
+        log.Fatal(err)
+    }
+    categoryID = created.ID
+}
+
+// 2. Reference it by UUID on every row.
 result, err := qc.BulkCreateProducts(ctx, []turbodocx.CreateProductRequest{
-    {Name: "Basic Plan",   ListPrice: 10,  BillingFrequency: "monthly", CategoryID: "category-uuid"},
-    {Name: "Premium Plan", ListPrice: 100, BillingFrequency: "monthly", CategoryID: "category-uuid"},
+    {Name: "Basic Plan",   ListPrice: 10,  BillingFrequency: "monthly", CategoryID: categoryID},
+    {Name: "Premium Plan", ListPrice: 100, BillingFrequency: "monthly", CategoryID: categoryID},
 })
 if err != nil {
     log.Fatal(err) // only a transport/validation error (e.g. >500 rows) — NOT a per-row failure
@@ -971,7 +1097,28 @@ Bulk-create semantics:
 
 - **Partial success** — a failed row does **not** return an error and does **not** roll back the rows before it. It is reported in `result.Failed` with a 1-indexed `Row` and a `Reason`. Rows the server tweaked (e.g. an unknown bundle item dropped) appear in `result.Adjusted`. Always read `result.Failed` rather than assuming every row imported — a non-nil `err` only signals a transport-level or request-level failure (e.g. exceeding the cap).
 - **500-row cap per request** — more than 500 rows returns a 400 `*turbodocx.ValidationError`. The SDK does not validate the rows or the cap client-side.
+- **Rows are validated against the strict backend schema and unknown keys are rejected.** For products the required row fields are exactly `Name`, `CategoryID` (UUID), `ListPrice`, `BillingFrequency` — there is no category-by-name shortcut.
 - **Roles** — available to administrator and contributor API keys.
+
+### Quote templates (auto-provisioned — get, then update)
+
+Quote templates are **provisioned for you**. `GET /v1/quote-template` self-heals: if the org has no template it creates one from the org's branding and returns it. Consequences:
+
+- **Never call `CreateTemplate` on an established org** — a template already exists, so it returns 400 `TEMPLATE_ALREADY_EXISTS`. The method is effectively unreachable. Do not write get-then-create-if-missing logic.
+- **`DeleteTemplate` is really "reset to org branding defaults"** — it soft-deletes, and the very next `GetTemplate` regenerates one.
+
+The correct flow is always **`GetTemplate` → `UpdateTemplate`**:
+
+```go
+template, err := qc.GetTemplate(ctx) // always returns one; creates it if needed
+if err != nil {
+    log.Fatal(err)
+}
+primaryColor := "#0B5FFF"
+updated, err := qc.UpdateTemplate(ctx, template.ID, &turbodocx.UpdateQuoteTemplateRequest{
+    PrimaryColor: &primaryColor,
+})
+```
 
 ### TurboQuote error handling
 
@@ -1047,7 +1194,7 @@ if err != nil {
 | `partner.DeleteOrganization(ctx, id)` | Delete an org |
 | `partner.UpdateOrganizationEntitlements(ctx, id, req)` | Update features and/or tracking |
 | `partner.ListOrganizationUsers(ctx, id, req)` | Paginated org-user list |
-| `partner.AddUserToOrganization(ctx, id, req)` | Invite a user with role |
+| `partner.AddUserToOrganization(ctx, id, req)` | Invite a user with an ORG role (`admin` \| `contributor` \| `user` \| `viewer`) |
 | `partner.UpdateOrganizationUserRole(ctx, id, userID, req)` | Change a user's role |
 | `partner.RemoveUserFromOrganization(ctx, id, userID)` | Remove user from org |
 | `partner.ResendOrganizationInvitationToUser(ctx, id, userID)` | Resend invite email |
@@ -1060,15 +1207,15 @@ if err != nil {
 | `partner.UpdatePartnerAPIKey(ctx, keyID, req)` | Rename, edit scopes |
 | `partner.RevokePartnerAPIKey(ctx, keyID)` | Revoke partner key |
 | `partner.ListPartnerPortalUsers(ctx, req)` | Paginated partner-portal user list |
-| `partner.AddUserToPartnerPortal(ctx, req)` | Invite with role and permissions |
-| `partner.UpdatePartnerUserPermissions(ctx, userID, req)` | Update role/permissions (partial OK) |
+| `partner.AddUserToPartnerPortal(ctx, req)` | Invite with a PARTNER role (`admin` \| `member` \| `viewer`) + all 7 permission fields |
+| `partner.UpdatePartnerUserPermissions(ctx, userID, req)` | Update role and/or permissions. `Permissions` is optional, but if non-nil the backend requires **all 7 keys** — there is no partial update |
 | `partner.RemoveUserFromPartnerPortal(ctx, userID)` | Remove partner-portal user |
 | `partner.ResendPartnerPortalInvitationToUser(ctx, userID)` | Resend invite email |
 | `partner.GetPartnerAuditLogs(ctx, req)` | Filter audit logs by action/resource/date/success |
 | `turbodocx.NewWebhooksClientWithConfig(cfg)` | Construct an admin-scoped webhook client (no SenderEmail required) |
-| `wh.CreateWebhook(ctx, req)` | Subscribe the org to events (HTTPS URLs only) |
+| `wh.CreateWebhook(ctx, req)` | Subscribe the org to events. `URLs`: 1–10 HTTPS URLs; `Events`: at least 1. Requires an **administrator** API key |
 | `wh.GetWebhook(ctx)` | Get the org's signature webhook + delivery stats |
-| `wh.UpdateWebhook(ctx, req)` | Patch URLs / events / isActive |
+| `wh.UpdateWebhook(ctx, req)` | Patch URLs / events / isActive. Fields are optional, but a non-nil `URLs`/`Events` still has to be non-empty (an empty slice is a 400) |
 | `wh.DeleteWebhook(ctx)` | Soft-delete the webhook |
 | `wh.TestWebhook(ctx, req)` | Fire a test delivery; surfaces per-URL errors |
 | `wh.NotifyWebhook(ctx, req)` | Manual notify; same backend handler as TestWebhook |
@@ -1091,20 +1238,20 @@ if err != nil {
 | `qc.SendQuoteWithDeliverable(ctx, id, req)` | Send quote with a TurboDocx deliverable attachment |
 | `qc.DeclineQuote(ctx, id, req)` | Decline a sent quote (reason required) |
 | `qc.VoidQuote(ctx, id, req)` | Void a quote (reason required) |
-| `qc.HandleExpiredQuote(ctx, id, req)` | Resend, extend, or void an expired sent quote |
+| `qc.HandleExpiredQuote(ctx, id, req)` | Void or decline an expired sent quote and re-issue it as a duplicate. `Action` is `"void"` \| `"decline"` only; `Reason` (max 190) and `NewValidUntil` (ISO date) are both required |
 | `qc.CreateAndSend(ctx, req)` | Convenience: create + add items + send in one call |
 | `qc.GetQuoteNumberConfig(ctx)` | Get the org's quote-number config (admin; `{ format, currentFloor }`) |
 | `qc.UpdateQuoteNumberConfig(ctx, format)` | Update the org's quote-number format (admin; returns `{ format, currentFloor }`) |
 | `qc.ListLineItems(ctx, quoteID, opts)` | List line items for a quote |
-| `qc.AddLineItems(ctx, quoteID, items...)` | Add one or more product line items (variadic) |
-| `qc.AddBundleLineItems(ctx, quoteID, items...)` | Add one or more bundle line items (variadic) |
+| `qc.AddLineItems(ctx, quoteID, items...)` | Add 1–50 product line items (variadic). `ProductID` (key; nil sends null), `ProductName`, `UnitPrice`, `BillingFrequency` all required |
+| `qc.AddBundleLineItems(ctx, quoteID, items...)` | Add 1–50 bundle line items (variadic); each needs only `BundleID` + `BundleName` (the server expands the children) |
 | `qc.UpdateLineItem(ctx, quoteID, itemID, req)` | Update a line item |
 | `qc.RemoveLineItem(ctx, quoteID, itemID)` | Remove a line item |
 | `qc.ListProducts(ctx, opts)` | Paginated product catalog |
-| `qc.CreateProduct(ctx, req)` | Create a product (multipart when images provided) |
-| `qc.BulkCreateProducts(ctx, rows)` | Bulk-import products; returns `(*BulkImportResult, error)` (partial success) |
+| `qc.CreateProduct(ctx, req)` | Create a product; `CategoryID` required (multipart when images provided — max 5 images, 2 MB each) |
+| `qc.BulkCreateProducts(ctx, rows)` | Bulk-import products; each row needs `Name`, `CategoryID` (UUID), `ListPrice`, `BillingFrequency`. Returns `(*BulkImportResult, error)` (partial success) |
 | `qc.GetProduct(ctx, id)` | Get a product by ID |
-| `qc.UpdateProduct(ctx, id, req)` | Update a product (multipart when images provided) |
+| `qc.UpdateProduct(ctx, id, req)` | Update a product (multipart when images provided — max 5 images, 2 MB each) |
 | `qc.DeleteProduct(ctx, id)` | Delete a product |
 | `qc.DuplicateProduct(ctx, id)` | Duplicate a product |
 | `qc.GetProductPrimaryImages(ctx, productIDs)` | Batch-fetch primary images by product ID |
@@ -1136,11 +1283,11 @@ if err != nil {
 | `qc.UpdateContact(ctx, id, req)` | Update a contact |
 | `qc.DeleteContact(ctx, id)` | Delete a contact |
 | `qc.ListTemplates(ctx, opts)` | Paginated quote template list |
-| `qc.GetTemplate(ctx)` | Get the active (singleton) quote template |
+| `qc.GetTemplate(ctx)` | Get the active (singleton) quote template. Self-heals: auto-creates one from org branding if none exists, so it always returns a template |
 | `qc.GetTemplateByID(ctx, id)` | Get a specific quote template by ID |
-| `qc.CreateTemplate(ctx, req)` | Create a quote template |
-| `qc.UpdateTemplate(ctx, id, req)` | Update a quote template |
-| `qc.DeleteTemplate(ctx, id)` | Delete a quote template |
+| `qc.CreateTemplate(ctx, req)` | Effectively unreachable — the template is auto-provisioned, so this returns 400 `TEMPLATE_ALREADY_EXISTS` on any established org. Use `GetTemplate` → `UpdateTemplate` |
+| `qc.UpdateTemplate(ctx, id, req)` | Update a quote template — this is how you customize it |
+| `qc.DeleteTemplate(ctx, id)` | Reset to org branding defaults (soft-delete; the next `GetTemplate` regenerates one) |
 | `qc.ListTypes(ctx, opts)` | Paginated quote types/categories list |
 | `qc.CreateType(ctx, req)` | Create a quote type/category |
 | `qc.BulkCreateTypes(ctx, rows)` | Bulk-import types/categories; returns `(*BulkImportResult, error)` (partial success) |
@@ -1152,20 +1299,33 @@ if err != nil {
 - **Go SDK uses instance methods**, not static methods — create a client first with `NewClientWithConfig`
 - **`SenderEmail` is required** in ClientConfig for TurboSign operations
 - **Context is required** for all API calls — pass `context.Background()` or request context
-- **Helper functions** `turbodocx.IntPtr()`, `turbodocx.BoolPtr()`, `turbodocx.StringPtr()` for optional pointer fields
+- **Helper functions** `turbodocx.IntPtr()` and `turbodocx.BoolPtr()` for optional pointer fields. There is **no** exported `StringPtr` — take the address of a local variable (`s := "x"; &s`) for `*string` fields.
 - **File input** accepts: `[]byte`, file path string, or URL string
 - **`SignURL`** — each `Recipient` in the `SendSignature`/`CreateSignatureReviewLink` response has a `SignURL` field: the personal signing link for that recipient. `CreateSignatureReviewLink` also returns a top-level `PreviewURL` for document-level preview.
 - **`ResendEmail` takes recipient UUIDs** (`[]string`), not email addresses — fetch them from the send/review response recipients or from `GetAuditTrail`.
+- **`Download` is a two-step operation.** `GET /api/signature/:id/download` returns JSON `{"downloadUrl", "fileName"}` — not bytes — and the presigned `downloadUrl` must then be fetched **without an `Authorization` header** (S3 rejects a presigned request that also carries one). The SDK does both steps for you; hand-rolled REST calls must too.
+- **Two different role enums — do not mix them.** Organization users and organization API keys take `"admin" | "contributor" | "user" | "viewer"`. Partner-portal users take `"admin" | "member" | "viewer"`. `"member"` is not a valid org role, and `"contributor"` / `"user"` are not valid partner roles — either mistake is a 400.
+- **Partner `Permissions` has no partial update.** The pointer is optional on `UpdatePartnerUserRequest`, but every key inside the object is required by the backend, so a non-nil `Permissions` must carry **all seven** flags: `CanManageOrgs`, `CanManageOrgUsers`, `CanManagePartnerUsers`, `CanManageOrgAPIKeys`, `CanManagePartnerAPIKeys`, `CanUpdateEntitlements`, `CanViewAuditLogs`. Every field is a plain `bool` with no `omitempty`, so a partially-filled struct literal still marshals all 7 keys and sends `false` for the ones you skipped — **silently revoking those permissions**. Read the user's current `Permissions` and flip only what changes; to update just the role, leave `Permissions` nil.
+- **`UpdateOrganizationEntitlements` takes `Features` and `Tracking` — the two key sets are not interchangeable.** `Features` holds capability/limit columns (`maxUsers`, `maxStorage`, `maxAPIKeys`, `hasTDAI`, …); `Tracking` holds usage counters, which use the `num*` names: `numUsers`, `numProjectspaces`, `numTemplates`, `storageUsed`, `numGeneratedDeliverables`, `numSignaturesUsed`, `numQuotesSent`, `currentAICredits`. A `maxUsers` key inside `Tracking` is rejected. `currentAICredits` accepts `-1` (unlimited); every other counter floors at 0.
 - **TurboWebhooks requires an admin TDX- key.** The backend route gate is `requireOrgRole(administrator)` — a non-admin key returns `*turbodocx.AuthorizationError` (HTTP 403). Discriminate with `errors.As`.
 - **One webhook per org, fixed name `signature`.** The SDK is hardcoded to `/api/webhooks/signature` to stay in sync with the dashboard's Signature Webhooks page. There is no `ListWebhooks` by design. For multi-webhook management call the REST API directly.
 - **Webhook secrets are shown ONCE** — capture `created.Secret` from `CreateWebhook` and `rotated["secret"]` from `RegenerateWebhookSecret` immediately. They are never returned again by `GetWebhook` or any other endpoint.
 - **Webhook URLs must be HTTPS.** Non-HTTPS URLs return `*turbodocx.ValidationError` (HTTP 400) from the backend.
+- **`URLs` is 1–10, `Events` is 1+ — on create AND on update.** Both are optional on `UpdateWebhookRequest`, but optional does not relax the minimum: sending an empty slice is a 400. To leave routing alone, leave the field nil so it is omitted entirely. Webhook management requires an **administrator** API key.
 - **Read the raw request body in your receiver, not the decoded JSON.** Use `io.ReadAll(r.Body)`. `VerifyWebhookSignature` is computed over the raw bytes; a re-marshal will not match.
 - **`VerifyWebhookSignature` is a free function**, not a method on a client — it has no `APIKey` / `OrgID` dependency. Pass `nil` for `opts` to use the default 300-second tolerance.
 - **`ConflictError` (HTTP 409)** — returned by `CreateWebhook` when a webhook with the same name already exists for the org. Discriminate it with `errors.As(err, new(*turbodocx.ConflictError))`.
 - **TurboQuote decimal fields are `float64`**, not strings — the response normalizer coerces backend string decimals (e.g. `"499.00"`) to `float64` before unmarshalling into `Quote`, `LineItem`, `Product`, etc. Do not expect string values for `unitPrice`, `listPrice`, `grandTotal`, `taxRate`, or any other monetary/percentage field.
 - **PATCH null-clears on `UpdateQuoteRequest` require explicit helper calls.** Go omits nil pointer fields by default. To send `"priceBookId": null`, `"validUntil": null`, `"taxRate": null`, or `"renewalPeriod": null`, call the corresponding method (`ClearPriceBookID()`, `ClearValidUntil()`, etc.) on the request before passing it to `UpdateQuote`. Setting the pointer to `nil` alone is not sufficient.
 - **`discountType` is `"percent"` or `"amount"`.** Use the typed constants `turbodocx.DiscountTypePercent` and `turbodocx.DiscountTypeAmount` when setting discounts on line items or bundles to avoid silent backend validation errors.
+- **Every product line item needs four fields: `ProductID`, `ProductName`, `UnitPrice`, `BillingFrequency`.** `ProductID` is a `*string` declared **without** `omitempty` on purpose: the key is always on the wire, and a nil pointer marshals as `"productId": null` — that is how you add a custom, non-catalog item. `Quantity` defaults to 1.
+- **Three distinct bundle shapes — don't conflate them.** `CreateBundle`'s `Items` (catalog bundle contents) need `ProductID`, `UnitPrice`, `BillingFrequency` and nothing else — no product name. `AddBundleLineItems` (attaching a bundle to a quote) needs only `BundleID` + `BundleName`; the server expands the child products for you.
+- **Line-item array limits: `AddLineItems` and `AddBundleLineItems` accept 1–50 items per call; reorder accepts up to 200.** Chunk larger imports.
+- **`TermDays` defaults to 60** (not 30), maxes out at 3650, and `-1` means auto-renewal. `RenewalPeriod` (`"weekly" | "monthly" | "quarterly" | "annually"`) is **required when `TermDays` is -1** and must be absent for any other `TermDays` — sending it otherwise is a 400. Use `ClearRenewalPeriod()` on `UpdateQuoteRequest` when moving a quote off auto-renewal.
+- **`HandleExpiredQuote` only accepts `Action: "void"` or `"decline"`.** `"extend"` and `"resend"` do not exist in the API and return a 400. `Reason` (max 190 chars) and `NewValidUntil` (ISO date) are both required; the endpoint voids/declines the original and issues a duplicate carrying the new date — that duplicate *is* the "extend".
+- **Quote templates are auto-provisioned.** `GetTemplate` self-heals — it creates one from org branding when none exists — so `CreateTemplate` on an established org returns 400 `TEMPLATE_ALREADY_EXISTS` and is effectively unreachable. Always do `GetTemplate` → `UpdateTemplate`. `DeleteTemplate` is a reset-to-branding-defaults, not a permanent removal.
+- **Product images: max 5 per product, 2 MB each.** Exceeding either returns 400 `MAX_IMAGES_EXCEEDED`.
 - **Bulk creates are partial-success, not transactional.** `BulkCreateProducts`/`BulkCreatePriceBooks`/`BulkCreateBundles`/`BulkCreateCompanies`/`BulkCreateContacts`/`BulkCreateTypes` return a non-nil `err` only for transport/request-level failures (e.g. exceeding the 500-row cap → 400). A bad row does not error — read `result.Failed` (`[]BulkImportRowIssue{Row, Reason}`, `Row` 1-indexed) and `result.Adjusted`; earlier rows are not rolled back. Admin + contributor keys only.
+- **Bulk product rows take `CategoryID`, never a category name.** The row schema is strict and rejects unknown keys. Resolve or create the category with `ListTypes` / `CreateType` first and pass its UUID. Required per row: `Name`, `CategoryID`, `ListPrice`, `BillingFrequency`.
 
 **Full API reference:** https://docs.turbodocx.com/docs

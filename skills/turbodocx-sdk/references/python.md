@@ -90,6 +90,8 @@ with open("signed.pdf", "wb") as f:
     f.write(pdf_bytes)
 ```
 
+The download is a **two-step** operation and the SDK performs both for you: `GET /api/signature/:id/download` returns **JSON** (`{"downloadUrl": ..., "fileName": ...}`, not bytes), and the SDK then fetches the presigned `downloadUrl` **with no `Authorization` header** — S3 rejects a presigned request that also carries one. Replicate both steps if you ever call the REST endpoint directly.
+
 ### create_signature_review_link
 
 Prepares the document with recipients and fields but **does not send signature emails** — use this to preview field placement before sending.
@@ -329,7 +331,8 @@ await TurboPartner.update_organization_entitlements(
 # List
 users = await TurboPartner.list_organization_users("org-uuid", limit=25, offset=0)
 
-# Invite ("admin" | "contributor" | "user" | "viewer")
+# Invite — ORG role enum: "admin" | "contributor" | "user" | "viewer"
+# ("member" is a PARTNER-portal role and is rejected here with a 400.)
 user = await TurboPartner.add_user_to_organization("org-uuid", email="newhire@acme.com", role="contributor")
 
 # Update role
@@ -349,6 +352,7 @@ await TurboPartner.resend_organization_invitation_to_user("org-uuid", "user-uuid
 keys = await TurboPartner.list_organization_api_keys("org-uuid", limit=10)
 
 # Create — the full key value is returned ONLY on creation, store it immediately
+# Org API keys use the ORG role enum: "admin" | "contributor" | "user" | "viewer"
 created = await TurboPartner.create_organization_api_key("org-uuid", name="Production Key", role="admin")
 print(created["data"]["key"])  # capture this once, it won't be shown again
 
@@ -392,10 +396,12 @@ Available scopes cover `org:*`, `entitlements:update`, `org-users:*`, `partner-u
 # List
 users = await TurboPartner.list_partner_portal_users(limit=25)
 
-# Add (permissions are required on add — list every flag explicitly; camelCase keys)
+# Add — PARTNER role enum: "admin" | "member" | "viewer"
+# ("contributor" / "user" are ORG roles and are rejected here with a 400.)
+# All SEVEN permission keys are required. Keys stay camelCase.
 user = await TurboPartner.add_user_to_partner_portal(
     email="admin@partner.com",
-    role="admin",  # "admin" | "member" | "viewer"
+    role="admin",
     permissions={
         "canManageOrgs": True,
         "canManageOrgUsers": True,
@@ -407,12 +413,24 @@ user = await TurboPartner.add_user_to_partner_portal(
     },
 )
 
-# Update — permissions can be partial here
+# Update — `permissions` itself is optional, but there is NO partial update:
+# if you send `permissions` at all you must send ALL SEVEN keys, or the backend
+# returns 400. Read the current values first and merge on top of them.
+users = await TurboPartner.list_partner_portal_users(limit=100)
+current = next(u for u in users["data"]["results"] if u["id"] == "user-uuid")
+
 await TurboPartner.update_partner_user_permissions(
     "user-uuid",
     role="member",
-    permissions={"canManageOrgs": True, "canManageOrgUsers": True},
+    permissions={
+        **current["permissions"],  # all 7 keys, straight from the server
+        "canManageOrgs": True,     # then override only what changes
+        "canManageOrgUsers": True,
+    },
 )
+
+# To change ONLY the role, omit `permissions` entirely:
+await TurboPartner.update_partner_user_permissions("user-uuid", role="viewer")
 
 # Remove
 await TurboPartner.remove_user_from_partner_portal("user-uuid")
@@ -531,7 +549,7 @@ webhook_id = created["id"]
 secret = created["secret"]
 ```
 
-Raises `ConflictError` (409) if the signature webhook already exists for the org. Raises `ValidationError` (400) for non-HTTPS URLs.
+`urls` must contain **1–10** HTTPS URLs; `events` must contain **at least 1** event. Raises `ConflictError` (409) if the signature webhook already exists for the org. Raises `ValidationError` (400) for non-HTTPS URLs, an empty/oversized `urls` list, or an empty `events` list.
 
 ### get_webhook
 
@@ -545,13 +563,16 @@ webhook = await TurboWebhooks.get_webhook()
 
 ```python
 await TurboWebhooks.update_webhook(
-    urls=["https://your-server.example.com/webhooks/turbodocx"],
-    events=["signature.document.completed"],
+    urls=["https://your-server.example.com/webhooks/turbodocx"],  # 1-10 HTTPS URLs
+    events=["signature.document.completed"],                      # at least 1
     is_active=True,
 )
+
+# To pause deliveries without touching the routing, OMIT urls/events entirely:
+await TurboWebhooks.update_webhook(is_active=False)
 ```
 
-All three fields are keyword-only and optional — pass only what you want to change.
+All three fields are keyword-only and optional — pass only what you want to change. But **optional does not mean "may be empty"**: if you pass `urls` it still has to hold 1–10 URLs, and if you pass `events` it still has to hold at least 1. Passing `urls=[]` or `events=[]` is a 400 `ValidationError` — omit the argument instead.
 
 ### delete_webhook
 
@@ -690,27 +711,73 @@ quote = await TurboQuote.create_quote({
     "companyId": "company-uuid",
     "contactId": "contact-uuid",
     "currency": "USD",
-    "termDays": 30,
+    "termDays": 365,   # optional; DEFAULT IS 60. Max 3650 (10 years). -1 = auto-renewal.
 })
 
 print(f"Quote ID: {quote['id']}")   # quote dict (result unwrapped)
 ```
 
+**`termDays` / `renewalPeriod`** — `termDays` defaults to **60** when omitted, and may be any integer up to **3650**, or the sentinel **`-1`** meaning auto-renewal. The two fields are coupled:
+
+- `"termDays": -1` → `renewalPeriod` is **required** (`"weekly" | "monthly" | "quarterly" | "annually"`).
+- any other `termDays` → `renewalPeriod` must be **absent or `None`**; sending it is a 400.
+
+```python
+# Auto-renewing quote — renewalPeriod is mandatory
+await TurboQuote.create_quote({
+    "name": "Managed Services - auto-renew",
+    "companyId": "company-uuid",
+    "contactId": "contact-uuid",
+    "termDays": -1,
+    "renewalPeriod": "monthly",
+})
+
+# Fixed-term quote — do NOT send renewalPeriod
+await TurboQuote.create_quote({
+    "name": "Fixed 90-day engagement",
+    "companyId": "company-uuid",
+    "contactId": "contact-uuid",
+    "termDays": 90,
+})
+```
+
 ### add_line_items
+
+**Four keys are required on every line item**: `productId` (the KEY must be present — its VALUE may be `None` for a custom, non-catalog item), `productName`, `unitPrice`, and `billingFrequency`. Omitting any of them is a 400. `quantity` defaults to `1`.
 
 ```python
 # Single item dict is auto-wrapped to array.
 # Custom/ad-hoc line item (no catalog product): productId must be present and explicitly None.
 items = await TurboQuote.add_line_items(quote["id"], {
-    "productId": None,
-    "productName": "Platform License",
-    "unitPrice": 500.00,
-    "billingFrequency": "monthly",   # 'monthly'|'quarterly'|'annual'|'one-time'
-    "quantity": 10,
+    "productId": None,               # REQUIRED key; None for a custom item, else a product UUID
+    "productName": "Platform License",  # REQUIRED
+    "unitPrice": 500.00,             # REQUIRED
+    "billingFrequency": "monthly",   # REQUIRED — 'monthly'|'quarterly'|'annual'|'one-time'
+    "quantity": 10,                  # optional, defaults to 1
     "discountType": "percent",       # 'percent'|'amount'
     "discountPercent": 15,
 })
 # items is a list of created LineItem dicts
+
+# A list works too — it must hold between 1 and 50 items; 51+ is a 400.
+items = await TurboQuote.add_line_items(quote["id"], [
+    {"productId": "product-uuid", "productName": "Support", "unitPrice": 200.00,
+     "billingFrequency": "annual", "quantity": 1},
+    {"productId": None, "productName": "Setup Fee", "unitPrice": 1500.00,
+     "billingFrequency": "one-time", "quantity": 1},
+])
+```
+
+### add_bundle_line_items
+
+Attaching a bundle to a quote needs only `bundleId` and `bundleName` — the server expands the bundle's child products itself, so you never send them. Single dict or a list of 1–50.
+
+```python
+bundle_items = await TurboQuote.add_bundle_line_items(quote["id"], {
+    "bundleId": "bundle-uuid",       # REQUIRED
+    "bundleName": "Starter Bundle",  # REQUIRED
+    "quantity": 2,
+})
 ```
 
 ### send_quote
@@ -719,6 +786,20 @@ items = await TurboQuote.add_line_items(quote["id"], {
 result = await TurboQuote.send_quote(quote["id"])
 # result["quote"]["status"]  →  'sent'
 # result["message"]          →  human-readable confirmation string
+```
+
+### handle_expired_quote
+
+Act on a sent quote whose `validUntil` has passed. **`action` accepts exactly two values: `"void"` and `"decline"`.** There is no `"extend"` and no `"resend"` — those are not implemented and return a 400. `reason` (max 190 chars) and `newValidUntil` (ISO date) are **both required**.
+
+The endpoint voids/declines the original quote and creates a duplicate carrying the new `validUntil` date — that duplicate is how you "extend" an expired quote.
+
+```python
+result = await TurboQuote.handle_expired_quote(quote["id"], {
+    "action": "void",                      # "void" | "decline" — nothing else
+    "reason": "Pricing refreshed for Q4",  # REQUIRED, max 190 chars
+    "newValidUntil": "2026-12-31",         # REQUIRED, ISO date — carried by the new duplicate
+})
 ```
 
 ### download_quote_pdf
@@ -732,12 +813,15 @@ with open("quote.pdf", "wb") as f:
 ### Product / bundle / price book catalog example
 
 ```python
-# Create a product
+# Create a product.
+# categoryId is REQUIRED — a real UUID from a create_type with categoryType "product_category".
 product = await TurboQuote.create_product({
     "name": "Widget Pro",
     "listPrice": 199.99,
     "billingFrequency": "one-time",
+    "categoryId": "category-uuid",
     "showInCatalog": True,
+    # "images": [...]  # optional — MAX 5 images per product, MAX 2 MB each
 })
 
 # Create a price book and apply to a quote.
@@ -838,10 +922,21 @@ print(updated["currentFloor"])        # per-period issued floor
 
 Six catalog resources support bulk creation from a list of rows (e.g. a parsed CSV): `bulk_create_products`, `bulk_create_price_books`, `bulk_create_bundles`, `bulk_create_companies`, `bulk_create_contacts`, and `bulk_create_types`. Each takes a `list` of row dicts (the same shape as the matching single `create_*` request); the SDK wraps them in the `{ "rows": [...] }` envelope the `POST {resource}/bulk` endpoint expects. Row-dict keys stay **camelCase verbatim** — do not snake_case them.
 
+Every product row requires `name`, `categoryId`, `listPrice`, and `billingFrequency`. **`categoryId` must be a real category UUID** — there is no `categoryName` convenience field, and because the backend rejects unknown keys, a `categoryName` key fails the whole row with a 400. Resolve (or create) the category first and pass its UUID:
+
 ```python
+# 1. Resolve the category UUID once — create it if it doesn't exist yet.
+types = await TurboQuote.list_types(limit=100)
+category = next(
+    (t for t in types["results"]
+     if t["name"] == "Subscriptions" and t["categoryType"] == "product_category"),
+    None,
+) or await TurboQuote.create_type({"name": "Subscriptions", "categoryType": "product_category"})
+
+# 2. Reference it by UUID on every row.
 result = await TurboQuote.bulk_create_products([
-    {"name": "Basic Plan",   "listPrice": 10,  "billingFrequency": "monthly", "categoryId": "category-uuid"},
-    {"name": "Premium Plan", "listPrice": 100, "billingFrequency": "monthly", "categoryId": "category-uuid"},
+    {"name": "Basic Plan",   "listPrice": 10,  "billingFrequency": "monthly", "categoryId": category["id"]},
+    {"name": "Premium Plan", "listPrice": 100, "billingFrequency": "monthly", "categoryId": category["id"]},
 ])
 
 print(result["imported"])   # int — rows that were created
@@ -859,7 +954,25 @@ Bulk-create semantics:
 
 - **Partial success** — a failed row does **not** raise and does **not** roll back the rows before it. It is reported in `result["failed"]` with a 1-indexed `row` and a `reason`. Rows the server tweaked (e.g. an unknown bundle item dropped) appear in `result["adjusted"]`. Always read `result["failed"]` rather than assuming every row imported.
 - **500-row cap per request** — more than 500 rows returns 400 `ValidationError`. The SDK does not validate the rows or the cap client-side.
+- **Rows are validated against the strict backend schema and unknown keys are rejected.** For products the row shape is exactly `{"name", "categoryId", "listPrice", "billingFrequency", ...}` — a `"categoryName"` key is not part of the schema and 400s the row.
 - **Roles** — available to administrator and contributor API keys.
+
+### Quote templates (auto-provisioned — get, then update)
+
+Quote templates are **provisioned for you**. `GET /v1/quote-template` self-heals: if the org has no template it creates one from the org's branding and returns it. Consequences:
+
+- **Never call `create_template()` on an established org** — a template already exists, so it returns 400 `TEMPLATE_ALREADY_EXISTS`. The method is effectively unreachable. Do not write get-then-create-if-missing logic.
+- **`delete_template()` is really "reset to org branding defaults"** — it soft-deletes, and the very next `get_template()` regenerates one.
+
+The correct flow is always **`get_template()` → `update_template()`**:
+
+```python
+template = await TurboQuote.get_template()   # always returns one; creates it if needed
+await TurboQuote.update_template(template["id"], {
+    "primaryColor": "#0B5FFF",
+    "footerText": "Thanks for your business!",
+})
+```
 
 ## Error Handling
 
@@ -918,28 +1031,28 @@ except TurboDocxError as e:
 | `TurboPartner.delete_organization(org_id)` | Delete an org |
 | `TurboPartner.update_organization_entitlements(org_id, features=, tracking=)` | Update features and/or tracking |
 | `TurboPartner.list_organization_users(org_id, limit=, offset=, search=)` | Paginated org-user list |
-| `TurboPartner.add_user_to_organization(org_id, email=, role=)` | Invite a user with role |
-| `TurboPartner.update_organization_user_role(org_id, user_id, role=)` | Change a user's role |
+| `TurboPartner.add_user_to_organization(org_id, email=, role=)` | Invite a user with an ORG role (`admin` \| `contributor` \| `user` \| `viewer`) |
+| `TurboPartner.update_organization_user_role(org_id, user_id, role=)` | Change a user's ORG role (`admin` \| `contributor` \| `user` \| `viewer`) |
 | `TurboPartner.remove_user_from_organization(org_id, user_id)` | Remove user from org |
 | `TurboPartner.resend_organization_invitation_to_user(org_id, user_id)` | Resend invite email |
 | `TurboPartner.list_organization_api_keys(org_id, limit=, offset=, search=)` | Paginated org API-key list |
-| `TurboPartner.create_organization_api_key(org_id, name=, role=)` | Create org key (value returned only on creation) |
-| `TurboPartner.update_organization_api_key(org_id, api_key_id, name=, role=)` | Rename or change role |
+| `TurboPartner.create_organization_api_key(org_id, name=, role=)` | Create org key with an ORG role (`admin` \| `contributor` \| `user` \| `viewer`); value returned only on creation |
+| `TurboPartner.update_organization_api_key(org_id, api_key_id, name=, role=)` | Rename or change ORG role |
 | `TurboPartner.revoke_organization_api_key(org_id, api_key_id)` | Revoke org key |
 | `TurboPartner.list_partner_api_keys(limit=, offset=, search=)` | Paginated partner API-key list |
 | `TurboPartner.create_partner_api_key(name=, scopes=, description=)` | Create partner key with scopes |
 | `TurboPartner.update_partner_api_key(key_id, name=, description=, scopes=)` | Rename, edit scopes |
 | `TurboPartner.revoke_partner_api_key(key_id)` | Revoke partner key |
 | `TurboPartner.list_partner_portal_users(limit=, offset=, search=)` | Paginated partner-portal user list |
-| `TurboPartner.add_user_to_partner_portal(email=, role=, permissions=)` | Invite with role and permissions |
-| `TurboPartner.update_partner_user_permissions(user_id, role=, permissions=)` | Update role/permissions (partial OK) |
+| `TurboPartner.add_user_to_partner_portal(email=, role=, permissions=)` | Invite with a PARTNER role (`admin` \| `member` \| `viewer`) + all 7 permission keys |
+| `TurboPartner.update_partner_user_permissions(user_id, role=, permissions=)` | Update role and/or permissions. `permissions` is optional, but if sent it must contain **all 7 keys** — there is no partial update |
 | `TurboPartner.remove_user_from_partner_portal(user_id)` | Remove partner-portal user |
 | `TurboPartner.resend_partner_portal_invitation_to_user(user_id)` | Resend invite email |
 | `TurboPartner.get_partner_audit_logs(action=, resource_type=, success=, start_date=, end_date=, limit=, offset=)` | Filter audit logs |
 | `TurboWebhooks.configure(api_key, org_id, base_url=...)` | Configure the webhook client (skip_sender_validation is hardcoded) |
-| `TurboWebhooks.create_webhook(urls, events)` | Subscribe the org to events (HTTPS URLs only) |
+| `TurboWebhooks.create_webhook(urls, events)` | Subscribe the org to events. `urls`: 1–10 HTTPS URLs; `events`: at least 1. Requires an **administrator** API key |
 | `TurboWebhooks.get_webhook()` | Get the org's signature webhook + delivery stats |
-| `TurboWebhooks.update_webhook(urls=, events=, is_active=)` | Patch any subset of fields |
+| `TurboWebhooks.update_webhook(urls=, events=, is_active=)` | Patch any subset of fields. Args are optional, but an included `urls`/`events` still has to be non-empty (`[]` is a 400) |
 | `TurboWebhooks.delete_webhook()` | Soft-delete the webhook |
 | `TurboWebhooks.test_webhook(event_type, payload)` | Fire a test delivery; surfaces per-URL errors |
 | `TurboWebhooks.notify_webhook(event_type, payload)` | Manual notify; same handler as `test_webhook` |
@@ -959,7 +1072,7 @@ except TurboDocxError as e:
 | `TurboQuote.send_quote_with_deliverable(id, request)` | Send with attached deliverable; returns `{quote, message, documentId}` |
 | `TurboQuote.decline_quote(id, {reason})` | Decline a sent quote |
 | `TurboQuote.void_quote(id, {reason})` | Void a quote |
-| `TurboQuote.handle_expired_quote(id, request)` | Act on an expired sent quote (void/decline + new valid date) |
+| `TurboQuote.handle_expired_quote(id, request)` | Void or decline an expired sent quote and re-issue it as a duplicate. `action` is `"void"` \| `"decline"` only; `reason` (max 190) and `newValidUntil` (ISO date) are both required |
 | `TurboQuote.apply_price_book(quote_id, price_book_id)` | Apply price book to quote; returns `{quote, message, updatedCount, skippedCount}` |
 | `TurboQuote.remove_price_book(quote_id)` | Remove price book from quote |
 | `TurboQuote.download_quote_pdf(id)` | Download quote as raw PDF bytes |
@@ -967,15 +1080,15 @@ except TurboDocxError as e:
 | `TurboQuote.update_quote_number_config(format)` | Update the quote-number format (admin only); returns `{format, currentFloor}` |
 | `TurboQuote.create_and_send(request)` | Convenience: create + add items + send in one call |
 | `TurboQuote.list_line_items(quote_id, options=)` | List line items for a quote |
-| `TurboQuote.add_line_items(quote_id, items)` | Add product line item(s); single dict auto-wrapped to array |
-| `TurboQuote.add_bundle_line_items(quote_id, items)` | Add bundle line item(s) |
+| `TurboQuote.add_line_items(quote_id, items)` | Add 1–50 product line items (single dict auto-wrapped). `productId` (key), `productName`, `unitPrice`, `billingFrequency` all required |
+| `TurboQuote.add_bundle_line_items(quote_id, items)` | Add 1–50 bundle line items; each needs only `bundleId` + `bundleName` (the server expands the children) |
 | `TurboQuote.update_line_item(quote_id, item_id, request)` | Update a line item |
 | `TurboQuote.remove_line_item(quote_id, item_id)` | Remove a line item |
 | `TurboQuote.list_products(options=)` | List products |
-| `TurboQuote.create_product(request)` | Create product (multipart when `images` provided) |
-| `TurboQuote.bulk_create_products(rows)` | Bulk-import products; returns a partial-success `BulkImportResult` dict |
+| `TurboQuote.create_product(request)` | Create product; `categoryId` required (multipart when `images` provided — max 5 images, 2 MB each) |
+| `TurboQuote.bulk_create_products(rows)` | Bulk-import products; each row needs `name`, `categoryId` (UUID), `listPrice`, `billingFrequency`. Returns a partial-success `BulkImportResult` dict |
 | `TurboQuote.get_product(id)` | Get product by ID |
-| `TurboQuote.update_product(id, request)` | Update product |
+| `TurboQuote.update_product(id, request)` | Update product (max 5 images, 2 MB each) |
 | `TurboQuote.delete_product(id)` | Delete product |
 | `TurboQuote.duplicate_product(id)` | Duplicate product |
 | `TurboQuote.get_product_primary_images(product_ids)` | Batch-fetch primary images; returns `{product_id: image|None}` |
@@ -1007,11 +1120,11 @@ except TurboDocxError as e:
 | `TurboQuote.update_contact(id, request)` | Update contact |
 | `TurboQuote.delete_contact(id)` | Delete contact |
 | `TurboQuote.list_templates(options=)` | List quote templates |
-| `TurboQuote.get_template()` | Get the org's default (singleton) template |
+| `TurboQuote.get_template()` | Get the org's default (singleton) template. Self-heals: auto-creates one from org branding if none exists, so it always returns a template |
 | `TurboQuote.get_template_by_id(id)` | Get a specific template by ID |
-| `TurboQuote.create_template(request)` | Create quote template |
-| `TurboQuote.update_template(id, request)` | Update quote template |
-| `TurboQuote.delete_template(id)` | Delete quote template |
+| `TurboQuote.create_template(request)` | Effectively unreachable — the template is auto-provisioned, so this returns 400 `TEMPLATE_ALREADY_EXISTS` on any established org. Use `get_template()` → `update_template()` |
+| `TurboQuote.update_template(id, request)` | Update quote template — this is how you customize it |
+| `TurboQuote.delete_template(id)` | Reset to org branding defaults (soft-delete; the next `get_template()` regenerates one) |
 | `TurboQuote.list_types(options=)` | List types/categories |
 | `TurboQuote.create_type(request)` | Create a type |
 | `TurboQuote.bulk_create_types(rows)` | Bulk-import types/categories; returns a partial-success `BulkImportResult` dict |
@@ -1026,16 +1139,29 @@ except TurboDocxError as e:
 - **File input** accepts: `bytes`, file path string, URL string, deliverable ID, or template ID
 - **`signUrl`** — each recipient dict in the `send_signature`/`create_signature_review_link` response includes a `signUrl` field: the personal signing link for that recipient. `create_signature_review_link` also returns a top-level `previewUrl` for document-level preview.
 - **`resend_email` takes recipient UUIDs**, not email addresses — fetch them from the `send_signature` or `create_signature_review_link` response recipients, or from `get_audit_trail`.
+- **`download` is a two-step operation.** `GET /api/signature/:id/download` returns JSON `{"downloadUrl", "fileName"}` — not bytes — and the presigned `downloadUrl` must then be fetched **without an `Authorization` header** (S3 rejects a presigned request that also carries one). The SDK does both steps for you; hand-rolled REST calls must too.
+- **Two different role enums — do not mix them.** Organization users and organization API keys take `"admin" | "contributor" | "user" | "viewer"`. Partner-portal users take `"admin" | "member" | "viewer"`. `"member"` is not a valid org role, and `"contributor"` / `"user"` are not valid partner roles — either mistake is a 400.
+- **Partner `permissions` has no partial update.** The `permissions` dict is optional on `update_partner_user_permissions`, but every key inside it is required, so if you send `permissions` you must send **all seven**: `canManageOrgs`, `canManageOrgUsers`, `canManagePartnerUsers`, `canManageOrgAPIKeys`, `canManagePartnerAPIKeys`, `canUpdateEntitlements`, `canViewAuditLogs`. Sending a subset is a 400. To flip one flag, read the current permissions and merge on top of them; to change only the role, omit `permissions` entirely.
+- **`update_organization_entitlements` takes `features=` and `tracking=` — the two key sets are not interchangeable.** `features` holds capability/limit columns (`maxUsers`, `maxStorage`, `maxAPIKeys`, `hasTDAI`, …); `tracking` holds usage counters, which use the `num*` names: `numUsers`, `numProjectspaces`, `numTemplates`, `storageUsed`, `numGeneratedDeliverables`, `numSignaturesUsed`, `numQuotesSent`, `currentAICredits`. A `maxUsers` key inside `tracking` is rejected. `currentAICredits` accepts `-1` (unlimited); every other counter floors at 0.
 - **TurboWebhooks requires an admin TDX- key.** The backend route gate is `requireOrgRole(administrator)` — a non-admin key returns 403 `AuthorizationError`.
 - **One webhook per org, fixed name `signature`.** The SDK is hardcoded to `/api/webhooks/signature` to stay in sync with the dashboard's Signature Webhooks page. There is no `list_webhooks` by design. For multi-webhook management call the REST API directly.
 - **Webhook secrets are shown ONCE** — capture `created["secret"]` from `create_webhook` and `rotated["secret"]` from `regenerate_webhook_secret` immediately. They are never returned again by `get_webhook` or any other endpoint.
 - **Webhook URLs must be HTTPS.** Non-HTTPS URLs return 400 `ValidationError` from the backend.
+- **`urls` is 1–10, `events` is 1+ — on create AND on update.** Both are optional keyword args on `update_webhook`, but optional does not relax the minimum: passing `urls=[]` or `events=[]` is a 400. To leave routing alone, omit the argument rather than passing an empty list.
 - **Read the raw request body in your receiver, not the parsed JSON.** Use Flask's `request.get_data()` or FastAPI's `await request.body()`. Signature verification is computed over the raw bytes; a JSON re-stringify will not match.
 - **`verify_webhook_signature` is a free function**, not a method on `TurboWebhooks` — import it directly from `turbodocx_sdk`. It has no `api_key`/`org_id` dependency.
 
 - **TurboQuote decimal fields come back as Python `float`**, not strings. The response normalizer coerces `listPrice`, `unitPrice`, `discountPercent`, `subtotal`, `grandTotal`, `taxRate`, and all other money/rate fields from the database string representation to `float` automatically — never parse them yourself.
 - **PATCH null clears nullable fields.** `update_quote` / `update_line_item` / `update_product` etc. use HTTP PATCH: explicitly passing `None` for a nullable field (e.g. `{"taxRate": None}`) sends `null` in the JSON body and clears that column. Omitting the key entirely leaves it unchanged. Do not pass `None` for fields you do not intend to clear.
 - **`discountType` is `'percent'` or `'amount'`, not `'percentage'`.** The backend enum is `'percent'`; using the wrong value returns a `400 ValidationError`. Similarly, `billingFrequency` values are `'monthly'`, `'quarterly'`, `'annual'`, and `'one-time'` (hyphen, not underscore).
+- **Every product line item needs four keys: `productId`, `productName`, `unitPrice`, `billingFrequency`.** `productId` is a required *key* whose *value* may be `None` (that's how you add a custom, non-catalog item) — omitting the key entirely is a 400. `quantity` defaults to 1.
+- **Three distinct bundle shapes — don't conflate them.** `create_bundle`'s `items[]` (catalog bundle contents) need `productId`, `unitPrice`, `billingFrequency` and nothing else — no `productName`. `add_bundle_line_items` (attaching a bundle to a quote) needs only `bundleId` + `bundleName`; the server expands the child products for you.
+- **Line-item array limits: `add_line_items` and `add_bundle_line_items` accept 1–50 items per call; reorder accepts up to 200.** Chunk larger imports.
+- **`termDays` defaults to 60** (not 30), maxes out at 3650, and `-1` means auto-renewal. `renewalPeriod` (`"weekly" | "monthly" | "quarterly" | "annually"`) is **required when `termDays == -1`** and must be absent/`None` for any other `termDays` — sending it otherwise is a 400.
+- **`handle_expired_quote` only accepts `"action": "void" | "decline"`.** `"extend"` and `"resend"` do not exist in the API and return a 400. `reason` (max 190 chars) and `newValidUntil` (ISO date) are both required; the endpoint voids/declines the original and issues a duplicate carrying the new date — that duplicate *is* the "extend".
+- **Quote templates are auto-provisioned.** `get_template()` self-heals — it creates one from org branding when none exists — so `create_template()` on an established org returns 400 `TEMPLATE_ALREADY_EXISTS` and is effectively unreachable. Always do `get_template()` → `update_template()`. `delete_template()` is a reset-to-branding-defaults, not a permanent removal.
+- **Product images: max 5 per product, 2 MB each.** Exceeding either returns 400 `MAX_IMAGES_EXCEEDED`.
 - **Bulk creates are partial-success, not transactional.** `bulk_create_products`/`bulk_create_price_books`/`bulk_create_bundles`/`bulk_create_companies`/`bulk_create_contacts`/`bulk_create_types` never raise on a bad row — read `result["failed"]` (`[{ "row", "reason" }]`, `row` 1-indexed) and `result["adjusted"]`; earlier rows are not rolled back. Cap is 500 rows/request (over → 400). Admin + contributor keys only. Row-dict keys stay camelCase.
+- **Bulk product rows take `categoryId`, never `categoryName`.** The row schema is strict and rejects unknown keys, so a `"categoryName"` field 400s the row. Resolve or create the category with `list_types()` / `create_type()` first and pass its UUID. Required per row: `name`, `categoryId`, `listPrice`, `billingFrequency`.
 
 **Full API reference:** https://docs.turbodocx.com/docs

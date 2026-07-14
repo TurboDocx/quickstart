@@ -125,7 +125,7 @@ await writeFile('signed.pdf', Buffer.from(arrayBuffer));
 const url = URL.createObjectURL(blob);
 ```
 
-Returns a `Blob` (the SDK fetches the presigned URL and the binary in two steps for you).
+Returns a `Blob`. The download is a **two-step** operation and the SDK performs both for you: `GET /api/signature/:id/download` returns **JSON** (`{ downloadUrl, fileName }`, not bytes), and the SDK then fetches the presigned `downloadUrl` **with no `Authorization` header** (S3 rejects a presigned signature that also carries an `Authorization` header). If you ever hit the REST endpoint directly, you must replicate both steps.
 
 ### TurboSign.void
 
@@ -328,10 +328,11 @@ await TurboPartner.updateOrganizationEntitlements('org-uuid', {
 // List
 const users = await TurboPartner.listOrganizationUsers('org-uuid', { limit: 25, offset: 0 });
 
-// Invite
+// Invite — ORG role enum: 'admin' | 'contributor' | 'user' | 'viewer'
+// ('member' is a PARTNER-portal role and is rejected here with a 400.)
 const user = await TurboPartner.addUserToOrganization('org-uuid', {
   email: 'newhire@acme.com',
-  role: 'contributor', // 'admin' | 'contributor' | 'user' | 'viewer'
+  role: 'contributor',
 });
 
 // Update role
@@ -351,6 +352,7 @@ await TurboPartner.resendOrganizationInvitationToUser('org-uuid', 'user-uuid');
 const keys = await TurboPartner.listOrganizationApiKeys('org-uuid', { limit: 10 });
 
 // Create — the full key value is returned ONLY on creation, store it immediately
+// Org API keys use the ORG role enum: 'admin' | 'contributor' | 'user' | 'viewer'
 const created = await TurboPartner.createOrganizationApiKey('org-uuid', {
   name: 'Production Key',
   role: 'admin',
@@ -396,10 +398,12 @@ Available scopes (see `PartnerScope` in the SDK types) cover `org:*`, `entitleme
 // List
 const users = await TurboPartner.listPartnerPortalUsers({ limit: 25 });
 
-// Add (permissions are required on add — list every flag explicitly)
+// Add — PARTNER role enum: 'admin' | 'member' | 'viewer'
+// ('contributor' / 'user' are ORG roles and are rejected here with a 400.)
+// All SEVEN permission keys are required.
 const user = await TurboPartner.addUserToPartnerPortal({
   email: 'admin@partner.com',
-  role: 'admin', // 'admin' | 'member' | 'viewer'
+  role: 'admin',
   permissions: {
     canManageOrgs: true,
     canManageOrgUsers: true,
@@ -411,11 +415,23 @@ const user = await TurboPartner.addUserToPartnerPortal({
   },
 });
 
-// Update — permissions can be partial here
+// Update — `permissions` itself is optional, but there is NO partial update:
+// if you send `permissions` at all you must send ALL SEVEN keys, or the
+// backend returns 400. Read the current values first and spread them.
+const current = (await TurboPartner.listPartnerPortalUsers({ limit: 100 }))
+  .data.results.find((u) => u.id === 'user-uuid');
+
 await TurboPartner.updatePartnerUserPermissions('user-uuid', {
   role: 'member',
-  permissions: { canManageOrgs: true, canManageOrgUsers: true },
+  permissions: {
+    ...current.permissions,       // all 7 keys, from the server
+    canManageOrgs: true,          // then override only what changes
+    canManageOrgUsers: true,
+  },
 });
+
+// To change ONLY the role, omit `permissions` entirely:
+await TurboPartner.updatePartnerUserPermissions('user-uuid', { role: 'viewer' });
 
 // Remove
 await TurboPartner.removeUserFromPartnerPortal('user-uuid');
@@ -474,7 +490,7 @@ const created = await TurboWebhooks.createWebhook({
 const { id, secret } = created;
 ```
 
-Throws `ConflictError` (409) if the signature webhook already exists for the org. Throws `ValidationError` (400) for non-HTTPS URLs.
+`urls` must contain **1–10** HTTPS URLs; `events` must contain **at least 1** event. Throws `ConflictError` (409) if the signature webhook already exists for the org. Throws `ValidationError` (400) for non-HTTPS URLs, an empty/oversized `urls` array, or an empty `events` array.
 
 ### getWebhook
 
@@ -488,13 +504,16 @@ const webhook = await TurboWebhooks.getWebhook();
 
 ```typescript
 await TurboWebhooks.updateWebhook({
-  urls: ['https://your-server.example.com/webhooks/turbodocx'],
-  events: ['signature.document.completed'],
+  urls: ['https://your-server.example.com/webhooks/turbodocx'],  // 1–10 HTTPS URLs
+  events: ['signature.document.completed'],                      // at least 1
   isActive: true,
 });
+
+// To pause deliveries without touching the routing, OMIT urls/events entirely:
+await TurboWebhooks.updateWebhook({ isActive: false });
 ```
 
-All three fields are optional — pass only what you want to change.
+All three fields are optional — pass only what you want to change. But **optional does not mean "may be empty"**: if you include `urls` it still has to hold 1–10 URLs, and if you include `events` it still has to hold at least 1. Sending `urls: []` or `events: []` is a 400 `ValidationError` — omit the key instead.
 
 ### deleteWebhook
 
@@ -651,6 +670,7 @@ const quote = await TurboQuote.createQuote({
   contactId: 'contact-uuid',
   currency: 'USD',
   validUntil: '2026-09-30',
+  termDays: 365,   // optional; DEFAULT IS 60. Max 3650 (10 years). -1 = auto-renewal.
 });
 
 console.log(quote.id);           // string
@@ -660,16 +680,42 @@ console.log(quote.status);       // 'draft'
 
 Response: a `Quote` object. Numeric fields such as `subtotal`, `grandTotal`, and `taxRate` are returned as JavaScript `number` (the SDK's response normalizer coerces the backend's decimal strings automatically).
 
+**`termDays` / `renewalPeriod`** — `termDays` defaults to **60** when omitted, and may be any integer up to **3650**, or the sentinel **`-1`** meaning auto-renewal. The two fields are coupled:
+
+- `termDays: -1` → `renewalPeriod` is **required** (`'weekly' | 'monthly' | 'quarterly' | 'annually'`).
+- any other `termDays` → `renewalPeriod` must be **absent or `null`**; sending it is a 400.
+
+```typescript
+// Auto-renewing quote — renewalPeriod is mandatory
+await TurboQuote.createQuote({
+  name: 'Managed Services — auto-renew',
+  companyId: 'company-uuid',
+  contactId: 'contact-uuid',
+  termDays: -1,
+  renewalPeriod: 'monthly',
+});
+
+// Fixed-term quote — do NOT send renewalPeriod
+await TurboQuote.createQuote({
+  name: 'Fixed 90-day engagement',
+  companyId: 'company-uuid',
+  contactId: 'contact-uuid',
+  termDays: 90,
+});
+```
+
 ### addLineItems
+
+**Four fields are required on every line item**: `productId` (the KEY must be present — its VALUE may be `null` for a custom, non-catalog item), `productName`, `unitPrice`, and `billingFrequency`. Omitting any of them is a 400. `quantity` defaults to `1`.
 
 ```typescript
 // Single item (auto-wrapped to array)
 const items = await TurboQuote.addLineItems(quote.id, {
-  productId: 'product-uuid',
-  productName: 'Consulting Service',
-  unitPrice: 500,
-  billingFrequency: 'monthly',  // 'monthly' | 'quarterly' | 'annual' | 'one-time'
-  quantity: 3,
+  productId: 'product-uuid',    // REQUIRED key; use null for a custom item
+  productName: 'Consulting Service',  // REQUIRED
+  unitPrice: 500,               // REQUIRED
+  billingFrequency: 'monthly',  // REQUIRED — 'monthly' | 'quarterly' | 'annual' | 'one-time'
+  quantity: 3,                  // optional, defaults to 1
   discountType: 'percent',      // 'percent' | 'amount'
   discountPercent: 10,
 });
@@ -677,7 +723,8 @@ const items = await TurboQuote.addLineItems(quote.id, {
 console.log(items[0].id);         // LineItem UUID
 console.log(items[0].finalPrice); // number — already normalised
 
-// Multiple items at once — custom (no-product) items require productId: null explicitly
+// Multiple items at once — custom (no-product) items require productId: null explicitly.
+// The array must hold between 1 and 50 items; 51+ is a 400.
 const bulkItems = await TurboQuote.addLineItems(quote.id, [
   { productId: null, productName: 'Setup Fee', unitPrice: 1500, billingFrequency: 'one-time', quantity: 1 },
   { productId: null, productName: 'License',   unitPrice: 200,  billingFrequency: 'monthly',  quantity: 10 },
@@ -686,10 +733,12 @@ const bulkItems = await TurboQuote.addLineItems(quote.id, [
 
 ### addBundleLineItems
 
+Adding a bundle to a quote requires only `bundleId` and `bundleName` — the server expands the bundle's child products itself, so you never send them. Like `addLineItems`, the body takes a single object or an array of **1–50**.
+
 ```typescript
 const bundleItems = await TurboQuote.addBundleLineItems(quote.id, {
-  bundleId: 'bundle-uuid',
-  bundleName: 'Starter Bundle',
+  bundleId: 'bundle-uuid',       // REQUIRED
+  bundleName: 'Starter Bundle',  // REQUIRED
   quantity: 2,
 });
 console.log(bundleItems[0].id);
@@ -701,6 +750,20 @@ console.log(bundleItems[0].id);
 const sent = await TurboQuote.sendQuote(quote.id);
 console.log(sent.message);       // 'Quote sent successfully'
 console.log(sent.quote.status);  // 'sent'
+```
+
+### handleExpiredQuote
+
+Act on a sent quote whose `validUntil` has passed. **`action` accepts exactly two values: `'void'` and `'decline'`.** There is no `'extend'` and no `'resend'` — those are not implemented and return a 400. `reason` (max 190 chars) and `newValidUntil` (ISO date) are **both required**.
+
+The endpoint voids/declines the original quote and creates a duplicate carrying the new `validUntil` date — that duplicate is how you "extend" an expired quote.
+
+```typescript
+const result = await TurboQuote.handleExpiredQuote(quoteId, {
+  action: 'void',                     // 'void' | 'decline' — nothing else
+  reason: 'Pricing refreshed for Q4', // REQUIRED, max 190 chars
+  newValidUntil: '2026-12-31',        // REQUIRED, ISO date — carried by the new duplicate
+});
 ```
 
 ### downloadQuotePdf
@@ -756,10 +819,19 @@ Response: `{ format, currentFloor }` — the updated config. All eight `format` 
 
 Six catalog resources support bulk creation from an array of rows (e.g. a parsed CSV): `bulkCreateProducts`, `bulkCreatePriceBooks`, `bulkCreateBundles`, `bulkCreateCompanies`, `bulkCreateContacts`, and `bulkCreateTypes`. Each takes an array of row objects (the same shape as the matching single `create*` request); the SDK wraps them in the `{ rows: [...] }` envelope the `POST {resource}/bulk` endpoint expects.
 
+Every product row requires `name`, `categoryId`, `listPrice`, and `billingFrequency`. **`categoryId` must be a real category UUID** — there is no `categoryName` convenience field, and because the backend rejects unknown keys, sending `categoryName` fails the whole row with a 400. Resolve (or create) the category first and pass its UUID:
+
 ```typescript
+// 1. Resolve the category UUID once — create it if it doesn't exist yet.
+const types = await TurboQuote.listTypes({ limit: 100 });
+const category =
+  types.results.find((t) => t.name === 'Subscriptions' && t.categoryType === 'product_category') ??
+  (await TurboQuote.createType({ name: 'Subscriptions', categoryType: 'product_category' }));
+
+// 2. Reference it by UUID on every row.
 const result = await TurboQuote.bulkCreateProducts([
-  { name: 'Basic Plan',   listPrice: 10,  billingFrequency: 'monthly', categoryId: 'category-uuid' },
-  { name: 'Premium Plan', listPrice: 100, billingFrequency: 'monthly', categoryId: 'category-uuid' },
+  { name: 'Basic Plan',   listPrice: 10,  billingFrequency: 'monthly', categoryId: category.id },
+  { name: 'Premium Plan', listPrice: 100, billingFrequency: 'monthly', categoryId: category.id },
 ]);
 
 console.log(result.imported);   // number — rows that were created
@@ -779,6 +851,7 @@ Bulk-create semantics:
 
 - **Partial success** — a failed row does **not** throw and does **not** roll back the rows before it. It is reported in `failed` with its 1-indexed `row` and a `reason`. Rows the server tweaked (e.g. an unknown bundle item dropped) appear in `adjusted`. Always read `result.failed` rather than assuming every row imported.
 - **500-row cap per request** — more than 500 rows returns 400 `ValidationError`. The SDK does not validate the rows or the cap client-side.
+- **Rows are validated against the strict backend schema and unknown keys are rejected.** For products the row shape is exactly `{ name, categoryId, listPrice, billingFrequency, ... }` — a `categoryName` key is not part of the schema and 400s the row.
 - **Roles** — available to administrator and contributor API keys.
 
 ### Catalog management (products, bundles, price books)
@@ -791,6 +864,7 @@ const product = await TurboQuote.createProduct({
   billingFrequency: 'annual',
   categoryId: 'category-uuid',  // required — from a createType({ categoryType: 'product_category' })
   showInCatalog: true,
+  images: [imageBuffer],        // optional — MAX 5 images per product, MAX 2 MB each
 });
 console.log(product.id);
 
@@ -810,6 +884,23 @@ const priceBook = await TurboQuote.createPriceBook({
 });
 const applied = await TurboQuote.applyPriceBook(quote.id, priceBook.id);
 console.log(applied.updatedCount, applied.skippedCount);
+```
+
+### Quote templates (auto-provisioned — get, then update)
+
+Quote templates are **provisioned for you**. `GET /v1/quote-template` self-heals: if the org has no template it creates one from the org's branding and returns it. Consequences:
+
+- **Never call `createTemplate()` on an established org** — a template already exists, so it returns 400 `TEMPLATE_ALREADY_EXISTS`. The method is effectively unreachable. Do not write get-then-create-if-missing logic.
+- **`deleteTemplate()` is really "reset to org branding defaults"** — it soft-deletes, and the very next `getTemplate()` regenerates one.
+
+The correct flow is always **`getTemplate()` → `updateTemplate()`**:
+
+```typescript
+const template = await TurboQuote.getTemplate();   // always returns one; creates it if needed
+await TurboQuote.updateTemplate(template.id, {
+  primaryColor: '#0B5FFF',
+  footerText: 'Thanks for your business!',
+});
 ```
 
 ### Convenience: createAndSend
@@ -1023,8 +1114,8 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode` and `code` p
 | Method | Description |
 |--------|-------------|
 | `TurboPartner.listOrganizationUsers(orgId, request?)` | Paginated list |
-| `TurboPartner.addUserToOrganization(orgId, request)` | Invite a user with role |
-| `TurboPartner.updateOrganizationUserRole(orgId, userId, request)` | Change a user's role |
+| `TurboPartner.addUserToOrganization(orgId, request)` | Invite a user with an ORG role (`admin` \| `contributor` \| `user` \| `viewer`) |
+| `TurboPartner.updateOrganizationUserRole(orgId, userId, request)` | Change a user's ORG role (`admin` \| `contributor` \| `user` \| `viewer`) |
 | `TurboPartner.removeUserFromOrganization(orgId, userId)` | Remove from org |
 | `TurboPartner.resendOrganizationInvitationToUser(orgId, userId)` | Resend invite email |
 
@@ -1033,8 +1124,8 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode` and `code` p
 | Method | Description |
 |--------|-------------|
 | `TurboPartner.listOrganizationApiKeys(orgId, request?)` | Paginated list |
-| `TurboPartner.createOrganizationApiKey(orgId, request)` | Create key (key value returned only on creation) |
-| `TurboPartner.updateOrganizationApiKey(orgId, keyId, request)` | Rename or change role |
+| `TurboPartner.createOrganizationApiKey(orgId, request)` | Create key with an ORG role (`admin` \| `contributor` \| `user` \| `viewer`); key value returned only on creation |
+| `TurboPartner.updateOrganizationApiKey(orgId, keyId, request)` | Rename or change ORG role |
 | `TurboPartner.revokeOrganizationApiKey(orgId, keyId)` | Revoke key |
 
 ### TurboPartner — Partner API Keys
@@ -1051,8 +1142,8 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode` and `code` p
 | Method | Description |
 |--------|-------------|
 | `TurboPartner.listPartnerPortalUsers(request?)` | Paginated list |
-| `TurboPartner.addUserToPartnerPortal(request)` | Invite with role and permissions |
-| `TurboPartner.updatePartnerUserPermissions(userId, request)` | Update role/permissions (partial OK) |
+| `TurboPartner.addUserToPartnerPortal(request)` | Invite with a PARTNER role (`admin` \| `member` \| `viewer`) + all 7 permission keys |
+| `TurboPartner.updatePartnerUserPermissions(userId, request)` | Update role and/or permissions. `permissions` is optional, but if sent it must contain **all 7 keys** — there is no partial update |
 | `TurboPartner.removeUserFromPartnerPortal(userId)` | Remove user |
 | `TurboPartner.resendPartnerPortalInvitationToUser(userId)` | Resend invite email |
 
@@ -1067,9 +1158,9 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode` and `code` p
 | Method | Description |
 |--------|-------------|
 | `TurboWebhooks.configure(config)` | Set apiKey, orgId (skipSenderValidation is hardcoded) |
-| `TurboWebhooks.createWebhook({ urls, events })` | Subscribe the org to events (HTTPS URLs only) |
+| `TurboWebhooks.createWebhook({ urls, events })` | Subscribe the org to events. `urls`: 1–10 HTTPS URLs; `events`: at least 1. Requires an **administrator** API key |
 | `TurboWebhooks.getWebhook()` | Get the org's signature webhook + delivery stats |
-| `TurboWebhooks.updateWebhook(patch)` | Patch urls / events / isActive |
+| `TurboWebhooks.updateWebhook(patch)` | Patch urls / events / isActive. Keys are optional, but an included `urls`/`events` still has to be non-empty (`[]` is a 400) |
 | `TurboWebhooks.deleteWebhook()` | Soft-delete the webhook |
 | `TurboWebhooks.testWebhook({ eventType, payload })` | Fire a test delivery; surfaces per-URL errors |
 | `TurboWebhooks.notifyWebhook({ eventType, payload })` | Manual notify; same handler as `testWebhook` |
@@ -1094,7 +1185,7 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode` and `code` p
 | `TurboQuote.sendQuoteWithDeliverable(id, request)` | Send with attached TurboDocx deliverable; returns `{ quote, message, documentId }` |
 | `TurboQuote.declineQuote(id, { reason })` | Mark as declined |
 | `TurboQuote.voidQuote(id, { reason })` | Void a sent quote |
-| `TurboQuote.handleExpiredQuote(id, request)` | Handle an expired-sent quote (extend, re-send, or void) |
+| `TurboQuote.handleExpiredQuote(id, request)` | Void or decline an expired sent quote and re-issue it as a duplicate. `action` is `'void'` \| `'decline'` only; `reason` (max 190) and `newValidUntil` (ISO date) are both required |
 | `TurboQuote.applyPriceBook(quoteId, priceBookId)` | Apply price-book pricing to all matching line items |
 | `TurboQuote.removePriceBook(quoteId)` | Detach price book from quote |
 | `TurboQuote.downloadQuotePdf(id)` | Download rendered quote PDF as `ArrayBuffer` |
@@ -1107,8 +1198,8 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode` and `code` p
 | Method | Description |
 |--------|-------------|
 | `TurboQuote.listLineItems(quoteId, options?)` | List line items for a quote |
-| `TurboQuote.addLineItems(quoteId, items)` | Add one or more product line items (auto-wraps single object to array) |
-| `TurboQuote.addBundleLineItems(quoteId, items)` | Add bundle line items |
+| `TurboQuote.addLineItems(quoteId, items)` | Add 1–50 product line items (auto-wraps a single object to an array). `productId` (key), `productName`, `unitPrice`, `billingFrequency` all required |
+| `TurboQuote.addBundleLineItems(quoteId, items)` | Add 1–50 bundle line items; each needs only `bundleId` + `bundleName` (the server expands the children) |
 | `TurboQuote.updateLineItem(quoteId, itemId, request)` | PATCH a single line item |
 | `TurboQuote.removeLineItem(quoteId, itemId)` | Delete a line item |
 
@@ -1117,10 +1208,10 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode` and `code` p
 | Method | Description |
 |--------|-------------|
 | `TurboQuote.listProducts(options?)` | Paginated product catalog |
-| `TurboQuote.createProduct(request)` | Create a product (uses multipart when `images` array is provided) |
-| `TurboQuote.bulkCreateProducts(rows)` | Bulk-import products from an array of rows; returns a partial-success `BulkImportResult` |
+| `TurboQuote.createProduct(request)` | Create a product (uses multipart when `images` array is provided — max 5 images, 2 MB each) |
+| `TurboQuote.bulkCreateProducts(rows)` | Bulk-import products; each row needs `name`, `categoryId` (UUID), `listPrice`, `billingFrequency`. Returns a partial-success `BulkImportResult` |
 | `TurboQuote.getProduct(id)` | Get a single product |
-| `TurboQuote.updateProduct(id, request)` | PATCH a product; multipart when images included |
+| `TurboQuote.updateProduct(id, request)` | PATCH a product; multipart when images included (max 5 images, 2 MB each) |
 | `TurboQuote.deleteProduct(id)` | Delete a product |
 | `TurboQuote.duplicateProduct(id)` | Clone a product |
 | `TurboQuote.getProductPrimaryImages(productIds)` | Batch-fetch primary images; returns `{ [productId]: image \| null }` |
@@ -1172,11 +1263,11 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode` and `code` p
 | Method | Description |
 |--------|-------------|
 | `TurboQuote.listTemplates(options?)` | List all quote templates |
-| `TurboQuote.getTemplate()` | Get the org's singleton default template (`/v1/quote-template`) |
+| `TurboQuote.getTemplate()` | Get the org's singleton default template (`/v1/quote-template`). Self-heals: auto-creates one from org branding if none exists, so it always returns a template |
 | `TurboQuote.getTemplateById(id)` | Get a specific template by ID |
-| `TurboQuote.createTemplate(request)` | Create a quote template |
-| `TurboQuote.updateTemplate(id, request)` | PATCH a template |
-| `TurboQuote.deleteTemplate(id)` | Delete a template |
+| `TurboQuote.createTemplate(request)` | Effectively unreachable — the template is auto-provisioned, so this returns 400 `TEMPLATE_ALREADY_EXISTS` on any established org. Use `getTemplate()` → `updateTemplate()` |
+| `TurboQuote.updateTemplate(id, request)` | PATCH a template — this is how you customize it |
+| `TurboQuote.deleteTemplate(id)` | Reset to org branding defaults (soft-delete; the next `getTemplate()` regenerates one) |
 | `TurboQuote.listTypes(options?)` | List quote types/categories |
 | `TurboQuote.createType(request)` | Create a quote type |
 | `TurboQuote.bulkCreateTypes(rows)` | Bulk-import types/categories; returns a partial-success `BulkImportResult` |
@@ -1191,9 +1282,11 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode` and `code` p
 - **File input** to TurboSign accepts: `Buffer`, file-path `string`, browser `File`, remote URL (`fileLink`), `deliverableId`, or `templateId`. Magic-byte detection identifies PDF / DOCX / PPTX automatically.
 - **Template anchors** like `{signature1}` must literally exist in the document text for `template.anchor` field placement to work.
 - **Pagination uses `offset`, not `page`**, across all `list*` methods. Defaults vary (Deliverable defaults to 6, partner list endpoints to ~25).
-- **`updateOrganizationEntitlements` takes `{ features?, tracking? }`** — not a bare features object. Tracking lets you seed usage counters.
+- **`updateOrganizationEntitlements` takes `{ features?, tracking? }`** — not a bare features object. `features` holds capability/limit columns (`maxUsers`, `maxStorage`, `maxAPIKeys`, `hasTDAI`, …); `tracking` holds usage counters and uses the `num*` key names: `numUsers`, `numProjectspaces`, `numTemplates`, `storageUsed`, `numGeneratedDeliverables`, `numSignaturesUsed`, `numQuotesSent`, `currentAICredits`. The two key sets are not interchangeable — a `maxUsers` key inside `tracking` is rejected. `currentAICredits` accepts `-1` (unlimited); every other counter floors at 0.
+- **Two different role enums — do not mix them.** Organization users and organization API keys take `'admin' | 'contributor' | 'user' | 'viewer'`. Partner-portal users take `'admin' | 'member' | 'viewer'`. `'member'` is not a valid org role, and `'contributor'` / `'user'` are not valid partner roles — either mistake is a 400.
+- **Partner `permissions` has no partial update.** The `permissions` object is optional on `updatePartnerUserPermissions`, but every key inside it is required, so if you send `permissions` you must send **all seven**: `canManageOrgs`, `canManageOrgUsers`, `canManagePartnerUsers`, `canManageOrgAPIKeys`, `canManagePartnerAPIKeys`, `canUpdateEntitlements`, `canViewAuditLogs`. Sending a subset is a 400. To flip one flag, read the current permissions and spread them; to change only the role, omit `permissions` entirely.
 - **`TurboSign.void` requires a `reason`** as the second argument. **`TurboSign.resend` takes recipient IDs (UUIDs), not email addresses** — fetch them from the send response or audit trail.
-- **`TurboSign.download` returns `Blob`**, not `Buffer`. Call `await blob.arrayBuffer()` then `Buffer.from(...)` in Node.
+- **`TurboSign.download` returns `Blob`**, not `Buffer`. Call `await blob.arrayBuffer()` then `Buffer.from(...)` in Node. Under the hood the download is **two steps**: the API returns JSON `{ downloadUrl, fileName }` rather than bytes, and the presigned `downloadUrl` must then be fetched **without an `Authorization` header** (S3 rejects a presigned request that also carries one). The SDK does both; hand-rolled REST calls must too.
 - **API key values are only returned on creation** for both `createOrganizationApiKey` and `createPartnerApiKey`. Store `created.data.key` immediately — subsequent lookups omit it.
 - **Updating tags via `updateDeliverableInfo` replaces the full set** — fetch existing tags first if you want to add one.
 - **TypeScript users** get full type definitions out of the box — no `@types/` package needed.
@@ -1201,6 +1294,7 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode` and `code` p
 - **One webhook per org, fixed name `signature`.** The SDK is hardcoded to `/api/webhooks/signature` to stay in sync with the dashboard's Signature Webhooks page. There is no `listWebhooks` by design. For multi-webhook management call the REST API directly.
 - **Webhook secrets are shown ONCE** — capture `created.secret` from `createWebhook` and `rotated.secret` from `regenerateWebhookSecret` immediately. They are never returned again by `getWebhook` or any other endpoint.
 - **Webhook URLs must be HTTPS.** Non-HTTPS URLs return 400 `ValidationError` from the backend.
+- **`urls` is 1–10, `events` is 1+ — on create AND on update.** Both keys are optional on `updateWebhook`, but optional does not relax the minimum: an included `urls: []` or `events: []` is a 400. To leave routing alone, omit the key rather than passing an empty array.
 - **Use `express.raw({ type: 'application/json' })` on your receiver route, not `express.json()`.** Signature verification is computed over the raw bytes; a JSON re-stringify will not match.
 - **Middleware ORDER matters.** Mount `express.raw()` for the webhook path BEFORE any global `app.use(express.json())`. Express body-parsers set `req._body=true` on the first parse and later parsers silently no-op — if `express.json()` is global and runs first for `/webhooks`, the route-level `express.raw()` becomes a no-op and `req.body` ends up as a parsed object, not a Buffer. Verification will then always fail. The correct pattern is `app.use('/webhooks/turbodocx', express.raw({ type: 'application/json' }))` BEFORE `app.use(express.json())`.
 - **`verifyWebhookSignature` is a free function**, not a method on `TurboWebhooks` — import it directly from `@turbodocx/sdk`. It has no `apiKey`/`orgId` dependency.
@@ -1209,8 +1303,16 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode` and `code` p
 - **`PATCH` with explicit `null` clears nullable fields.** For `updateQuote`, `updateLineItem`, `updateProduct`, and similar PATCH methods, passing `{ priceBookId: null }` sends `null` in the request body and the backend clears the field. Omitting the key entirely leaves it unchanged. This is intentional for fields like `validUntil`, `taxRate`, `priceBookId`.
 - **`discountType` is `'percent' | 'amount'`** on line items. When using `'percent'`, set `discountPercent` (0–100). When using `'amount'`, set the flat discount value. Mixing both in the same item produces a 400 `ValidationError`.
 - **`addLineItems` auto-wraps a single object to an array.** You can pass either one `AddLineItemRequest` or `AddLineItemRequest[]` — the SDK normalizes it. The return is always `LineItem[]`.
+- **Every product line item needs four fields: `productId`, `productName`, `unitPrice`, `billingFrequency`.** `productId` is a required *key* whose *value* may be `null` (that's how you add a custom, non-catalog item) — omitting the key entirely is a 400. `quantity` defaults to 1.
+- **Three distinct bundle shapes — don't conflate them.** `createBundle`'s `items[]` (catalog bundle contents) need `productId`, `unitPrice`, `billingFrequency` and nothing else — no `productName`. `addBundleLineItems` (attaching a bundle to a quote) needs only `bundleId` + `bundleName`; the server expands the child products for you.
+- **Line-item array limits: `addLineItems` and `addBundleLineItems` accept 1–50 items per call; reorder accepts up to 200.** Chunk larger imports.
+- **`termDays` defaults to 60** (not 30), maxes out at 3650, and `-1` means auto-renewal. `renewalPeriod` (`'weekly' | 'monthly' | 'quarterly' | 'annually'`) is **required when `termDays === -1`** and must be absent/`null` for any other `termDays` — sending it otherwise is a 400.
+- **`handleExpiredQuote` only accepts `action: 'void' | 'decline'`.** `'extend'` and `'resend'` do not exist in the API and return a 400. `reason` (max 190 chars) and `newValidUntil` (ISO date) are both required; the endpoint voids/declines the original and issues a duplicate carrying the new date — that duplicate *is* the "extend".
+- **Quote templates are auto-provisioned.** `getTemplate()` self-heals — it creates one from org branding when none exists — so `createTemplate()` on an established org returns 400 `TEMPLATE_ALREADY_EXISTS` and is effectively unreachable. Always do `getTemplate()` → `updateTemplate()`. `deleteTemplate()` is a reset-to-branding-defaults, not a permanent removal.
+- **Product images: max 5 per product, 2 MB each.** Exceeding either returns 400 `MAX_IMAGES_EXCEEDED`.
 - **`createCompany` requires at least one contact.** Pass a `contacts` array with at least one entry or the backend returns 400.
 - **No `getContact` or `getType` methods.** The backend has no `GET /v1/contacts/:id` or `GET /v1/types/:id` routes — this is intentional, not an SDK gap.
 - **Bulk creates are partial-success, not transactional.** `bulkCreateProducts`/`bulkCreatePriceBooks`/`bulkCreateBundles`/`bulkCreateCompanies`/`bulkCreateContacts`/`bulkCreateTypes` never throw on a bad row — read `result.failed` (`[{ row, reason }]`, `row` 1-indexed) and `result.adjusted`; earlier rows are not rolled back. Cap is 500 rows/request (over → 400). Admin + contributor keys only.
+- **Bulk product rows take `categoryId`, never `categoryName`.** The row schema is strict and rejects unknown keys, so a `categoryName` field 400s the row. Resolve or create the category with `listTypes()` / `createType()` first and pass its UUID. Required per row: `name`, `categoryId`, `listPrice`, `billingFrequency`.
 
 **Full API reference:** https://docs.turbodocx.com/docs

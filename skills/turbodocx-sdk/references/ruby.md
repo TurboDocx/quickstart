@@ -122,6 +122,8 @@ pdf_bytes = TurboDocxSdk::TurboSign.download("doc-uuid")
 File.binwrite("signed-contract.pdf", pdf_bytes)
 ```
 
+The download is a **two-step** operation and the SDK performs both for you: `GET /api/signature/:id/download` returns **JSON** (`{"downloadUrl" => ..., "fileName" => ...}`, not bytes), and the SDK then fetches the presigned `downloadUrl` **with no `Authorization` header** — S3 rejects a presigned request that also carries one. Replicate both steps if you ever call the REST endpoint directly.
+
 ### TurboSign.void_document
 
 ```ruby
@@ -296,12 +298,16 @@ TurboDocxSdk::TurboPartner.update_organization_entitlements("org-uuid",
 
 ```ruby
 TurboDocxSdk::TurboPartner.list_organization_users("org-uuid")
+
+# ORG role enum: "admin" | "contributor" | "user" | "viewer"
+# ("member" is a PARTNER-portal role and is rejected here with a 400.)
 TurboDocxSdk::TurboPartner.add_user_to_organization("org-uuid", email: "user@example.com", role: "contributor")
 TurboDocxSdk::TurboPartner.update_organization_user_role("org-uuid", "user-uuid", role: "admin")
 TurboDocxSdk::TurboPartner.remove_user_from_organization("org-uuid", "user-uuid")
 TurboDocxSdk::TurboPartner.resend_organization_invitation_to_user("org-uuid", "user-uuid")
 
 # API key value is returned ONLY on creation — store it immediately
+# Org API keys use the ORG role enum: "admin" | "contributor" | "user" | "viewer"
 key = TurboDocxSdk::TurboPartner.create_organization_api_key("org-uuid", name: "Production Key", role: "admin")
 puts key["data"]["key"]  # capture now; never shown again
 TurboDocxSdk::TurboPartner.list_organization_api_keys("org-uuid")
@@ -318,12 +324,39 @@ TurboDocxSdk::TurboPartner.list_partner_api_keys(limit: 10)
 TurboDocxSdk::TurboPartner.update_partner_api_key("key-uuid", name: "Renamed")
 TurboDocxSdk::TurboPartner.revoke_partner_api_key("key-uuid")
 
+# PARTNER role enum: "admin" | "member" | "viewer"
+# ("contributor" / "user" are ORG roles and are rejected here with a 400.)
+# All SEVEN permission keys are required — a partial hash is a 400.
 TurboDocxSdk::TurboPartner.add_user_to_partner_portal(
   email: "ops@company.com", role: "member",
-  permissions: { canManageOrgs: true, canViewAuditLogs: true }
+  permissions: {
+    canManageOrgs:           true,
+    canManageOrgUsers:       true,
+    canManagePartnerUsers:   false,
+    canManageOrgAPIKeys:     false,
+    canManagePartnerAPIKeys: false,
+    canUpdateEntitlements:   false,
+    canViewAuditLogs:        true
+  }
 )
+
 TurboDocxSdk::TurboPartner.list_partner_portal_users(search: "ops")
-TurboDocxSdk::TurboPartner.update_partner_user_permissions("user-uuid", permissions: { canManageOrgs: false })
+
+# Update — `permissions:` is optional, but there is NO partial update: if you pass it
+# at all it must carry ALL SEVEN keys, or the backend returns 400. Read the current
+# values first and merge on top of them.
+users   = TurboDocxSdk::TurboPartner.list_partner_portal_users(limit: 100)
+current = users["data"]["results"].find { |u| u["id"] == "user-uuid" }
+
+TurboDocxSdk::TurboPartner.update_partner_user_permissions("user-uuid",
+  role: "member",
+  # symbolize so the merge keys line up, then override only what changes
+  permissions: current["permissions"].transform_keys(&:to_sym).merge(canManageOrgs: false)
+)
+
+# To change ONLY the role, omit `permissions:` entirely:
+TurboDocxSdk::TurboPartner.update_partner_user_permissions("user-uuid", role: "viewer")
+
 TurboDocxSdk::TurboPartner.remove_user_from_partner_portal("user-uuid")
 TurboDocxSdk::TurboPartner.resend_partner_portal_invitation_to_user("user-uuid")
 ```
@@ -360,13 +393,13 @@ No `sender_email` — webhooks don't send email. The routes require the **organi
 
 ```ruby
 created = TurboDocxSdk::TurboWebhooks.create_webhook(
-  urls:   ["https://your-server.example.com/webhooks/turbodocx"],  # HTTPS only
-  events: ["signature.document.completed", "signature.document.voided"]
+  urls:   ["https://your-server.example.com/webhooks/turbodocx"],  # 1-10, HTTPS only
+  events: ["signature.document.completed", "signature.document.voided"]  # at least 1
 )
 puts created["secret"]  # shown ONCE — store it server-side immediately
 ```
 
-Raises `TurboDocxSdk::ValidationError` if the signature webhook already exists (update or delete it first) or for non-HTTPS URLs.
+`urls` must contain **1–10** HTTPS URLs; `events` must contain **at least 1** event. Raises `TurboDocxSdk::ValidationError` if the signature webhook already exists (update or delete it first), for non-HTTPS URLs, for an empty/oversized `urls` array, or for an empty `events` array. Webhook management requires an **administrator** API key.
 
 ### get_webhook / update_webhook / delete_webhook
 
@@ -374,15 +407,17 @@ Raises `TurboDocxSdk::ValidationError` if the signature webhook already exists (
 webhook = TurboDocxSdk::TurboWebhooks.get_webhook
 # webhook["deliveryStats"], webhook["availableEvents"]
 
+# To pause deliveries without touching the routing, omit urls:/events: entirely.
 TurboDocxSdk::TurboWebhooks.update_webhook(is_active: false)
+
 TurboDocxSdk::TurboWebhooks.update_webhook(
-  urls:   ["https://new-endpoint.example.com/webhooks/turbodocx"],
-  events: ["signature.document.completed"]
+  urls:   ["https://new-endpoint.example.com/webhooks/turbodocx"],  # 1-10 HTTPS URLs
+  events: ["signature.document.completed"]                          # at least 1
 )
 TurboDocxSdk::TurboWebhooks.delete_webhook  # soft-delete + delivery history wiped
 ```
 
-All `update_webhook` keyword args are optional — pass only what you want to change.
+All `update_webhook` keyword args are optional — pass only what you want to change. But **optional does not mean "may be empty"**: if you pass `urls:` it still has to hold 1–10 URLs, and if you pass `events:` it still has to hold at least 1. Passing `urls: []` or `events: []` raises `ValidationError` (400) — omit the keyword instead.
 
 ### test_webhook / notify_webhook
 
@@ -481,7 +516,8 @@ quote = TurboDocxSdk::TurboQuote.create_quote(
   "companyId"  => "company-uuid",
   "contactId"  => "contact-uuid",
   "currency"   => TurboDocxSdk::Currency::USD,
-  "validUntil" => "2026-09-30"
+  "validUntil" => "2026-09-30",
+  "termDays"   => 365   # optional; DEFAULT IS 60. Max 3650 (10 years). -1 = auto-renewal.
 )
 puts quote["id"]
 puts quote["quoteNumber"]  # e.g. "Q-0042"
@@ -490,22 +526,49 @@ puts quote["status"]       # "draft"
 
 Numeric fields (`subtotal`, `grandTotal`, `taxRate`, …) come back as Ruby numbers — the response normalizer coerces the backend's decimal strings automatically.
 
+**`termDays` / `renewalPeriod`** — `termDays` defaults to **60** when omitted, and may be any integer up to **3650**, or the sentinel **`-1`** meaning auto-renewal. The two fields are coupled:
+
+- `"termDays" => -1` → `renewalPeriod` is **required** (`"weekly" | "monthly" | "quarterly" | "annually"`).
+- any other `termDays` → `renewalPeriod` must be **absent or `nil`**; sending it is a 400.
+
+```ruby
+# Auto-renewing quote — renewalPeriod is mandatory
+TurboDocxSdk::TurboQuote.create_quote(
+  "name"          => "Managed Services - auto-renew",
+  "companyId"     => "company-uuid",
+  "contactId"     => "contact-uuid",
+  "termDays"      => -1,
+  "renewalPeriod" => "monthly"
+)
+
+# Fixed-term quote — do NOT send renewalPeriod
+TurboDocxSdk::TurboQuote.create_quote(
+  "name"      => "Fixed 90-day engagement",
+  "companyId" => "company-uuid",
+  "contactId" => "contact-uuid",
+  "termDays"  => 90
+)
+```
+
 ### add_line_items
+
+**Four keys are required on every line item**: `"productId"` (the KEY must be present — its VALUE may be `nil` for a custom, non-catalog item), `"productName"`, `"unitPrice"`, and `"billingFrequency"`. Omitting any of them is a 400. `"quantity"` defaults to `1`. An array must hold between **1 and 50** items.
 
 ```ruby
 # Single hash is auto-wrapped into an array
 items = TurboDocxSdk::TurboQuote.add_line_items(quote["id"],
-  "productId"        => "product-uuid",
-  "productName"      => "Consulting Service",
-  "unitPrice"        => 500,
-  "billingFrequency" => TurboDocxSdk::BillingFrequency::MONTHLY,
-  "quantity"         => 3,
+  "productId"        => "product-uuid",  # REQUIRED key; nil for a custom item
+  "productName"      => "Consulting Service",  # REQUIRED
+  "unitPrice"        => 500,             # REQUIRED
+  "billingFrequency" => TurboDocxSdk::BillingFrequency::MONTHLY,  # REQUIRED
+  "quantity"         => 3,               # optional, defaults to 1
   "discountType"     => TurboDocxSdk::DiscountType::PERCENT,
   "discountPercent"  => 10
 )
 puts items[0]["id"]
 
-# Multiple items — custom (no-product) items need "productId" => nil explicitly
+# Multiple items — custom (no-product) items need "productId" => nil explicitly.
+# The array must hold 1-50 items; 51+ is a 400.
 TurboDocxSdk::TurboQuote.add_line_items(quote["id"], [
   { "productId" => nil, "productName" => "Setup Fee", "unitPrice" => 1500, "billingFrequency" => "one-time", "quantity" => 1 },
   { "productId" => nil, "productName" => "License",   "unitPrice" => 200,  "billingFrequency" => "monthly",  "quantity" => 10 }
@@ -514,10 +577,12 @@ TurboDocxSdk::TurboQuote.add_line_items(quote["id"], [
 
 ### add_bundle_line_items
 
+Attaching a bundle to a quote needs only `"bundleId"` and `"bundleName"` — the server expands the bundle's child products itself, so you never send them. Single hash or an array of 1–50.
+
 ```ruby
 TurboDocxSdk::TurboQuote.add_bundle_line_items(quote["id"],
-  "bundleId"   => "bundle-uuid",
-  "bundleName" => "Starter Bundle",
+  "bundleId"   => "bundle-uuid",     # REQUIRED
+  "bundleName" => "Starter Bundle",  # REQUIRED
   "quantity"   => 2
 )
 ```
@@ -528,6 +593,20 @@ TurboDocxSdk::TurboQuote.add_bundle_line_items(quote["id"],
 sent = TurboDocxSdk::TurboQuote.send_quote(quote["id"])
 puts sent["message"]         # "Quote sent successfully"
 puts sent["quote"]["status"] # "sent"
+```
+
+### handle_expired_quote
+
+Act on a sent quote whose `validUntil` has passed. **`"action"` accepts exactly two values: `"void"` and `"decline"`.** There is no `"extend"` and no `"resend"` — those are not implemented and return a 400. `"reason"` (max 190 chars) and `"newValidUntil"` (ISO date) are **both required**.
+
+The endpoint voids/declines the original quote and creates a duplicate carrying the new `validUntil` date — that duplicate is how you "extend" an expired quote.
+
+```ruby
+TurboDocxSdk::TurboQuote.handle_expired_quote(quote["id"],
+  "action"        => "void",                      # "void" | "decline" — nothing else
+  "reason"        => "Pricing refreshed for Q4",  # REQUIRED, max 190 chars
+  "newValidUntil" => "2026-12-31"                 # REQUIRED, ISO date — carried by the duplicate
+)
 ```
 
 ### download_quote_pdf
@@ -629,10 +708,21 @@ puts updated["currentFloor"]
 
 Six catalog resources support bulk creation from an array of row hashes (e.g. a parsed CSV): `bulk_create_products`, `bulk_create_price_books`, `bulk_create_bundles`, `bulk_create_companies`, `bulk_create_contacts`, and `bulk_create_types`. Each takes an **array of row hashes** (same field shapes as the corresponding single `create_*` method, with camelCase keys); the SDK wraps them in the `{ "rows" => [...] }` envelope the `POST {resource}/bulk` endpoint expects.
 
+Every product row requires `"name"`, `"categoryId"`, `"listPrice"`, and `"billingFrequency"`. **`"categoryId"` must be a real category UUID** — there is no `"categoryName"` convenience field, and because the backend rejects unknown keys, a `"categoryName"` key fails the whole row with a 400. Resolve (or create) the category first and pass its UUID:
+
 ```ruby
+# 1. Resolve the category UUID once — create it if it doesn't exist yet.
+types    = TurboDocxSdk::TurboQuote.list_types(limit: 100)
+category = types["results"].find { |t|
+  t["name"] == "Subscriptions" && t["categoryType"] == "product_category"
+} || TurboDocxSdk::TurboQuote.create_type(
+  "name" => "Subscriptions", "categoryType" => "product_category"
+)
+
+# 2. Reference it by UUID on every row.
 report = TurboDocxSdk::TurboQuote.bulk_create_products([
-  { "name" => "Basic Plan",   "listPrice" => 10,  "billingFrequency" => "monthly", "categoryId" => "category-uuid" },
-  { "name" => "Premium Plan", "listPrice" => 100, "billingFrequency" => "monthly", "categoryId" => "category-uuid" }
+  { "name" => "Basic Plan",   "listPrice" => 10,  "billingFrequency" => "monthly", "categoryId" => category["id"] },
+  { "name" => "Premium Plan", "listPrice" => 100, "billingFrequency" => "monthly", "categoryId" => category["id"] }
 ])
 
 puts "Imported: #{report['imported']}"
@@ -652,7 +742,25 @@ Bulk-create semantics:
 
 - **Partial success** — a failed row does **not** raise and does **not** roll back the rows before it. It is reported in `report["failed"]` with a 1-indexed `"row"` and a `"reason"`. Rows the server tweaked (e.g. an unknown bundle item dropped) appear in `report["adjusted"]`. Always read `report["failed"]` rather than assuming every row imported.
 - **500-row cap per request** — more than 500 rows raises `TurboDocxSdk::ValidationError` (400). The SDK does not validate the rows or the cap client-side.
+- **Rows are validated against the strict backend schema and unknown keys are rejected.** For products the row shape is exactly `{ "name", "categoryId", "listPrice", "billingFrequency", ... }` — a `"categoryName"` key is not part of the schema and 400s the row.
 - **Roles** — available to administrator and contributor API keys.
+
+### Quote templates (auto-provisioned — get, then update)
+
+Quote templates are **provisioned for you**. `GET /v1/quote-template` self-heals: if the org has no template it creates one from the org's branding and returns it. Consequences:
+
+- **Never call `create_template` on an established org** — a template already exists, so it raises `ValidationError` (400 `TEMPLATE_ALREADY_EXISTS`). The method is effectively unreachable. Do not write get-then-create-if-missing logic.
+- **`delete_template` is really "reset to org branding defaults"** — it soft-deletes, and the very next `get_template` regenerates one.
+
+The correct flow is always **`get_template` → `update_template`**:
+
+```ruby
+template = TurboDocxSdk::TurboQuote.get_template   # always returns one; creates it if needed
+TurboDocxSdk::TurboQuote.update_template(template["id"],
+  "primaryColor"   => "#0B5FFF",
+  "closingMessage" => "Thanks for your business!"
+)
+```
 
 ### TurboQuote error handling
 
@@ -797,10 +905,10 @@ The error classes are **not** nested under a sub-module (e.g. not `TurboDocxSdk:
 |--------|-------------|
 | `TurboDocxSdk::TurboPartner.configure(partner_api_key:, partner_id:)` | Set partner credentials |
 | `create_organization`, `list_organizations`, `get_organization_details`, `update_organization_info`, `delete_organization`, `update_organization_entitlements` | Organization CRUD + entitlements |
-| `add_user_to_organization`, `list_organization_users`, `update_organization_user_role`, `remove_user_from_organization`, `resend_organization_invitation_to_user` | Org user management |
+| `add_user_to_organization`, `list_organization_users`, `update_organization_user_role`, `remove_user_from_organization`, `resend_organization_invitation_to_user` | Org user management. ORG role enum: `admin` \| `contributor` \| `user` \| `viewer` |
 | `create_organization_api_key`, `list_organization_api_keys`, `update_organization_api_key`, `revoke_organization_api_key` | Org API keys (key returned only on creation) |
 | `create_partner_api_key`, `list_partner_api_keys`, `update_partner_api_key`, `revoke_partner_api_key` | Partner API keys (key returned only on creation) |
-| `add_user_to_partner_portal`, `list_partner_portal_users`, `update_partner_user_permissions`, `remove_user_from_partner_portal`, `resend_partner_portal_invitation_to_user` | Partner-portal users |
+| `add_user_to_partner_portal`, `list_partner_portal_users`, `update_partner_user_permissions`, `remove_user_from_partner_portal`, `resend_partner_portal_invitation_to_user` | Partner-portal users. PARTNER role enum: `admin` \| `member` \| `viewer`. `permissions:` is optional on update, but if passed it must contain **all 7 keys** — there is no partial update |
 | `get_partner_audit_logs` | Filter audit logs by action/resource/date/success |
 
 ### TurboWebhooks
@@ -808,9 +916,9 @@ The error classes are **not** nested under a sub-module (e.g. not `TurboDocxSdk:
 | Method | Description |
 |--------|-------------|
 | `TurboDocxSdk::TurboWebhooks.configure(api_key:, org_id:)` | Set credentials (no sender_email; admin key required) |
-| `TurboDocxSdk::TurboWebhooks.create_webhook(urls:, events:)` | Subscribe the org to events (HTTPS URLs only) |
+| `TurboDocxSdk::TurboWebhooks.create_webhook(urls:, events:)` | Subscribe the org to events. `urls:` 1–10 HTTPS URLs; `events:` at least 1. Requires an **administrator** API key |
 | `TurboDocxSdk::TurboWebhooks.get_webhook` | Get the org's signature webhook + delivery stats |
-| `TurboDocxSdk::TurboWebhooks.update_webhook(urls:, events:, is_active:)` | Patch any subset of fields |
+| `TurboDocxSdk::TurboWebhooks.update_webhook(urls:, events:, is_active:)` | Patch any subset of fields. Keywords are optional, but a supplied `urls:`/`events:` still has to be non-empty (`[]` is a 400) |
 | `TurboDocxSdk::TurboWebhooks.delete_webhook` | Soft-delete the webhook |
 | `TurboDocxSdk::TurboWebhooks.test_webhook(event_type:, payload:)` | Fire a test delivery; surfaces per-URL errors |
 | `TurboDocxSdk::TurboWebhooks.notify_webhook(event_type:, payload:)` | Manual notify; same handler as test_webhook |
@@ -833,7 +941,7 @@ The error classes are **not** nested under a sub-module (e.g. not `TurboDocxSdk:
 | `send_quote(id, request=nil)` | Email quote; returns `{ "quote", "message" }` |
 | `send_quote_with_deliverable(id, request)` | Send with attached deliverable; returns `{ quote, message, documentId }` |
 | `decline_quote(id, request)` / `void_quote(id, request)` | Decline / void a quote |
-| `handle_expired_quote(id, request)` | Extend, re-send, or void an expired sent quote |
+| `handle_expired_quote(id, request)` | Void or decline an expired sent quote and re-issue it as a duplicate. `"action"` is `"void"` \| `"decline"` only; `"reason"` (max 190) and `"newValidUntil"` (ISO date) are both required |
 | `apply_price_book(quote_id, price_book_id)` / `remove_price_book(quote_id)` | Attach/detach a price book |
 | `download_quote_pdf(id)` | Download rendered quote PDF as raw bytes |
 | `get_quote_number_config` | Admin: read `{ format, currentFloor }` |
@@ -845,8 +953,8 @@ The error classes are **not** nested under a sub-module (e.g. not `TurboDocxSdk:
 | Method | Description |
 |--------|-------------|
 | `list_line_items(quote_id, options)` | List line items |
-| `add_line_items(quote_id, items)` | Add product line item(s); single hash auto-wrapped to array |
-| `add_bundle_line_items(quote_id, items)` | Add bundle line item(s) |
+| `add_line_items(quote_id, items)` | Add 1–50 product line items (single hash auto-wrapped). `"productId"` (key), `"productName"`, `"unitPrice"`, `"billingFrequency"` all required |
+| `add_bundle_line_items(quote_id, items)` | Add 1–50 bundle line items; each needs only `"bundleId"` + `"bundleName"` (the server expands the children) |
 | `update_line_item(quote_id, item_id, request)` | Update a line item |
 | `remove_line_item(quote_id, item_id)` | Remove a line item |
 
@@ -855,8 +963,8 @@ The error classes are **not** nested under a sub-module (e.g. not `TurboDocxSdk:
 | Method | Description |
 |--------|-------------|
 | `list_products(options)` | Paginated product catalog |
-| `create_product(request)` | Create a product |
-| `bulk_create_products(rows)` | Bulk-import products; returns a partial-success `BulkImportResult` hash |
+| `create_product(request)` | Create a product; `"categoryId"` required (max 5 images, 2 MB each) |
+| `bulk_create_products(rows)` | Bulk-import products; each row needs `"name"`, `"categoryId"` (UUID), `"listPrice"`, `"billingFrequency"`. Returns a partial-success `BulkImportResult` hash |
 | `get_product(id)` / `update_product(id, request)` / `delete_product(id)` / `duplicate_product(id)` | Product CRUD |
 | `get_product_primary_images(product_ids)` | Batch-fetch primary images |
 
@@ -898,9 +1006,9 @@ The error classes are **not** nested under a sub-module (e.g. not `TurboDocxSdk:
 | Method | Description |
 |--------|-------------|
 | `list_templates(options)` | List quote templates |
-| `get_template` | Get the org's singleton default template |
+| `get_template` | Get the org's singleton default template. Self-heals: auto-creates one from org branding if none exists, so it always returns a template |
 | `get_template_by_id(id)` | Get a specific template by ID |
-| `create_template(request)` / `update_template(id, request)` / `delete_template(id)` | Template CRUD |
+| `create_template(request)` / `update_template(id, request)` / `delete_template(id)` | Template CRUD. `create_template` is effectively unreachable (the template is auto-provisioned → 400 `TEMPLATE_ALREADY_EXISTS`); use `get_template` → `update_template`. `delete_template` resets to org branding defaults |
 | `list_types(options)` | List quote types/categories |
 | `create_type(request)` | Create a quote type |
 | `bulk_create_types(rows)` | Bulk-import types/categories; returns a partial-success `BulkImportResult` hash |
@@ -916,16 +1024,28 @@ The error classes are **not** nested under a sub-module (e.g. not `TurboDocxSdk:
 - **Responses are plain hashes with string keys** — access fields with `result["documentId"]`, not symbol keys or method calls.
 - **Downloads return raw bytes** — `download`, `download_pdf`, `download_source_file`, and `download_quote_pdf` return the file bytes directly; persist with `File.binwrite`.
 - **`void_document` requires a `reason`** (second positional arg). **`resend_email` takes recipient UUIDs**, not email addresses — fetch them from the send/review response or `get_audit_trail`.
+- **`download` is a two-step operation.** `GET /api/signature/:id/download` returns JSON `{"downloadUrl", "fileName"}` — not bytes — and the presigned `downloadUrl` must then be fetched **without an `Authorization` header** (S3 rejects a presigned request that also carries one). The SDK does both steps for you; hand-rolled REST calls must too.
+- **Two different role enums — do not mix them.** Organization users and organization API keys take `"admin" | "contributor" | "user" | "viewer"`. Partner-portal users take `"admin" | "member" | "viewer"`. `"member"` is not a valid org role, and `"contributor"` / `"user"` are not valid partner roles — either mistake is a 400.
+- **Partner `permissions:` has no partial update.** The keyword is optional on `update_partner_user_permissions`, but every key inside the hash is required by the backend, so if you pass `permissions:` you must pass **all seven**: `canManageOrgs`, `canManageOrgUsers`, `canManagePartnerUsers`, `canManageOrgAPIKeys`, `canManagePartnerAPIKeys`, `canUpdateEntitlements`, `canViewAuditLogs`. A partial hash is a 400. To flip one flag, read the user's current permissions and `merge` on top of them; to change only the role, omit `permissions:` entirely.
+- **`update_organization_entitlements` takes `features:` and `tracking:` — the two key sets are not interchangeable.** `features` holds capability/limit columns (`maxUsers`, `maxStorage`, `maxAPIKeys`, `hasTDAI`, …); `tracking` holds usage counters, which use the `num*` names: `numUsers`, `numProjectspaces`, `numTemplates`, `storageUsed`, `numGeneratedDeliverables`, `numSignaturesUsed`, `numQuotesSent`, `currentAICredits`. A `maxUsers` key inside `tracking` is rejected. `currentAICredits` accepts `-1` (unlimited); every other counter floors at 0.
 - **Pagination uses `offset:`, not `page:`** across `list_*` methods.
 - **API key values are returned only on creation** for `create_organization_api_key` and `create_partner_api_key` — capture `result["data"]["key"]` immediately.
 - **TurboWebhooks requires an admin TDX- key.** A non-admin key raises `TurboDocxSdk::AuthorizationError` (403). One webhook per org, fixed name `signature` — there is no `list_webhooks` by design; use the REST API for multi-webhook setups.
 - **Webhook secrets are shown ONCE** — capture `created["secret"]` from `create_webhook` and `rotated["secret"]` from `regenerate_webhook_secret` immediately.
+- **Webhook `urls:` is 1–10, `events:` is 1+ — on create AND on update.** Both keywords are optional on `update_webhook`, but optional does not relax the minimum: passing `urls: []` or `events: []` raises `ValidationError` (400). To leave routing alone, omit the keyword rather than passing an empty array. Webhook URLs must be HTTPS.
 - **Read the RAW request body in your webhook receiver** (`request.body.read`) before verifying — never parse-then-reserialize the JSON. `TurboDocxSdk.verify_webhook_signature` is a **free module function**, not a method on `TurboWebhooks`, and has no API key dependency.
 - **TurboQuote decimal fields come back as Ruby numbers**, not strings — the response normalizer coerces `listPrice`, `unitPrice`, `discountPercent`, `subtotal`, `grandTotal`, `taxRate`, etc. Do not parse them yourself.
 - **PATCH with explicit `nil` clears nullable fields.** For `update_quote`, `update_line_item`, `update_product`, etc., passing `"priceBookId" => nil` sends `null` and clears the field; omitting the key leaves it unchanged.
-- **Custom (no-product) line items need `"productId" => nil` explicitly.** `add_line_items` auto-wraps a single hash into an array; the return is always an array.
+- **Every product line item needs four keys: `"productId"`, `"productName"`, `"unitPrice"`, `"billingFrequency"`.** `"productId"` is a required *key* whose *value* may be `nil` — that is how you add a custom, non-catalog item; omitting the key entirely is a 400. `"quantity"` defaults to 1. `add_line_items` auto-wraps a single hash into an array; the return is always an array.
+- **Three distinct bundle shapes — don't conflate them.** `create_bundle`'s `"items"` (catalog bundle contents) need `"productId"`, `"unitPrice"`, `"billingFrequency"` and nothing else — no `"productName"`. `add_bundle_line_items` (attaching a bundle to a quote) needs only `"bundleId"` + `"bundleName"`; the server expands the child products for you.
+- **Line-item array limits: `add_line_items` and `add_bundle_line_items` accept 1–50 items per call; reorder accepts up to 200.** Chunk larger imports.
+- **`termDays` defaults to 60** (not 30), maxes out at 3650, and `-1` means auto-renewal. `renewalPeriod` (`"weekly" | "monthly" | "quarterly" | "annually"`) is **required when `termDays` is -1** and must be absent/`nil` for any other `termDays` — sending it otherwise is a 400.
+- **`handle_expired_quote` only accepts `"action" => "void"` or `"decline"`.** `"extend"` and `"resend"` do not exist in the API and return a 400. `"reason"` (max 190 chars) and `"newValidUntil"` (ISO date) are both required; the endpoint voids/declines the original and issues a duplicate carrying the new date — that duplicate *is* the "extend".
+- **Quote templates are auto-provisioned.** `get_template` self-heals — it creates one from org branding when none exists — so `create_template` on an established org raises 400 `TEMPLATE_ALREADY_EXISTS` and is effectively unreachable. Always do `get_template` → `update_template`. `delete_template` is a reset-to-branding-defaults, not a permanent removal.
+- **Product images: max 5 per product, 2 MB each.** Exceeding either returns 400 `MAX_IMAGES_EXCEEDED`.
 - **`get_quote_number_config` / `update_quote_number_config` are admin-only** — non-admin callers get `TurboDocxSdk::AuthorizationError`. `update_quote_number_config` requires the full 8-field format hash with camelCase keys; `padWidth`/`startNumber` are integers.
 - **Bulk creates are partial-success, not transactional.** `bulk_create_products`/`bulk_create_price_books`/`bulk_create_bundles`/`bulk_create_companies`/`bulk_create_contacts`/`bulk_create_types` never raise on a bad row — read `report["failed"]` (`[{ "row", "reason" }]`, `row` 1-indexed) and `report["adjusted"]`; earlier rows are not rolled back. Cap is 500 rows/request (over → `ValidationError` 400). Admin + contributor keys only. Row-hash keys stay camelCase.
+- **Bulk product rows take `"categoryId"`, never `"categoryName"`.** The row schema is strict and rejects unknown keys, so a `"categoryName"` field 400s the row. Resolve or create the category with `list_types` / `create_type` first and pass its UUID. Required per row: `"name"`, `"categoryId"`, `"listPrice"`, `"billingFrequency"`.
 - **Use the SDK constants** (`TurboDocxSdk::BillingFrequency::MONTHLY`, `DiscountType::PERCENT`, `Currency::USD`, `CategoryType::PRODUCT_CATEGORY`, `QuoteNumberResetCadence::NEVER`, …) instead of hard-coding string literals. Each constants module also exposes an `ALL` array of valid values.
 - **Ruby 2.7+ and zero runtime dependencies** — the gem uses only `net/http`, `json`, and `openssl` from the standard library.
 

@@ -377,7 +377,8 @@ use TurboDocx\Types\Enums\OrgUserRole;
 // List
 $users = TurboPartner::listOrganizationUsers('org-uuid', new ListOrgUsersRequest(limit: 25, offset: 0));
 
-// Invite (OrgUserRole: ADMIN | CONTRIBUTOR | USER | VIEWER)
+// Invite — ORG role enum (OrgUserRole): ADMIN | CONTRIBUTOR | USER | VIEWER
+// There is no MEMBER here — 'member' is a PARTNER-portal role and is rejected with a 400.
 TurboPartner::addUserToOrganization('org-uuid', new AddOrgUserRequest(
     email: 'newhire@acme.com',
     role: OrgUserRole::CONTRIBUTOR,
@@ -404,6 +405,7 @@ use TurboDocx\Types\Requests\Partner\UpdateOrgApiKeyRequest;
 $keys = TurboPartner::listOrganizationApiKeys('org-uuid', new ListOrgApiKeysRequest(limit: 10));
 
 // Create — the full key value is returned ONLY on creation, store it immediately
+// Org API keys use the ORG role enum: 'admin' | 'contributor' | 'user' | 'viewer'
 $created = TurboPartner::createOrganizationApiKey('org-uuid', new CreateOrgApiKeyRequest(
     name: 'Production Key',
     role: 'admin',
@@ -459,10 +461,12 @@ use TurboDocx\Types\Partner\PartnerPermissions;
 // List
 $users = TurboPartner::listPartnerPortalUsers(new ListPartnerUsersRequest(limit: 25));
 
-// Add (permissions are required on add — set every flag explicitly)
+// Add — PARTNER role enum: 'admin' | 'member' | 'viewer'
+// ('contributor' / 'user' are ORG roles and are rejected here with a 400.)
+// All SEVEN permission flags are required — set every one explicitly.
 TurboPartner::addUserToPartnerPortal(new AddPartnerUserRequest(
     email: 'admin@partner.com',
-    role: 'admin', // 'admin' | 'member' | 'viewer'
+    role: 'admin',
     permissions: new PartnerPermissions(
         canManageOrgs: true,
         canManageOrgUsers: true,
@@ -474,11 +478,30 @@ TurboPartner::addUserToPartnerPortal(new AddPartnerUserRequest(
     ),
 ));
 
-// Update — role and/or permissions
+// Update — `permissions` is optional, but there is NO partial update: if you pass it,
+// the backend requires ALL SEVEN keys. Every PartnerPermissions constructor arg defaults
+// to `false`, so naming only two of them still sends all 7 — with the other five as
+// `false`, silently REVOKING those permissions. Rebuild from the user's current
+// permissions and override only what changes.
+$users   = TurboPartner::listPartnerPortalUsers(new ListPartnerUsersRequest(limit: 100));
+$user    = current(array_filter($users->data->results, fn ($u) => $u->id === 'user-uuid'));
+$current = $user->permissions;   // all 7 flags, straight from the server
+
 TurboPartner::updatePartnerUserPermissions('user-uuid', new UpdatePartnerUserRequest(
     role: 'member',
-    permissions: new PartnerPermissions(canManageOrgs: true, canManageOrgUsers: true),
+    permissions: new PartnerPermissions(
+        canManageOrgs: true,   // the two we are changing
+        canManageOrgUsers: true,
+        canManagePartnerUsers: $current->canManagePartnerUsers,   // the rest, preserved
+        canManageOrgAPIKeys: $current->canManageOrgAPIKeys,
+        canManagePartnerAPIKeys: $current->canManagePartnerAPIKeys,
+        canUpdateEntitlements: $current->canUpdateEntitlements,
+        canViewAuditLogs: $current->canViewAuditLogs,
+    ),
 ));
+
+// To change ONLY the role, omit `permissions` entirely:
+TurboPartner::updatePartnerUserPermissions('user-uuid', new UpdatePartnerUserRequest(role: 'viewer'));
 
 // Remove
 TurboPartner::removeUserFromPartnerPortal('user-uuid');
@@ -531,8 +554,8 @@ The webhook routes require the organization administrator role. A non-admin TDX-
 
 ```php
 $created = TurboWebhooks::createWebhook(
-    urls: ['https://your-server.example.com/webhooks/turbodocx'],  // must be HTTPS
-    events: ['signature.document.completed', 'signature.document.voided'],
+    urls: ['https://your-server.example.com/webhooks/turbodocx'],  // 1-10, HTTPS only
+    events: ['signature.document.completed', 'signature.document.voided'],  // at least 1
 );
 
 // Returned secret is shown ONCE — store it server-side immediately.
@@ -540,7 +563,7 @@ $webhookId = $created['id'];
 $secret    = $created['secret'];
 ```
 
-Throws `ConflictException` (409) if the signature webhook already exists for the org. Throws `ValidationException` (400) for non-HTTPS URLs.
+`urls` must contain **1–10** HTTPS URLs; `events` must contain **at least 1** event. Throws `ConflictException` (409) if the signature webhook already exists for the org. Throws `ValidationException` (400) for non-HTTPS URLs, an empty/oversized `urls` array, or an empty `events` array.
 
 ### getWebhook
 
@@ -554,11 +577,16 @@ $webhook = TurboWebhooks::getWebhook();
 
 ```php
 TurboWebhooks::updateWebhook(
-    urls: ['https://your-server.example.com/webhooks/turbodocx'],
-    events: ['signature.document.completed'],
+    urls: ['https://your-server.example.com/webhooks/turbodocx'],  // 1-10 HTTPS URLs
+    events: ['signature.document.completed'],                      // at least 1
     isActive: true,
 );
+
+// To pause deliveries without touching the routing, omit urls/events entirely:
+TurboWebhooks::updateWebhook(isActive: false);
 ```
+
+The arguments are optional, but **optional does not mean "may be empty"**: if you pass `urls` it still has to hold 1–10 URLs, and if you pass `events` it still has to hold at least 1. Passing `urls: []` or `events: []` throws `ValidationException` (400) — omit the argument instead.
 
 All three parameters are optional — pass only what you want to change.
 
@@ -705,28 +733,54 @@ $quote = TurboQuote::createQuote(new CreateQuoteRequest(
     companyId: $company->id,
     contactId: $contact->id,
     currency: 'USD',
-    termDays: 30,
+    termDays: 365,   // optional; DEFAULT IS 60. Max 3650 (10 years). -1 = auto-renewal.
 ));
 
 echo "Quote ID: {$quote->id}\n";
 echo "Status: {$quote->status}\n";
 ```
 
+**`termDays` / `renewalPeriod`** — `termDays` defaults to **60** when omitted, and may be any integer up to **3650**, or the sentinel **`-1`** meaning auto-renewal. The two fields are coupled:
+
+- `termDays: -1` → `renewalPeriod` is **required** (`'weekly' | 'monthly' | 'quarterly' | 'annually'`).
+- any other `termDays` → `renewalPeriod` must be **absent or `null`**; sending it is a 400.
+
+```php
+// Auto-renewing quote — renewalPeriod is mandatory
+TurboQuote::createQuote(new CreateQuoteRequest(
+    name: 'Managed Services - auto-renew',
+    companyId: $company->id,
+    contactId: $contact->id,
+    termDays: -1,
+    renewalPeriod: 'monthly',
+));
+
+// Fixed-term quote — do NOT pass renewalPeriod
+TurboQuote::createQuote(new CreateQuoteRequest(
+    name: 'Fixed 90-day engagement',
+    companyId: $company->id,
+    contactId: $contact->id,
+    termDays: 90,
+));
+```
+
 ### addLineItems
+
+**Four fields are required on every line item**: `productId` (the argument must be PASSED — its value may be `null` for a custom, non-catalog item), `productName`, `unitPrice`, and `billingFrequency`. Omitting any of them is a 400. `quantity` defaults to `1`. The array must hold between **1 and 50** items.
 
 ```php
 use TurboDocx\Types\Requests\Quote\AddLineItemRequest;
 
 TurboQuote::addLineItems($quote->id, [
     new AddLineItemRequest(
-        productId: null,
-        productName: 'Platform Subscription',
-        unitPrice: 499.00,
-        billingFrequency: 'monthly',
-        quantity: 1,
+        productId: $product->id,          // REQUIRED; null for a custom item
+        productName: 'Platform Subscription',  // REQUIRED
+        unitPrice: 499.00,                // REQUIRED
+        billingFrequency: 'monthly',      // REQUIRED
+        quantity: 1,                      // optional, defaults to 1
     ),
     new AddLineItemRequest(
-        productId: null,
+        productId: null,                  // custom, non-catalog item — still passed, as null
         productName: 'Professional Services',
         unitPrice: 2500.00,
         billingFrequency: 'one-time',
@@ -738,7 +792,21 @@ TurboQuote::addLineItems($quote->id, [
 // Returns LineItem[] — the resulting items array
 ```
 
-To add a bundle (a pre-grouped set of products) use `addBundleLineItems` with `AddBundleLineItemRequest`.
+### addBundleLineItems
+
+Attaching a bundle to a quote needs only `bundleId` and `bundleName` — the server expands the bundle's child products itself, so you never send them. Single object or an array of 1–50.
+
+```php
+use TurboDocx\Types\Requests\Quote\AddBundleLineItemRequest;
+
+TurboQuote::addBundleLineItems($quote->id, [
+    new AddBundleLineItemRequest(
+        bundleId: $bundle->id,        // REQUIRED
+        bundleName: 'Starter Pack',   // REQUIRED
+        quantity: 2,
+    ),
+]);
+```
 
 ### sendQuote
 
@@ -753,6 +821,22 @@ echo "Status: {$result->quote->status}\n";   // 'sent'
 echo "Message: {$result->message}\n";
 ```
 
+### handleExpiredQuote
+
+Act on a sent quote whose `validUntil` has passed. **`action` accepts exactly two values: `'void'` and `'decline'`.** There is no `'extend'` and no `'resend'` — those are not implemented and return a 400. `reason` (max 190 chars) and `newValidUntil` (ISO date) are **both required**.
+
+The endpoint voids/declines the original quote and creates a duplicate carrying the new `validUntil` date — that duplicate is how you "extend" an expired quote.
+
+```php
+use TurboDocx\Types\Requests\Quote\HandleExpiredQuoteRequest;
+
+$result = TurboQuote::handleExpiredQuote($quote->id, new HandleExpiredQuoteRequest(
+    action: 'void',                      // 'void' | 'decline' — nothing else
+    reason: 'Pricing refreshed for Q4',  // REQUIRED, max 190 chars
+    newValidUntil: '2026-12-31',         // REQUIRED, ISO date — carried by the new duplicate
+));
+```
+
 ### downloadQuotePdf
 
 ```php
@@ -762,6 +846,25 @@ file_put_contents('quote.pdf', $pdfBytes);
 
 Returns raw bytes — write them directly with `file_put_contents` or stream as a response.
 
+### Quote templates (auto-provisioned — get, then update)
+
+Quote templates are **provisioned for you**. `GET /v1/quote-template` self-heals: if the org has no template it creates one from the org's branding and returns it. Consequences:
+
+- **Never call `createTemplate()` on an established org** — a template already exists, so it throws `ValidationException` (400 `TEMPLATE_ALREADY_EXISTS`). The method is effectively unreachable. Do not write get-then-create-if-missing logic.
+- **`deleteTemplate()` is really "reset to org branding defaults"** — it soft-deletes, and the very next `getTemplate()` regenerates one.
+
+The correct flow is always **`getTemplate()` → `updateTemplate()`**:
+
+```php
+use TurboDocx\Types\Requests\Quote\UpdateQuoteTemplateRequest;
+
+$template = TurboQuote::getTemplate();   // always returns one; creates it if needed
+TurboQuote::updateTemplate($template->id, new UpdateQuoteTemplateRequest(
+    primaryColor: '#0B5FFF',
+    closingMessage: 'Thanks for your business!',
+));
+```
+
 ### Products and bundles (catalog)
 
 ```php
@@ -769,21 +872,31 @@ use TurboDocx\Types\Requests\Quote\CreateProductRequest;
 use TurboDocx\Types\Requests\Quote\CreateBundleRequest;
 use TurboDocx\Types\Requests\Quote\CreatePriceBookRequest;
 
-// Create a catalog product
+// Create a catalog product.
+// name, listPrice, billingFrequency and categoryId are all REQUIRED.
+// categoryId is a real UUID — from a createType with categoryType 'product_category'.
 $product = TurboQuote::createProduct(new CreateProductRequest(
     name: 'Annual SaaS License',
     listPrice: 999.00,
     billingFrequency: 'annual',
     categoryId: 'category-uuid',
     showInCatalog: true,
+    // images: [...],  // optional — MAX 5 images per product, MAX 2 MB each
 ));
 
-// Create a bundle
+// Create a bundle. Each catalog bundle item requires productId, unitPrice and
+// billingFrequency (quantity defaults to 1). Note this is a DIFFERENT shape from a
+// quote line item — there is no productName here, and unknown keys are rejected.
 $bundle = TurboQuote::createBundle(new CreateBundleRequest(
     name: 'Starter Pack',
     categoryId: 'category-uuid',
     items: [
-        ['productId' => $product->id, 'quantity' => 1],
+        [
+            'productId' => $product->id,
+            'unitPrice' => 999.00,
+            'billingFrequency' => 'annual',
+            'quantity' => 1,
+        ],
     ],
 ));
 
@@ -843,21 +956,36 @@ Response: the updated `QuoteNumberConfig` — same `{ format, currentFloor }` sh
 
 Six catalog resources support bulk creation from an array of typed request rows (e.g. a parsed CSV): `bulkCreateProducts`, `bulkCreatePriceBooks`, `bulkCreateBundles`, `bulkCreateCompanies`, `bulkCreateContacts`, and `bulkCreateTypes`. Each takes an array of the same request objects the matching single `create*` call uses; the SDK wraps them in the `{ "rows": [...] }` envelope the `POST {resource}/bulk` endpoint expects. Each returns a `BulkImportResult`.
 
+Every product row requires `name`, `categoryId`, `listPrice`, and `billingFrequency`. **`categoryId` must be a real category UUID** — there is no `categoryName` convenience field on the bulk row, and because the backend rejects unknown keys a `categoryName` would 400 the row. Resolve (or create) the category first and pass its UUID:
+
 ```php
 use TurboDocx\Types\Requests\Quote\CreateProductRequest;
+use TurboDocx\Types\Requests\Quote\CreateQuoteTypeRequest;
+use TurboDocx\Types\Requests\Quote\ListTypesRequest;
 
+// 1. Resolve the category UUID once — create it if it doesn't exist yet.
+$types    = TurboQuote::listTypes(new ListTypesRequest(limit: 100));
+$category = current(array_filter(
+    $types->results,
+    fn ($t) => $t->name === 'Subscriptions' && $t->categoryType === 'product_category',
+)) ?: TurboQuote::createType(new CreateQuoteTypeRequest(
+    name: 'Subscriptions',
+    categoryType: 'product_category',
+));
+
+// 2. Reference it by UUID on every row.
 $result = TurboQuote::bulkCreateProducts([
     new CreateProductRequest(
         name: 'Basic Plan',
         listPrice: 10.00,
         billingFrequency: 'monthly',
-        categoryId: 'category-uuid',
+        categoryId: $category->id,
     ),
     new CreateProductRequest(
         name: 'Premium Plan',
         listPrice: 100.00,
         billingFrequency: 'monthly',
-        categoryId: 'category-uuid',
+        categoryId: $category->id,
     ),
 ]);
 
@@ -1041,7 +1169,7 @@ try {
 | `TurboPartner::deleteOrganization($orgId)` | Delete an org |
 | `TurboPartner::updateOrganizationEntitlements($orgId, $request)` | Update features and/or tracking |
 | `TurboPartner::listOrganizationUsers($orgId, $request?)` | Paginated org-user list |
-| `TurboPartner::addUserToOrganization($orgId, $request)` | Invite a user with role |
+| `TurboPartner::addUserToOrganization($orgId, $request)` | Invite a user with an ORG role (`admin` \| `contributor` \| `user` \| `viewer`) |
 | `TurboPartner::updateOrganizationUserRole($orgId, $userId, $request)` | Change a user's role |
 | `TurboPartner::removeUserFromOrganization($orgId, $userId)` | Remove user from org |
 | `TurboPartner::resendOrganizationInvitationToUser($orgId, $userId)` | Resend invite email |
@@ -1054,14 +1182,14 @@ try {
 | `TurboPartner::updatePartnerApiKey($keyId, $request)` | Rename, edit scopes |
 | `TurboPartner::revokePartnerApiKey($keyId)` | Revoke partner key |
 | `TurboPartner::listPartnerPortalUsers($request?)` | Paginated partner-portal user list |
-| `TurboPartner::addUserToPartnerPortal($request)` | Invite with role and permissions |
-| `TurboPartner::updatePartnerUserPermissions($userId, $request)` | Update role/permissions (partial OK) |
+| `TurboPartner::addUserToPartnerPortal($request)` | Invite with a PARTNER role (`admin` \| `member` \| `viewer`) + all 7 permission flags |
+| `TurboPartner::updatePartnerUserPermissions($userId, $request)` | Update role and/or permissions. `permissions` is optional, but if passed it must carry **all 7 flags** — there is no partial update |
 | `TurboPartner::removeUserFromPartnerPortal($userId)` | Remove partner-portal user |
 | `TurboPartner::resendPartnerPortalInvitationToUser($userId)` | Resend invite email |
 | `TurboPartner::getPartnerAuditLogs($request?)` | Filter audit logs by action/resource/date/success |
-| `TurboWebhooks::createWebhook($urls, $events)` | Subscribe the org to events (HTTPS URLs only) |
+| `TurboWebhooks::createWebhook($urls, $events)` | Subscribe the org to events. `urls`: 1–10 HTTPS URLs; `events`: at least 1. Requires an **administrator** API key |
 | `TurboWebhooks::getWebhook()` | Get the org's signature webhook + delivery stats |
-| `TurboWebhooks::updateWebhook(...)` | Patch URLs / events / isActive |
+| `TurboWebhooks::updateWebhook(...)` | Patch URLs / events / isActive. Args are optional, but a supplied `urls`/`events` still has to be non-empty (`[]` is a 400) |
 | `TurboWebhooks::deleteWebhook()` | Soft-delete the webhook |
 | `TurboWebhooks::testWebhook($eventType, $payload)` | Fire a test delivery to all URLs |
 | `TurboWebhooks::notifyWebhook($eventType, $payload)` | Manual notify; same handler as testWebhook |
@@ -1082,20 +1210,20 @@ try {
 | `TurboQuote::sendQuoteWithDeliverable($id, $request)` | Send with a TurboDocx-generated document attached |
 | `TurboQuote::declineQuote($id, $request)` | Mark a quote as declined |
 | `TurboQuote::voidQuote($id, $request)` | Void a quote |
-| `TurboQuote::handleExpiredQuote($id, $request)` | Re-send or void an expired quote |
+| `TurboQuote::handleExpiredQuote($id, $request)` | Void or decline an expired sent quote and re-issue it as a duplicate. `action` is `'void'` \| `'decline'` only; `reason` (max 190) and `newValidUntil` (ISO date) are both required |
 | `TurboQuote::applyPriceBook($quoteId, $priceBookId)` | Apply a price book, repricing line items |
 | `TurboQuote::removePriceBook($quoteId)` | Remove the applied price book |
 | `TurboQuote::createAndSend($request)` | Create quote + add items + send in one call |
 | **TurboQuote — Line Items** | |
 | `TurboQuote::listLineItems($quoteId, $request?)` | List items on a quote |
-| `TurboQuote::addLineItems($quoteId, $items)` | Add one or more product line items (single or array) |
-| `TurboQuote::addBundleLineItems($quoteId, $items)` | Add one or more bundle line items |
+| `TurboQuote::addLineItems($quoteId, $items)` | Add 1–50 product line items (single or array). `productId` (may be null), `productName`, `unitPrice`, `billingFrequency` all required |
+| `TurboQuote::addBundleLineItems($quoteId, $items)` | Add 1–50 bundle line items; each needs only `bundleId` + `bundleName` (the server expands the children) |
 | `TurboQuote::updateLineItem($quoteId, $itemId, $request)` | Update a line item |
 | `TurboQuote::removeLineItem($quoteId, $itemId)` | Remove a line item |
 | **TurboQuote — Products** | |
 | `TurboQuote::listProducts($request?)` | List catalog products |
 | `TurboQuote::createProduct($request)` | Create a product (supports image upload via multipart) |
-| `TurboQuote::bulkCreateProducts($rows)` | Bulk-import products; returns a partial-success `BulkImportResult` |
+| `TurboQuote::bulkCreateProducts($rows)` | Bulk-import products; each row needs `name`, `categoryId` (UUID), `listPrice`, `billingFrequency`. Returns a partial-success `BulkImportResult` |
 | `TurboQuote::getProduct($id)` | Get product by ID |
 | `TurboQuote::updateProduct($id, $request)` | Update a product |
 | `TurboQuote::deleteProduct($id)` | Delete a product |
@@ -1134,9 +1262,9 @@ try {
 | `TurboQuote::deleteContact($id)` | Delete a contact |
 | **TurboQuote — Templates** | |
 | `TurboQuote::listTemplates($request?)` | List quote templates |
-| `TurboQuote::getTemplate()` | Get the org's active quote template (singleton endpoint) |
+| `TurboQuote::getTemplate()` | Get the org's active quote template (singleton endpoint). Self-heals: auto-creates one from org branding if none exists, so it always returns a template |
 | `TurboQuote::getTemplateById($id)` | Get a template by ID |
-| `TurboQuote::createTemplate($request)` | Create a quote template |
+| `TurboQuote::createTemplate($request)` | Effectively unreachable — the template is auto-provisioned, so this throws 400 `TEMPLATE_ALREADY_EXISTS` on any established org. Use `getTemplate()` → `updateTemplate()` |
 | `TurboQuote::updateTemplate($id, $request)` | Update a quote template |
 | `TurboQuote::deleteTemplate($id)` | Delete a quote template |
 | **TurboQuote — Types** | |
@@ -1158,15 +1286,28 @@ try {
 - **Laravel config**: add TurboSign::configure() in a service provider's `boot()` method for clean initialization
 - **`signUrl`** — each `RecipientResponse` in the `sendSignature`/`createSignatureReviewLink` response has a `signUrl` property: the personal signing link for that recipient. `createSignatureReviewLink` also returns a top-level `previewUrl` for document-level preview.
 - **`resend` takes recipient UUIDs** (array of strings), not email addresses — fetch them from the send/review response or `getAuditTrail`. Pass an empty array to resend to all pending recipients.
+- **`download` is a two-step operation.** `GET /api/signature/:id/download` returns JSON `{"downloadUrl", "fileName"}` — not bytes — and the presigned `downloadUrl` must then be fetched **without an `Authorization` header** (S3 rejects a presigned request that also carries one). The SDK does both steps for you; hand-rolled REST calls must too.
+- **Two different role enums — do not mix them.** Organization users and organization API keys take `OrgUserRole`: `admin` / `contributor` / `user` / `viewer`. Partner-portal users take `admin` / `member` / `viewer`. `member` is not a valid org role, and `contributor` / `user` are not valid partner roles — either mistake is a 400.
+- **Partner `permissions` has no partial update.** The argument is optional on `UpdatePartnerUserRequest`, but every key inside the object is required by the backend, so a supplied `PartnerPermissions` must carry **all seven** flags: `canManageOrgs`, `canManageOrgUsers`, `canManagePartnerUsers`, `canManageOrgAPIKeys`, `canManagePartnerAPIKeys`, `canUpdateEntitlements`, `canViewAuditLogs`. Every constructor arg **defaults to `false`**, so naming only the ones you want to enable still sends all 7 and turns the rest off — **silently revoking those permissions**. Read the user's current permissions and carry them across; to update just the role, omit `permissions` entirely.
+- **`updateOrganizationEntitlements` takes `features` and `tracking` — the two key sets are not interchangeable.** `features` holds capability/limit columns (`maxUsers`, `maxStorage`, `maxAPIKeys`, `hasTDAI`, …); `tracking` holds usage counters, which use the `num*` names: `numUsers`, `numProjectspaces`, `numTemplates`, `storageUsed`, `numGeneratedDeliverables`, `numSignaturesUsed`, `numQuotesSent`, `currentAICredits`. A `maxUsers` key inside `tracking` is rejected. `currentAICredits` accepts `-1` (unlimited); every other counter floors at 0.
 - **TurboWebhooks is one-per-org** — every call hits the fixed `signature` webhook. Trying to create it twice returns `ConflictException` (409); update or delete the existing one instead.
 - **TurboWebhooks requires admin** — the routes are gated by `requireOrgRole(administrator)`. A non-admin TDX- key throws `AuthorizationException` (403).
 - **`createWebhook` URLs must be HTTPS** — non-HTTPS receivers return `ValidationException` (400). For local development, expose your receiver via an HTTPS tunnel (ngrok, cloudflared) and use the tunnel URL.
+- **`urls` is 1–10, `events` is 1+ — on create AND on update.** Both args are optional on `updateWebhook`, but optional does not relax the minimum: passing `urls: []` or `events: []` throws `ValidationException` (400). To leave routing alone, omit the argument rather than passing an empty array.
 - **Save the secret immediately** — `createWebhook` and `regenerateWebhookSecret` return the HMAC secret ONCE. There is no endpoint to retrieve it later. If you lose it, `regenerateWebhookSecret` mints a new one (and invalidates the old).
 - **Signature verification** — never `json_decode` the request body before passing it to `verifyWebhookSignature()`. The HMAC is over the raw bytes; re-encoded JSON will not match.
 
 - **TurboQuote decimal fields come back as numbers**, not strings — the response normalizer coerces `listPrice`, `unitPrice`, `discountPercent`, `subtotal`, `grandTotal`, `taxRate`, and related fields from the backend's string representation to PHP floats. Do not try to parse them yourself.
 - **PATCH null-clears nullable fields** — `updateQuote` (and other PATCH methods) include explicitly-set `null` values in the request body, which clears that field on the server. Only fields you actually pass are sent; fields you omit are left unchanged.
 - **`discountType` is `'percent'` or `'amount'`** — use the string literals or `DiscountType::PERCENT->value` / `DiscountType::AMOUNT->value`; mixing them up silently falls back to the backend default.
+- **Every product line item needs four fields: `productId`, `productName`, `unitPrice`, `billingFrequency`.** `productId` must be *passed*, but its value may be `null` — that is how you add a custom, non-catalog item. `quantity` defaults to 1.
+- **Three distinct bundle shapes — don't conflate them.** `createBundle`'s `items` (catalog bundle contents) need `productId`, `unitPrice`, `billingFrequency` and nothing else — no `productName`, and unknown keys are rejected. `addBundleLineItems` (attaching a bundle to a quote) needs only `bundleId` + `bundleName`; the server expands the child products for you.
+- **Line-item array limits: `addLineItems` and `addBundleLineItems` accept 1–50 items per call; reorder accepts up to 200.** Chunk larger imports.
+- **`termDays` defaults to 60** (not 30), maxes out at 3650, and `-1` means auto-renewal. `renewalPeriod` (`'weekly' | 'monthly' | 'quarterly' | 'annually'`) is **required when `termDays` is -1** and must be absent/`null` for any other `termDays` — sending it otherwise is a 400.
+- **`handleExpiredQuote` only accepts `action: 'void'` or `'decline'`.** `'extend'` and `'resend'` do not exist in the API and return a 400. `reason` (max 190 chars) and `newValidUntil` (ISO date) are both required; the endpoint voids/declines the original and issues a duplicate carrying the new date — that duplicate *is* the "extend".
+- **Quote templates are auto-provisioned.** `getTemplate()` self-heals — it creates one from org branding when none exists — so `createTemplate()` on an established org throws 400 `TEMPLATE_ALREADY_EXISTS` and is effectively unreachable. Always do `getTemplate()` → `updateTemplate()`. `deleteTemplate()` is a reset-to-branding-defaults, not a permanent removal.
+- **Product images: max 5 per product, 2 MB each.** Exceeding either returns 400 `MAX_IMAGES_EXCEEDED`.
 - **Bulk creates are partial-success, not transactional.** `bulkCreateProducts`/`bulkCreatePriceBooks`/`bulkCreateBundles`/`bulkCreateCompanies`/`bulkCreateContacts`/`bulkCreateTypes` never throw on a bad row — read `$result->failed` (`BulkImportRowIssue[]` with 1-indexed `$row` + `$reason`) and `$result->adjusted`; earlier rows are not rolled back. Cap is 500 rows/request (over → `ValidationException` 400). Admin + contributor keys only.
+- **Bulk product rows take `categoryId`, never `categoryName`.** The row schema is strict and rejects unknown keys, so a `categoryName` field 400s the row. Resolve or create the category with `listTypes()` / `createType()` first and pass its UUID. Required per row: `name`, `categoryId`, `listPrice`, `billingFrequency`.
 
 **Full API reference:** https://docs.turbodocx.com/docs

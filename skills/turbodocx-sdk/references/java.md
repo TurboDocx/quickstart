@@ -363,7 +363,8 @@ tp.updateOrganizationEntitlements(
 // List
 JsonObject users = tp.listOrganizationUsers("org-uuid", 25, 0, null);
 
-// Invite ("admin" | "contributor" | "user" | "viewer")
+// Invite — ORG role enum: "admin" | "contributor" | "user" | "viewer"
+// ("member" is a PARTNER-portal role and is rejected here with a 400.)
 tp.addUserToOrganization("org-uuid", "newhire@acme.com", "contributor");
 
 // Update role
@@ -383,6 +384,7 @@ tp.resendOrganizationInvitationToUser("org-uuid", "user-uuid");
 JsonObject keys = tp.listOrganizationApiKeys("org-uuid", 10, 0, null);
 
 // Create — the full key value is returned ONLY on creation, store it immediately
+// Org API keys use the ORG role enum: "admin" | "contributor" | "user" | "viewer"
 JsonObject created = tp.createOrganizationApiKey("org-uuid", "Production Key", "admin");
 System.out.println(created.getAsJsonObject("data").get("key").getAsString()); // capture once
 
@@ -425,10 +427,12 @@ Available scopes cover `org:*`, `entitlements:update`, `org-users:*`, `partner-u
 // List
 JsonObject users = tp.listPartnerPortalUsers(25, 0, null);
 
-// Add (permissions are required on add — set every flag explicitly)
+// Add — PARTNER role enum: "admin" | "member" | "viewer"
+// ("contributor" / "user" are ORG roles and are rejected here with a 400.)
+// All SEVEN permission keys are required.
 tp.addUserToPartnerPortal(
     "admin@partner.com",
-    "admin", // "admin" | "member" | "viewer"
+    "admin",
     Map.of(
         "canManageOrgs", true,
         "canManageOrgUsers", true,
@@ -438,11 +442,30 @@ tp.addUserToPartnerPortal(
         "canUpdateEntitlements", true,
         "canViewAuditLogs", true));
 
-// Update — role and/or permissions
-tp.updatePartnerUserPermissions(
-    "user-uuid",
-    "member",
-    Map.of("canManageOrgs", true, "canManageOrgUsers", true));
+// Update — the permissions map is optional, but there is NO partial update:
+// if you pass a map at all it must contain ALL SEVEN keys, or the backend returns
+// 400. Read the current permissions first, then override only what changes.
+JsonObject currentUser = null;
+for (JsonElement e : tp.listPartnerPortalUsers(100, 0, null)
+                       .getAsJsonObject("data").getAsJsonArray("results")) {
+    if ("user-uuid".equals(e.getAsJsonObject().get("id").getAsString())) {
+        currentUser = e.getAsJsonObject();
+        break;
+    }
+}
+
+Map<String, Boolean> permissions = new HashMap<>();
+JsonObject currentPerms = currentUser.getAsJsonObject("permissions");
+for (String key : currentPerms.keySet()) {          // all 7 keys, from the server
+    permissions.put(key, currentPerms.get(key).getAsBoolean());
+}
+permissions.put("canManageOrgs", true);             // then override only what changes
+permissions.put("canManageOrgUsers", true);
+
+tp.updatePartnerUserPermissions("user-uuid", "member", permissions);
+
+// To change ONLY the role, pass null for the permissions map:
+tp.updatePartnerUserPermissions("user-uuid", "viewer", null);
 
 // Remove
 tp.removeUserFromPartnerPortal("user-uuid");
@@ -589,12 +612,14 @@ import com.google.gson.JsonObject;
 import java.util.Arrays;
 
 JsonObject created = webhooks.createWebhook(
-    Arrays.asList("https://your-server.example.com/webhooks/turbodocx"),
-    Arrays.asList("signature.document.completed", "signature.document.voided")
+    Arrays.asList("https://your-server.example.com/webhooks/turbodocx"),      // 1-10, HTTPS only
+    Arrays.asList("signature.document.completed", "signature.document.voided") // at least 1
 );
 System.out.println("id: "     + created.get("id").getAsString());
 System.out.println("secret: " + created.get("secret").getAsString()); // shown ONCE — save immediately
 ```
+
+`urls` must contain **1–10** HTTPS URLs and `events` at least **1** event, or the backend throws `ValidationException` (400). Webhook management requires an **administrator** API key.
 
 ### getWebhook
 
@@ -610,11 +635,16 @@ Patch any subset of fields. Pass `null` for fields you don't want to change. Ren
 
 ```java
 JsonObject updated = webhooks.updateWebhook(
-    Arrays.asList("https://new-server.example.com/hook"),  // urls
+    Arrays.asList("https://new-server.example.com/hook"),  // urls — 1-10 HTTPS URLs
     null,                                                   // events (unchanged)
     Boolean.FALSE                                           // isActive
 );
+
+// To pause deliveries without touching the routing, pass null for both lists:
+webhooks.updateWebhook(null, null, Boolean.FALSE);
 ```
+
+`null` means "leave unchanged" — but an **empty list is not the same as null**. If you pass a non-null `urls` it still has to hold 1–10 URLs, and a non-null `events` still has to hold at least 1; `Collections.emptyList()` throws `ValidationException` (400). Pass `null` to skip a field.
 
 ### deleteWebhook
 
@@ -767,7 +797,7 @@ CreateQuoteRequest req = new CreateQuoteRequest();
 req.setName("Q1 Software Proposal");
 req.setCompanyId(companyId);
 req.setContactId(contactId);
-req.setTermDays(30);
+req.setTermDays(365);   // optional; DEFAULT IS 60. Max 3650 (10 years). -1 = auto-renewal.
 req.setCurrency(Currency.USD);
 
 Quote quote = tq.createQuote(req);
@@ -775,22 +805,61 @@ System.out.println("Quote ID: " + quote.getId());
 System.out.println("Status: "   + quote.getStatus()); // "draft"
 ```
 
+**`termDays` / `renewalPeriod`** — `termDays` defaults to **60** when unset, and may be any integer up to **3650**, or the sentinel **`-1`** meaning auto-renewal. The two fields are coupled:
+
+- `termDays == -1` → `renewalPeriod` is **required** (`RenewalPeriod.WEEKLY | MONTHLY | QUARTERLY | ANNUALLY`).
+- any other `termDays` → `renewalPeriod` must be **unset/null**; sending it is a 400.
+
+```java
+// Auto-renewing quote — renewalPeriod is mandatory
+CreateQuoteRequest autoRenew = new CreateQuoteRequest();
+autoRenew.setName("Managed Services - auto-renew");
+autoRenew.setCompanyId(companyId);
+autoRenew.setContactId(contactId);
+autoRenew.setTermDays(-1);
+autoRenew.setRenewalPeriod(RenewalPeriod.MONTHLY);
+tq.createQuote(autoRenew);
+
+// Fixed-term quote — leave renewalPeriod null
+CreateQuoteRequest fixed = new CreateQuoteRequest();
+fixed.setName("Fixed 90-day engagement");
+fixed.setCompanyId(companyId);
+fixed.setContactId(contactId);
+fixed.setTermDays(90);
+tq.createQuote(fixed);
+```
+
 ### addLineItems
 
-`addLineItems` accepts either a single `AddLineItemRequest` or a `List` — the single-item overload is auto-wrapped internally.
+`addLineItems` accepts either a single `AddLineItemRequest` or a `List` — the single-item overload is auto-wrapped internally. The list is capped at **50 items** per call (reorder allows up to 200).
+
+**Four fields are required on every line item**: `productId` (the key must be present on the wire — its value may be `null` for a custom, non-catalog item), `productName`, `unitPrice`, and `billingFrequency`. `quantity` defaults to 1.
 
 ```java
 AddLineItemRequest item = new AddLineItemRequest();
-item.setProductName("Enterprise License");
-item.setProductId(null);           // null = ad-hoc line item; pass a real ID to link a catalog product
-item.setUnitPrice(1200.00);
-item.setQuantity(5.0);
-item.setBillingFrequency("annual");
+item.setProductId(productId);      // REQUIRED — null = ad-hoc item, a real ID links a catalog product
+item.setProductName("Enterprise License"); // REQUIRED
+item.setUnitPrice(1200.00);        // REQUIRED
+item.setBillingFrequency("annual"); // REQUIRED
+item.setQuantity(5.0);             // optional, defaults to 1
 item.setDiscountType(DiscountType.PERCENT);
 item.setDiscountPercent(10.0);
 
 List<LineItem> lineItems = tq.addLineItems(quote.getId(), item);
 System.out.println("Total line items: " + lineItems.size());
+```
+
+### addBundleLineItems
+
+Attaching a bundle to a quote needs only `bundleId` and `bundleName` — the server expands the bundle's child products itself, so you never send them. Single request or a `List` of 1–50.
+
+```java
+AddBundleLineItemRequest bundleItem = new AddBundleLineItemRequest();
+bundleItem.setBundleId(bundle.getId());   // REQUIRED
+bundleItem.setBundleName("Starter Pack"); // REQUIRED
+bundleItem.setQuantity(2.0);
+
+List<LineItem> bundleItems = tq.addBundleLineItems(quote.getId(), bundleItem);
 ```
 
 ### sendQuote
@@ -799,6 +868,21 @@ System.out.println("Total line items: " + lineItems.size());
 SendQuoteResponse sent = tq.sendQuote(quote.getId());
 System.out.println("Status: " + sent.getQuote().getStatus()); // "sent"
 System.out.println(sent.getMessage());
+```
+
+### handleExpiredQuote
+
+Act on a sent quote whose `validUntil` has passed. **`action` accepts exactly two values: `"void"` and `"decline"`.** There is no `"extend"` and no `"resend"` — those are not implemented and return a 400. `reason` (max 190 chars) and `newValidUntil` (ISO date) are **both required**.
+
+The endpoint voids/declines the original quote and creates a duplicate carrying the new `validUntil` date — that duplicate is how you "extend" an expired quote.
+
+```java
+HandleExpiredQuoteRequest expired = new HandleExpiredQuoteRequest();
+expired.setAction("void");                       // "void" | "decline" — nothing else
+expired.setReason("Pricing refreshed for Q4");   // REQUIRED, max 190 chars
+expired.setNewValidUntil("2026-12-31");          // REQUIRED, ISO date — carried by the duplicate
+
+tq.handleExpiredQuote(quote.getId(), expired);
 ```
 
 ### downloadQuotePdf
@@ -811,16 +895,30 @@ Files.write(Paths.get("quote.pdf"), pdf);
 ### Catalog example (product / bundle / pricebook)
 
 ```java
-// Create a product
+// Create a product.
+// name, listPrice, billingFrequency and categoryId are all REQUIRED.
+// categoryId is a real UUID — from a createType(...) with categoryType PRODUCT_CATEGORY.
+// Product images (if any) are capped at 5 per product, 2 MB each.
 CreateProductRequest prod = new CreateProductRequest();
 prod.setName("Support Add-On");
 prod.setListPrice(500.00);
 prod.setBillingFrequency("annual");
+prod.setCategoryId(productCategoryId);
 Product product = tq.createProduct(prod);
 
-// Create a bundle
+// Create a bundle. categoryId is required, and each BundleItemInput requires
+// productId, unitPrice and billingFrequency (quantity defaults to 1). Note this is a
+// DIFFERENT shape from a quote line item — there is no productName on a bundle item.
+BundleItemInput bundleItem = new BundleItemInput();
+bundleItem.setProductId(product.getId());
+bundleItem.setUnitPrice(500.00);
+bundleItem.setBillingFrequency("annual");
+bundleItem.setQuantity(1.0);
+
 CreateBundleRequest bundle = new CreateBundleRequest();
 bundle.setName("Starter Pack");
+bundle.setCategoryId(bundleCategoryId);
+bundle.setItems(List.of(bundleItem));
 Bundle b = tq.createBundle(bundle);
 
 // Create and apply a pricebook — name, priceBookTypeId, validFrom, and discountPercent are all required.
@@ -875,23 +973,42 @@ Response: `{ format, currentFloor }` — the same shape as `getQuoteNumberConfig
 
 Six catalog resources support bulk creation from a `List` of typed request rows (e.g. a parsed CSV): `bulkCreateProducts`, `bulkCreatePriceBooks`, `bulkCreateBundles`, `bulkCreateCompanies`, `bulkCreateContacts`, and `bulkCreateTypes`. Each takes a `List` of the same request objects the matching single `create*` call uses; the SDK wraps them in the `{ "rows": [...] }` envelope the `POST {resource}/bulk` endpoint expects. Each returns a `BulkImportResult`.
 
+Every product row requires `name`, `categoryId`, `listPrice`, and `billingFrequency`. **`categoryId` must be a real category UUID** — there is no category-by-name convenience field on the bulk row, and because the backend rejects unknown keys a name-based field would 400 the row. Resolve (or create) the category first and pass its UUID:
+
 ```java
 import com.turbodocx.models.quote.CreateProductRequest;
+import com.turbodocx.models.quote.CreateQuoteTypeRequest;
 import com.turbodocx.models.quote.BulkImportResult;
 import com.turbodocx.models.quote.BulkImportRowIssue;
 import java.util.List;
 
+// 1. Resolve the category UUID once — create it if it doesn't exist yet.
+String categoryId = tq.listTypes().getResults().stream()
+    .filter(t -> "Subscriptions".equals(t.getName())
+              && CategoryType.PRODUCT_CATEGORY.equals(t.getCategoryType()))
+    .map(QuoteType::getId)
+    .findFirst()
+    .orElse(null);
+
+if (categoryId == null) {
+    CreateQuoteTypeRequest type = new CreateQuoteTypeRequest();
+    type.setName("Subscriptions");
+    type.setCategoryType(CategoryType.PRODUCT_CATEGORY);
+    categoryId = tq.createType(type).getId();   // createType throws IOException
+}
+
+// 2. Reference it by UUID on every row.
 CreateProductRequest basic = new CreateProductRequest();
 basic.setName("Basic Plan");
 basic.setListPrice(10.00);
 basic.setBillingFrequency("monthly");
-basic.setCategoryId("category-uuid");
+basic.setCategoryId(categoryId);
 
 CreateProductRequest premium = new CreateProductRequest();
 premium.setName("Premium Plan");
 premium.setListPrice(100.00);
 premium.setBillingFrequency("monthly");
-premium.setCategoryId("category-uuid");
+premium.setCategoryId(categoryId);
 
 BulkImportResult result = tq.bulkCreateProducts(List.of(basic, premium));
 
@@ -913,6 +1030,26 @@ Bulk-create semantics:
 - **Partial success** — a failed row does **not** throw and does **not** roll back the rows before it. It is reported by `result.getFailed()` with a 1-indexed row and a reason. Rows the server tweaked (e.g. an unknown bundle item dropped) appear in `result.getAdjusted()`. Always read `getFailed()` rather than assuming every row imported.
 - **500-row cap per request** — more than 500 rows throws `ValidationException` (400). The SDK does not validate the rows or the cap client-side.
 - **Roles** — available to administrator and contributor API keys.
+- **Rows are validated against the strict backend schema and unknown keys are rejected.** For products the required row fields are exactly `name`, `categoryId` (UUID), `listPrice`, `billingFrequency` — there is no category-by-name shortcut.
+
+### Quote templates (auto-provisioned — get, then update)
+
+Quote templates are **provisioned for you**. `GET /v1/quote-template` self-heals: if the org has no template it creates one from the org's branding and returns it. Consequences:
+
+- **Never call `createTemplate()` on an established org** — a template already exists, so it throws `ValidationException` (400 `TEMPLATE_ALREADY_EXISTS`). The method is effectively unreachable. Do not write get-then-create-if-missing logic.
+- **`deleteTemplate()` is really "reset to org branding defaults"** — it soft-deletes, and the very next `getTemplate()` regenerates one.
+
+The correct flow is always **`getTemplate()` → `updateTemplate()`**:
+
+```java
+QuoteTemplate template = tq.getTemplate();   // always returns one; creates it if needed
+
+UpdateQuoteTemplateRequest update = new UpdateQuoteTemplateRequest();
+update.setPrimaryColor("#0B5FFF");
+update.setClosingMessage("Thanks for your business!");
+
+tq.updateTemplate(template.getId(), update);
+```
 
 ### TurboQuote error handling
 
@@ -984,12 +1121,12 @@ try {
 | `tp.deleteOrganization(id)` | Delete an org |
 | `tp.updateOrganizationEntitlements(id, features, tracking)` | Update features and/or tracking |
 | `tp.listOrganizationUsers(id, limit, offset, search)` | Paginated org-user list |
-| `tp.addUserToOrganization(id, email, role)` | Invite a user with role |
-| `tp.updateOrganizationUserRole(id, userId, role)` | Change a user's role |
+| `tp.addUserToOrganization(id, email, role)` | Invite a user with an ORG role (`admin` \| `contributor` \| `user` \| `viewer`) |
+| `tp.updateOrganizationUserRole(id, userId, role)` | Change a user's ORG role (`admin` \| `contributor` \| `user` \| `viewer`) |
 | `tp.removeUserFromOrganization(id, userId)` | Remove user from org |
 | `tp.resendOrganizationInvitationToUser(id, userId)` | Resend invite email |
 | `tp.listOrganizationApiKeys(id, limit, offset, search)` | Paginated org API-key list |
-| `tp.createOrganizationApiKey(id, name, role)` | Create org key (value returned only on creation) |
+| `tp.createOrganizationApiKey(id, name, role)` | Create org key with an ORG role (`admin` \| `contributor` \| `user` \| `viewer`); value returned only on creation |
 | `tp.updateOrganizationApiKey(id, keyId, name, role)` | Rename or change role |
 | `tp.revokeOrganizationApiKey(id, keyId)` | Revoke org key |
 | `tp.listPartnerApiKeys(limit, offset, search)` | Paginated partner API-key list |
@@ -997,15 +1134,15 @@ try {
 | `tp.updatePartnerApiKey(keyId, name, description, scopes)` | Rename, edit scopes |
 | `tp.revokePartnerApiKey(keyId)` | Revoke partner key |
 | `tp.listPartnerPortalUsers(limit, offset, search)` | Paginated partner-portal user list |
-| `tp.addUserToPartnerPortal(email, role, permissions)` | Invite with role and permissions |
-| `tp.updatePartnerUserPermissions(userId, role, permissions)` | Update role/permissions (partial OK) |
+| `tp.addUserToPartnerPortal(email, role, permissions)` | Invite with a PARTNER role (`admin` \| `member` \| `viewer`) + all 7 permission keys |
+| `tp.updatePartnerUserPermissions(userId, role, permissions)` | Update role and/or permissions. The map may be `null`, but if supplied it must contain **all 7 keys** — there is no partial update |
 | `tp.removeUserFromPartnerPortal(userId)` | Remove partner-portal user |
 | `tp.resendPartnerPortalInvitationToUser(userId)` | Resend invite email |
 | `tp.getPartnerAuditLogs(limit, offset, search, action, resourceType, resourceId, success, startDate, endDate)` | Filter audit logs |
 | `new TurboDocxClient.Builder()...buildWebhooksClient()` | Construct an admin-scoped `TurboWebhooks` (no `senderEmail` required) |
-| `webhooks.createWebhook(urls, events)` | Subscribe the org to events (HTTPS URLs only) |
+| `webhooks.createWebhook(urls, events)` | Subscribe the org to events. `urls`: 1–10 HTTPS URLs; `events`: at least 1. Requires an **administrator** API key |
 | `webhooks.getWebhook()` | Get the org's signature webhook + delivery stats |
-| `webhooks.updateWebhook(urls, events, isActive)` | Patch URLs / events / isActive (pass `null` to skip) |
+| `webhooks.updateWebhook(urls, events, isActive)` | Patch URLs / events / isActive (pass `null` to skip). A non-null `urls`/`events` still has to be non-empty — an empty list is a 400 |
 | `webhooks.deleteWebhook()` | Soft-delete the webhook |
 | `webhooks.testWebhook(eventType, payload)` | Fire a test delivery; surfaces per-URL errors |
 | `webhooks.notifyWebhook(eventType, payload)` | Manual notify; same backend handler as testWebhook |
@@ -1028,17 +1165,17 @@ try {
 | `tq.sendQuoteWithDeliverable(id, req)` | Send quote and attach a TurboDocx deliverable |
 | `tq.declineQuote(id, req)` | Decline a quote (reason required) |
 | `tq.voidQuote(id, req)` | Void a quote (reason required) |
-| `tq.handleExpiredQuote(id, req)` | Handle an expired sent quote (action + optional newValidUntil) |
+| `tq.handleExpiredQuote(id, req)` | Void or decline an expired sent quote and re-issue it as a duplicate. `action` is `"void"` \| `"decline"` only; `reason` (max 190) and `newValidUntil` (ISO date) are both required |
 | `tq.listLineItems(quoteId)` | List line items on a quote |
-| `tq.addLineItems(quoteId, item)` | Add one or more line items (single or `List` overload) |
-| `tq.addBundleLineItems(quoteId, items)` | Add bundle line items to a quote |
+| `tq.addLineItems(quoteId, item)` | Add 1–50 product line items (single or `List` overload). `productId` (may be null), `productName`, `unitPrice`, `billingFrequency` all required |
+| `tq.addBundleLineItems(quoteId, items)` | Add 1–50 bundle line items; each needs only `bundleId` + `bundleName` (the server expands the children) |
 | `tq.updateLineItem(quoteId, itemId, req)` | Update a line item |
 | `tq.removeLineItem(quoteId, itemId)` | Remove a line item |
 | `tq.listProducts(options)` | List products in the catalog |
-| `tq.createProduct(req)` | Create a product (supports image upload via multipart) |
-| `tq.bulkCreateProducts(rows)` | Bulk-import products; returns a partial-success `BulkImportResult` |
+| `tq.createProduct(req)` | Create a product; `categoryId` required (supports image upload via multipart — max 5 images, 2 MB each) |
+| `tq.bulkCreateProducts(rows)` | Bulk-import products; each row needs `name`, `categoryId` (UUID), `listPrice`, `billingFrequency`. Returns a partial-success `BulkImportResult` |
 | `tq.getProduct(id)` | Get product by ID |
-| `tq.updateProduct(id, req)` | Update a product |
+| `tq.updateProduct(id, req)` | Update a product (max 5 images, 2 MB each) |
 | `tq.deleteProduct(id)` | Delete a product |
 | `tq.duplicateProduct(id)` | Duplicate a product |
 | `tq.getProductPrimaryImages(productIds)` | Batch-fetch primary images for product IDs |
@@ -1070,11 +1207,11 @@ try {
 | `tq.updateContact(id, req)` | Update a contact |
 | `tq.deleteContact(id)` | Delete a contact |
 | `tq.listTemplates(options)` | List quote templates |
-| `tq.getTemplate()` | Get the org's singleton quote template |
+| `tq.getTemplate()` | Get the org's singleton quote template. Self-heals: auto-creates one from org branding if none exists, so it always returns a template |
 | `tq.getTemplateById(id)` | Get a specific quote template by ID |
-| `tq.createTemplate(req)` | Create a quote template |
-| `tq.updateTemplate(id, req)` | Update a quote template |
-| `tq.deleteTemplate(id)` | Delete a quote template |
+| `tq.createTemplate(req)` | Effectively unreachable — the template is auto-provisioned, so this throws 400 `TEMPLATE_ALREADY_EXISTS` on any established org. Use `getTemplate()` → `updateTemplate()` |
+| `tq.updateTemplate(id, req)` | Update a quote template — this is how you customize it |
+| `tq.deleteTemplate(id)` | Reset to org branding defaults (soft-delete; the next `getTemplate()` regenerates one) |
 | `tq.listTypes(options)` | List quote types |
 | `tq.createType(req)` | Create a quote type |
 | `tq.bulkCreateTypes(rows)` | Bulk-import types/categories; returns a partial-success `BulkImportResult` |
@@ -1094,17 +1231,30 @@ try {
 - **File input** accepts: `byte[]`, file path `String`, URL `String`, or `InputStream`
 - **`signUrl`** — each `RecipientResponse` in the `sendSignature`/`createSignatureReviewLink` response has a `getSignUrl()` method: the personal signing link for that recipient. `CreateSignatureReviewLinkResponse` also has `getPreviewUrl()` for document-level preview.
 - **`resendEmail` takes recipient UUIDs** (`List<String>`), not email addresses — fetch them from the send/review response or `getAuditTrail`.
+- **`download` is a two-step operation.** `GET /api/signature/:id/download` returns JSON `{"downloadUrl", "fileName"}` — not bytes — and the presigned `downloadUrl` must then be fetched **without an `Authorization` header** (S3 rejects a presigned request that also carries one). The SDK does both steps for you; hand-rolled REST calls must too.
+- **Two different role enums — do not mix them.** Organization users and organization API keys take `"admin" | "contributor" | "user" | "viewer"`. Partner-portal users take `"admin" | "member" | "viewer"`. `"member"` is not a valid org role, and `"contributor"` / `"user"` are not valid partner roles — either mistake is a 400.
+- **Partner `permissions` has no partial update.** The map argument may be `null` on `updatePartnerUserPermissions`, but every key inside it is required by the backend, so a non-null map must contain **all seven**: `canManageOrgs`, `canManageOrgUsers`, `canManagePartnerUsers`, `canManageOrgAPIKeys`, `canManagePartnerAPIKeys`, `canUpdateEntitlements`, `canViewAuditLogs`. A `Map.of(...)` with a subset is a 400. To flip one flag, read the user's current permissions and copy all 7 across; to change only the role, pass `null` for the map.
+- **`updateOrganizationEntitlements` takes `features` and `tracking` — the two key sets are not interchangeable.** `features` holds capability/limit columns (`maxUsers`, `maxStorage`, `maxAPIKeys`, `hasTDAI`, …); `tracking` holds usage counters, which use the `num*` names: `numUsers`, `numProjectspaces`, `numTemplates`, `storageUsed`, `numGeneratedDeliverables`, `numSignaturesUsed`, `numQuotesSent`, `currentAICredits`. A `maxUsers` key inside `tracking` is rejected. `currentAICredits` accepts `-1` (unlimited); every other counter floors at 0.
 - **TurboWebhooks needs an admin TDX- key** — the backend route gate is `requireOrgRole(administrator)`. Non-admin keys return `AuthorizationException` (403).
 - **`WebhookSignatureVerifier` is a static utility** (final class, private constructor) — Java has no free functions, so call it as `WebhookSignatureVerifier.verify(...)`. Semantically equivalent to the free-function form in JS / Py / Go / PHP.
 - **Read raw bytes for signature verification.** In Spring, bind to `@RequestBody byte[] rawBody` — never `Map`/DTO. Jackson would re-serialize and whitespace mismatch breaks HMAC. In Servlets, use `request.getInputStream().readAllBytes()`.
 - **One webhook per org, fixed name `signature`.** There is no `listWebhooks` method by design — the SDK stays in sync with the dashboard's Signature Webhooks page. Use the REST API directly for multi-webhook setups.
 - **Webhook secrets are shown ONCE** — capture `created.get("secret").getAsString()` immediately. `regenerateWebhookSecret()` returns a new one and invalidates the old immediately.
 - **HTTPS-only URLs** — `http://` returns `ValidationException` (400).
+- **`urls` is 1–10, `events` is 1+ — on create AND on update.** `null` means "leave unchanged" on `updateWebhook`, but an **empty list is not null**: a non-null `urls`/`events` still has to satisfy the minimum, so `Collections.emptyList()` is a 400. Pass `null` to skip a field.
 - **Catch `ConflictException` (409) on `createWebhook`** — the signature webhook may already exist from a previous run; update or delete instead.
 
 - **TurboQuote decimal fields come back as numbers, not strings.** The Java `ResponseNormalizer` (`FlexIntAdapter`) coerces string-serialized decimals (`listPrice`, `unitPrice`, `discountPercent`, `grandTotal`, `subtotal`, etc.) to `double`. Do not attempt to parse them manually from the raw JSON.
 - **`PATCH` null-clears nullable fields.** On `updateQuote`, `updateLineItem`, and similar PATCH methods, explicitly setting a field to `null` sends `null` in the request body and clears the value on the server. Fields you never set are omitted from the request entirely and left unchanged. This matters for fields like `priceBookId`, `validUntil`, and `taxRate`.
 - **`discountType` must be `"percent"` or `"amount"`.** Use the `DiscountType` enum constants (`DiscountType.PERCENT` / `DiscountType.AMOUNT`) to avoid silent 400 errors. Passing a raw string bypasses compile-time checking.
+- **Every product line item needs four fields: `productId`, `productName`, `unitPrice`, `billingFrequency`.** `productId` must be *set*, but its value may be `null` — that is how you add a custom, non-catalog item. `quantity` defaults to 1.
+- **Three distinct bundle shapes — don't conflate them.** `createBundle`'s `items` (`BundleItemInput`, the catalog bundle contents) need `productId`, `unitPrice`, `billingFrequency` and nothing else — there is no product name on a bundle item. `addBundleLineItems` (attaching a bundle to a quote) needs only `bundleId` + `bundleName`; the server expands the child products for you.
+- **Line-item list limits: `addLineItems` and `addBundleLineItems` accept 1–50 items per call; reorder accepts up to 200.** Chunk larger imports.
+- **`termDays` defaults to 60** (not 30), maxes out at 3650, and `-1` means auto-renewal. `renewalPeriod` (the `RenewalPeriod` enum: `WEEKLY` / `MONTHLY` / `QUARTERLY` / `ANNUALLY`) is **required when `termDays` is -1** and must be null for any other `termDays` — setting it otherwise is a 400.
+- **`handleExpiredQuote` only accepts `action` `"void"` or `"decline"`.** `"extend"` and `"resend"` do not exist in the API and return a 400. `reason` (max 190 chars) and `newValidUntil` (ISO date) are both required — neither is optional; the endpoint voids/declines the original and issues a duplicate carrying the new date, and that duplicate *is* the "extend".
+- **Quote templates are auto-provisioned.** `getTemplate()` self-heals — it creates one from org branding when none exists — so `createTemplate()` on an established org throws 400 `TEMPLATE_ALREADY_EXISTS` and is effectively unreachable. Always do `getTemplate()` → `updateTemplate()`. `deleteTemplate()` is a reset-to-branding-defaults, not a permanent removal.
+- **Product images: max 5 per product, 2 MB each.** Exceeding either returns 400 `MAX_IMAGES_EXCEEDED`.
 - **Bulk creates are partial-success, not transactional.** `bulkCreateProducts`/`bulkCreatePriceBooks`/`bulkCreateBundles`/`bulkCreateCompanies`/`bulkCreateContacts`/`bulkCreateTypes` never throw on a bad row — read `result.getFailed()` (`List<BulkImportRowIssue>` with 1-indexed `getRow()` + `getReason()`) and `result.getAdjusted()`; earlier rows are not rolled back. Cap is 500 rows/request (over → `ValidationException` 400). Admin + contributor keys only.
+- **Bulk product rows take `categoryId`, never a category name.** The row schema is strict and rejects unknown keys. Resolve or create the category with `listTypes()` / `createType()` first and pass its UUID. Required per row: `name`, `categoryId`, `listPrice`, `billingFrequency`.
 
 **Full API reference:** https://docs.turbodocx.com/docs

@@ -200,8 +200,8 @@ Create working route handlers / endpoint code for the selected product(s). The l
 - `updateOrganizationEntitlements()` endpoint — set features/tracking (the request body shape is `{ features?, tracking? }`, not bare features)
 
 **For TurboQuote, generate:**
-- `createQuote()` endpoint — accepts `name`, `companyId`, `contactId` (+ optional `currency`/`termDays`/`validUntil`/`taxRate`); returns the new quote
-- `addLineItems()` endpoint — add product line items (single object or array) to a quote
+- `createQuote()` endpoint — accepts `name`, `companyId`, `contactId` (+ optional `currency`/`termDays`/`validUntil`/`taxRate`); returns the new quote. `termDays` defaults to **60**; `renewalPeriod` is required only when `termDays` is `-1` (auto-renewal) and must be omitted otherwise
+- `addLineItems()` endpoint — add product line items (single object or array, max 50) to a quote. `productId`, `productName`, `unitPrice`, and `billingFrequency` are **all required** on every item — `productId` must be present but may be `null` for a custom, non-catalog item
 - `sendQuote()` endpoint — send a quote for review; returns `{ quote, message }`
 - `downloadQuotePdf()` endpoint — stream the quote PDF (raw bytes per language)
 - If the user is building a catalog, also scaffold `createProduct()` / `createBundle()` / `createPriceBook()` + `applyPriceBook()`. TurboQuote configures with `apiKey` + `orgId` only — no `senderEmail` (quotes are not signature emails).
