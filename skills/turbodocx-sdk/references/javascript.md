@@ -463,7 +463,43 @@ for (const entry of logs.data.results) {
 
 ## TurboWebhooks
 
-TurboWebhooks subscribes a single per-org HTTPS endpoint (locked to the name `signature`) to TurboDocx events such as `signature.document.completed` and `signature.document.voided`. The SDK is intentionally one-webhook-per-org to mirror the dashboard's Signature Webhooks page.
+TurboWebhooks subscribes a single per-org HTTPS endpoint (locked to the name `signature`) to TurboSign document events. The SDK is intentionally one-webhook-per-org to mirror the dashboard's Signature Webhooks page.
+
+### Webhook events
+
+TurboSign dispatches **7** events. All of them are live — subscribe to whichever your integration needs.
+
+| Event (wire string) | Fires when |
+|---|---|
+| `signature.document.sent` | The document is dispatched to recipients |
+| `signature.document.viewed` | A recipient opens the document for the first time |
+| `signature.document.recipient_signed` | An individual signer completes their signature — fires **once per signer** |
+| `signature.document.signed` | A signer signs but the document is **not yet complete** (document-level partial progress) |
+| `signature.document.completed` | All recipients have signed and the signed PDF is finalized |
+| `signature.document.finalization_failed` | The signed PDF fails to finalize (e.g. KMS signing error); the document is **not** completed |
+| `signature.document.voided` | The document is voided or cancelled |
+
+The SDK exports these as first-class constants — `import { WebhookEvents, WEBHOOK_EVENTS, type WebhookEvent } from '@turbodocx/sdk'`. `WebhookEvents` is a const object (`WebhookEvents.SENT`, `.VIEWED`, `.RECIPIENT_SIGNED`, `.SIGNED`, `.COMPLETED`, `.FINALIZATION_FAILED`, `.VOIDED`), `WEBHOOK_EVENTS` is an array of all 7, and `WebhookEvent` is the union type. Use them for autocomplete instead of stringly-typed names — `WebhookEvents.COMPLETED === 'signature.document.completed'`. The literal wire strings above are what actually travel in the `eventType` field of the delivered payload, and they are always accepted by `createWebhook`/`updateWebhook`. `getWebhook()` also returns an `availableEvents` array — the backend advertises the live catalog at runtime.
+
+#### Lifecycle: `recipient_signed` vs `signed` vs `completed`
+
+This is the part integrations get wrong. On **every** signature, `recipient_signed` fires first. Then exactly one of `signed`, `completed`, or `finalization_failed` follows:
+
+```
+Recipient signs
+   │
+   ├─ signature.document.recipient_signed   (always — one per signer)
+   │
+   └─ more signers remaining?
+        ├─ yes → signature.document.signed                 (partial progress)
+        └─ no  → signature.document.completed              (finalized OK)
+                 or signature.document.finalization_failed (finalization failed)
+```
+
+- **`recipient_signed`** is the **per-person** event. It fires once for every signer, *including the last one*, and carries the signer's identity plus `is_final_signer` (true only on the last signature) and `remaining_signers`.
+- **`signed`** is a **document-level partial-progress** event. It fires **only when a signer signs and the document is NOT yet complete**.
+- **`signed` never fires on the final signature.** To detect "the whole document is done", use `completed` (or `recipient_signed` with `is_final_signer: true`) — **never** `signed`.
+- **A single-signer document never emits `signed` at all.** It emits `recipient_signed` (`is_final_signer: true`) and then `completed`.
 
 ### TurboWebhooks.configure
 
@@ -483,7 +519,16 @@ TurboWebhooks.configure({
 ```typescript
 const created = await TurboWebhooks.createWebhook({
   urls: ['https://your-server.example.com/webhooks/turbodocx'],  // must be HTTPS
-  events: ['signature.document.completed', 'signature.document.voided'],
+  events: [
+    'signature.document.sent',
+    'signature.document.viewed',
+    'signature.document.recipient_signed',   // once per signer; carries is_final_signer
+    'signature.document.completed',          // the ONLY reliable "document is done" signal
+    'signature.document.finalization_failed',
+    'signature.document.voided',
+    // 'signature.document.signed',          // add only if you want partial-progress pings;
+    //                                       // it never fires on the final signature
+  ],
 });
 
 // Returned secret is shown ONCE — store it server-side immediately.
