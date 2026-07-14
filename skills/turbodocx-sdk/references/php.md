@@ -562,7 +562,7 @@ TurboSign dispatches **7** events. All of them are live — subscribe to whichev
 | `signature.document.finalization_failed` | The signed PDF fails to finalize (e.g. KMS signing error); the document is **not** completed |
 | `signature.document.voided` | The document is voided or cancelled |
 
-The SDK exposes these as a native PHP 8.1 backed enum, `TurboDocx\Types\Enums\WebhookEvent`. Read the wire string off a case with `->value` (`WebhookEvent::COMPLETED->value === 'signature.document.completed'`); `WebhookEvent::all()` returns every case and `WebhookEvent::values()` returns all 7 wire strings ready to pass as `events:`. The literal wire strings above are what actually travel in the `eventType` field of the delivered payload, and they are always accepted by `createWebhook()`/`updateWebhook()`. `getWebhook()` also returns an `availableEvents` array — the backend advertises the live catalog at runtime.
+The SDK exposes these as a native PHP 8.1 backed enum, `TurboDocx\Types\Enums\WebhookEvent`. Read the wire string off a case with `->value` (`WebhookEvent::COMPLETED->value === 'signature.document.completed'`); `WebhookEvent::all()` returns all 7 **wire strings** ready to pass straight as `events:`, and `WebhookEvent::values()` is an alias of it. Use the native `WebhookEvent::cases()` if you want the enum cases themselves. The literal wire strings above are what actually travel in the `eventType` field of the delivered payload, and they are always accepted by `createWebhook()`/`updateWebhook()`. `getWebhook()` also returns an `availableEvents` array — the backend advertises the live catalog at runtime.
 
 ### Lifecycle: `recipient_signed` vs `signed` vs `completed`
 
