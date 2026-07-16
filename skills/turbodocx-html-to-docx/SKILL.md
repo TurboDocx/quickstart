@@ -3,7 +3,7 @@ name: turbodocx-html-to-docx
 description: Set up @turbodocx/html-to-docx to convert HTML to Microsoft Word (.docx) documents in a Node.js project. Use this skill when the user wants to generate DOCX files from HTML, add document generation to their app, convert HTML templates to Word documents, or integrate TurboDocx html-to-docx into their project. Also trigger for mentions of HTML-to-Word, HTML-to-DOCX, document generation, report generation from HTML, or any request involving the @turbodocx/html-to-docx package.
 metadata:
   author: TurboDocx
-  version: "1.2.0"
+  version: "1.3.0"
 license: MIT
 ---
 
@@ -75,6 +75,15 @@ The helper should:
 - Export a function like `generateDocx(html, options?)` that calls `HTMLtoDOCX` and returns a `Buffer`
 - Include commonly useful defaults (font, margins) that the user can override
 - Use TypeScript if the project uses TypeScript
+
+**Styling:** when you write example or template HTML, prefer inline `style="..."`
+attributes — they are the most reliable, predictable way to style a generated
+DOCX and the form the library resolves everything to internally. A CSS stylesheet
+is also supported via `documentOptions.css`, but treat it as secondary: reach for
+it only when the user already has a stylesheet, explicitly wants class/selector
+styling, or is generating highly repetitive markup. See the "Styling: inline
+styles vs. CSS stylesheet" section in `references/usage.md` for the trade-offs
+and the `css` option's limits (`!important` and `@media` are not supported).
 
 ### Step 4.4: Generate integration code
 
