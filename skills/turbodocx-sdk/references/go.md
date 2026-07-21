@@ -33,13 +33,15 @@ import turbodocx "github.com/TurboDocx/SDK/packages/go-sdk"
 client, err := turbodocx.NewClientWithConfig(turbodocx.ClientConfig{
     APIKey:      os.Getenv("TURBODOCX_API_KEY"),
     OrgID:       os.Getenv("TURBODOCX_ORG_ID"),
-    SenderEmail: os.Getenv("TURBODOCX_SENDER_EMAIL"),
-    SenderName:  os.Getenv("TURBODOCX_SENDER_NAME"),
+    SenderEmail: os.Getenv("TURBODOCX_SENDER_EMAIL"), // REQUIRED for TurboSign
+    SenderName:  os.Getenv("TURBODOCX_SENDER_NAME"),  // optional — defaults to the API key's name
 })
 if err != nil {
     log.Fatal(err)
 }
 ```
+
+`SenderEmail` is **required**: `NewClientWithConfig` returns a `*turbodocx.ValidationError` without it (config value first, then `TURBODOCX_SENDER_EMAIL`). `SenderName` is **optional** — when omitted, the sender name shown in signature emails and the audit trail resolves to **the name of your API key**.
 
 ## TurboSign Usage
 
@@ -83,10 +85,9 @@ if err != nil {
 }
 
 fmt.Printf("Status: %s\n", status.Status)
-for _, r := range status.Recipients {
-    fmt.Printf("  %s: %s\n", r.Email, r.Status)
-}
 ```
+
+`GetStatus` returns `*turbodocx.DocumentStatusResponse`, which carries **only** a `Status` string — there is no `Recipients` slice on it. For per-recipient state use `GetAuditTrail`.
 
 ### Download
 
@@ -130,9 +131,9 @@ if err != nil {
 
 fmt.Printf("Document ID: %s\n", review.DocumentID)
 fmt.Printf("Preview URL: %s\n", review.PreviewURL)  // open to review field placement
-// Each recipient also has a SignURL for their personal signing link
+// review.Recipients is []turbodocx.ReviewRecipient — ID / Name / Email / Metadata
 for _, r := range review.Recipients {
-    fmt.Printf("  %s: %s\n", r.Name, r.SignURL)
+    fmt.Printf("  %s  %s  %s\n", r.ID, r.Name, r.Email)
 }
 ```
 
@@ -570,6 +571,7 @@ package handlers
 
 import (
     "encoding/json"
+    "errors"
     "io"
     "net/http"
 
@@ -884,7 +886,9 @@ TurboQuote is TurboDocx's CPQ (Configure, Price, Quote) module — manage compan
 
 ### Configuration
 
-`NewQuoteClient` does NOT require `SenderEmail` — quote operations do not send signature emails. `OrgID` is optional in config but the backend returns 401 if it is missing (set `TURBODOCX_ORG_ID` or pass it explicitly).
+`QuoteClientConfig` has **no** `SenderEmail` / `SenderName` field — the quote sender is resolved server-side, not per call. `OrgID` is optional in config but `NewQuoteClient` returns an `*turbodocx.AuthenticationError` if it can't be resolved (set `TURBODOCX_ORG_ID` or pass it explicitly).
+
+**Sending a quote DOES create a signature request and email the recipient.** The sender identity comes from the org's **quote template** (Quote Settings), with the quote's creator as the fallback. An API key has no mailbox of its own, so for an API-key caller the sender email can only come from the template: if the template has no sender email, `CreateQuote` / `DuplicateQuote` / `SendQuote` return a 400 `SenderEmailRequired`. Set it once with `UpdateTemplate` (`SenderEmail` / `SenderName`) and every later call resolves cleanly.
 
 ```go
 qc, err := turbodocx.NewQuoteClient(turbodocx.QuoteClientConfig{
@@ -992,6 +996,18 @@ if err != nil {
 fmt.Printf("Status: %s  Message: %s\n", sent.QuoteResult.Status, sent.Message)
 // sent.QuoteResult.Status == "sent"
 ```
+
+Sending emails the contact and creates a signature request. Each precondition fails with its own 400 `*turbodocx.ValidationError` — branch on `Code`:
+
+| `Code` | Meaning |
+|---|---|
+| `QuoteNotSendable` | Only draft quotes can be sent |
+| `QuoteValidUntilRequired` | The quote has no `validUntil` date |
+| `QuoteExpired` | The quote is past its `validUntil` date |
+| `QuoteHasNoLineItems` | Add at least one line item first |
+| `QuoteContactRequired` | The quote's contact is missing a name or email |
+| `QuoteCustomerInactive` | The company or contact was deleted/deactivated |
+| `SenderEmailRequired` | No sender email on the org quote template (see Configuration) |
 
 ### HandleExpiredQuote
 
@@ -1193,7 +1209,11 @@ if err != nil {
     var nf      *turbodocx.NotFoundError
     var rate    *turbodocx.RateLimitError
     switch {
-    case errors.As(err, &valErr):  // 400 — e.g. quote not in a sendable status
+    case errors.As(err, &valErr):
+        // 400 — Code is one of QuoteNotSendable, QuoteValidUntilRequired, QuoteExpired,
+        // QuoteHasNoLineItems, QuoteContactRequired, QuoteCustomerInactive,
+        // SenderEmailRequired — or the class default VALIDATION_ERROR.
+        fmt.Println(valErr.Code, valErr.Message)
     case errors.As(err, &auth):    // 401 — bad / revoked API key or missing OrgID
     case errors.As(err, &nf):      // 404 — quote does not exist
     case errors.As(err, &rate):    // 429 — back off and retry
@@ -1208,25 +1228,33 @@ import "errors"
 
 result, err := client.TurboSign.SendSignature(ctx, req)
 if err != nil {
+    var valErr *turbodocx.ValidationError      // 400
+    var auth   *turbodocx.AuthenticationError  // 401
+    var authz  *turbodocx.AuthorizationError   // 403
+    var nf     *turbodocx.NotFoundError        // 404
+    var conf   *turbodocx.ConflictError        // 409
+    var rate   *turbodocx.RateLimitError       // 429
+    var netErr *turbodocx.NetworkError         // never reached the server
+
+    switch {
+    case errors.As(err, &valErr):  // e.g. missing SenderEmail
+    case errors.As(err, &auth):    // invalid / revoked API key
+    case errors.As(err, &authz):   // key lacks the required role
+    case errors.As(err, &nf):      // document / org not found
+    case errors.As(err, &conf):    // resource already exists
+    case errors.As(err, &rate):    // back off and retry
+    case errors.As(err, &netErr):  // connection failure
+    }
+
+    // Or handle generically — every typed error embeds TurboDocxError.
     var tdxErr *turbodocx.TurboDocxError
     if errors.As(err, &tdxErr) {
-        // tdxErr.Code       — machine-readable error code
-        // tdxErr.Message    — human-readable description
-        // tdxErr.StatusCode — HTTP status
-
-        switch {
-        case errors.As(err, new(*turbodocx.AuthenticationError)):
-            // Invalid/missing API key
-        case errors.As(err, new(*turbodocx.ValidationError)):
-            // Bad request (e.g., missing SenderEmail)
-        case errors.As(err, new(*turbodocx.NotFoundError)):
-            // Document/org not found
-        case errors.As(err, new(*turbodocx.RateLimitError)):
-            // Too many requests
-        }
+        fmt.Println(tdxErr.Code, tdxErr.StatusCode, tdxErr.Message)
     }
 }
 ```
+
+Every typed error embeds `turbodocx.TurboDocxError`, so `Code` (string), `Message` (string) and `StatusCode` (int) are available on all of them. **`Code` is always populated** — the API's code when it sends one, otherwise the class default: `VALIDATION_ERROR`, `AUTHENTICATION_ERROR`, `AUTHORIZATION_ERROR`, `NOT_FOUND`, `CONFLICT`, `RATE_LIMIT_EXCEEDED`, `NETWORK_ERROR`. Branch on it without a nil check.
 
 ## Method Reference
 
@@ -1234,7 +1262,7 @@ if err != nil {
 |--------|-------------|
 | `client.TurboSign.SendSignature(ctx, req)` | Send document for e-signature |
 | `client.TurboSign.CreateSignatureReviewLink(ctx, req)` | Preview without emails |
-| `client.TurboSign.GetStatus(ctx, id)` | Get document + recipient status |
+| `client.TurboSign.GetStatus(ctx, id)` | Get document-level status only (no recipients) |
 | `client.TurboSign.Download(ctx, id)` | Download signed PDF as []byte |
 | `client.TurboSign.VoidDocument(ctx, id, reason)` | Cancel a signature request (reason required) |
 | `client.TurboSign.ResendEmail(ctx, id, recipientIDs)` | Resend signature email to recipient UUIDs |
@@ -1288,7 +1316,7 @@ if err != nil {
 | `turbodocx.NewQuoteClient(cfg)` | Construct a TurboQuote client (no SenderEmail required) |
 | `qc.ListQuotes(ctx, opts)` | Paginated quote list with filters |
 | `qc.CreateQuote(ctx, req)` | Create a new quote (status: draft) |
-| `qc.GetQuote(ctx, id)` | Get quote + merged statusInfo |
+| `qc.GetQuote(ctx, id)` | Get quote + merged `statusInfo` and `preparedBy` (single-quote fetch only) |
 | `qc.UpdateQuote(ctx, id, req)` | Patch quote fields; use `ClearPriceBookID()` etc. to null-clear |
 | `qc.DeleteQuote(ctx, id)` | Delete a quote |
 | `qc.DuplicateQuote(ctx, id)` | Duplicate a quote |
@@ -1358,11 +1386,12 @@ if err != nil {
 ## Gotchas
 
 - **Go SDK uses instance methods**, not static methods — create a client first with `NewClientWithConfig`
-- **`SenderEmail` is required** in ClientConfig for TurboSign operations
+- **`SenderEmail` is required** in `ClientConfig` for TurboSign operations — `NewClientWithConfig` returns a `*turbodocx.ValidationError` without it. **`SenderName` is optional**; when omitted the sender name resolves to **the name of your API key**.
 - **Context is required** for all API calls — pass `context.Background()` or request context
 - **Helper functions** `turbodocx.IntPtr()` and `turbodocx.BoolPtr()` for optional pointer fields. There is **no** exported `StringPtr` — take the address of a local variable (`s := "x"; &s`) for `*string` fields.
 - **File input** accepts: `[]byte`, file path string, or URL string
-- **`SignURL`** — each `Recipient` in the `SendSignature`/`CreateSignatureReviewLink` response has a `SignURL` field: the personal signing link for that recipient. `CreateSignatureReviewLink` also returns a top-level `PreviewURL` for document-level preview.
+- **`SendSignature` / `CreateSignatureReviewLink` recipients are `[]turbodocx.ReviewRecipient`** — `ID`, `Name`, `Email`, `Metadata`. There is **no** `SignURL` field on them (`SignURL` lives on `turbodocx.RecipientResponse`, a separate type). `CreateSignatureReviewLink` returns a top-level `PreviewURL` for document-level preview.
+- **`GetStatus` returns only a `Status` string** — `turbodocx.DocumentStatusResponse` has no `Recipients` slice. Use `GetAuditTrail` for per-recipient detail.
 - **`ResendEmail` takes recipient UUIDs** (`[]string`), not email addresses — fetch them from the send/review response recipients or from `GetAuditTrail`.
 - **`Download` is a two-step operation.** `GET /api/signature/:id/download` returns JSON `{"downloadUrl", "fileName"}` — not bytes — and the presigned `downloadUrl` must then be fetched **without an `Authorization` header** (S3 rejects a presigned request that also carries one). The SDK does both steps for you; hand-rolled REST calls must too.
 - **Two different role enums — do not mix them.** Organization users and organization API keys take `"admin" | "contributor" | "user" | "viewer"`. Partner-portal users take `"admin" | "member" | "viewer"`. `"member"` is not a valid org role, and `"contributor"` / `"user"` are not valid partner roles — either mistake is a 400.
@@ -1376,6 +1405,9 @@ if err != nil {
 - **Read the raw request body in your receiver, not the decoded JSON.** Use `io.ReadAll(r.Body)`. `VerifyWebhookSignature` is computed over the raw bytes; a re-marshal will not match.
 - **`VerifyWebhookSignature` is a free function**, not a method on a client — it has no `APIKey` / `OrgID` dependency. Pass `nil` for `opts` to use the default 300-second tolerance.
 - **`ConflictError` (HTTP 409)** — returned by `CreateWebhook` when a webhook with the same name already exists for the org. Discriminate it with `errors.As(err, new(*turbodocx.ConflictError))`.
+- **Sending a quote DOES email the recipient and create a signature request.** `QuoteClientConfig` has no `SenderEmail`/`SenderName` because the sender is resolved server-side from the org's **quote template** (Quote Settings), falling back to the quote creator. An API key has no mailbox, so an API-key caller whose template has no sender email gets a 400 `SenderEmailRequired` from `CreateQuote` / `DuplicateQuote` / `SendQuote`. Fix it once with `UpdateTemplate` (`SenderEmail`, `SenderName`).
+- **`PreparedBy` is only on the single-quote fetch.** `GetQuote` folds the server-resolved sender identity onto `quote.PreparedBy` (`*turbodocx.QuotePreparedBy` with `Name *string` / `Email *string`). List responses do not carry it, and both fields can be nil for an API-created quote — render a placeholder. Prefer it over `Creator` for customer-facing display; `Creator` may be the internal API service account.
+- **`SendQuote` preconditions each have their own 400 code:** `QuoteNotSendable`, `QuoteValidUntilRequired`, `QuoteExpired`, `QuoteHasNoLineItems`, `QuoteContactRequired`, `QuoteCustomerInactive`, `SenderEmailRequired`. Read `valErr.Code` rather than string-matching the message.
 - **TurboQuote decimal fields are `float64`**, not strings — the response normalizer coerces backend string decimals (e.g. `"499.00"`) to `float64` before unmarshalling into `Quote`, `LineItem`, `Product`, etc. Do not expect string values for `unitPrice`, `listPrice`, `grandTotal`, `taxRate`, or any other monetary/percentage field.
 - **PATCH null-clears on `UpdateQuoteRequest` require explicit helper calls.** Go omits nil pointer fields by default. To send `"priceBookId": null`, `"validUntil": null`, `"taxRate": null`, or `"renewalPeriod": null`, call the corresponding method (`ClearPriceBookID()`, `ClearValidUntil()`, etc.) on the request before passing it to `UpdateQuote`. Setting the pointer to `nil` alone is not sufficient.
 - **`discountType` is `"percent"` or `"amount"`.** Use the typed constants `turbodocx.DiscountTypePercent` and `turbodocx.DiscountTypeAmount` when setting discounts on line items or bundles to avoid silent backend validation errors.

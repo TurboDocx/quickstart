@@ -9,9 +9,19 @@ TurboSign, Deliverable, TurboWebhooks, and TurboQuote share the same API key + o
 | `TURBODOCX_API_KEY` | TurboSign, Deliverable, TurboWebhooks, TurboQuote | API key from your TurboDocx dashboard |
 | `TURBODOCX_ORG_ID` | TurboSign, Deliverable, TurboWebhooks, TurboQuote | Organization UUID from your dashboard |
 | `TURBODOCX_SENDER_EMAIL` | TurboSign only | Reply-to email for signature request emails. **Must be a verified email.** |
-| `TURBODOCX_SENDER_NAME` | No | Display name on signature emails (defaults to org name) |
+| `TURBODOCX_SENDER_NAME` | No | Display name on signature emails (defaults to your API key's name) |
+| `TURBODOCX_WEBHOOK_SECRET` | TurboWebhooks receivers | HMAC secret returned **once** by `createWebhook` / `regenerateWebhookSecret`. Not read by the SDK — your receiver passes it to `verifyWebhookSignature`. |
 
-Deliverable, TurboWebhooks, and TurboQuote do not send signature emails, so they don't need the sender variables — only `TURBODOCX_API_KEY` + `TURBODOCX_ORG_ID`.
+## Optional / Advanced
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `TURBODOCX_BASE_URL` | No | Overrides the API host (defaults to `https://api.turbodocx.com`). Read automatically by every SDK. |
+| `TURBODOCX_ACCESS_TOKEN` | No | OAuth2 access token, an alternative to `TURBODOCX_API_KEY`. Supply one or the other, not both. |
+
+Deliverable and TurboWebhooks don't need the sender variables — only `TURBODOCX_API_KEY` + `TURBODOCX_ORG_ID`.
+
+TurboQuote doesn't need them either, but for a different reason: sending a quote **does** create a signature request and email the recipient — the sender just comes from your **organization's quote template** (Quote Settings) rather than from these variables. Configure a sender email there, or quote create/duplicate/send is rejected with `400 SenderEmailRequired`.
 
 ## TurboPartner Variables
 

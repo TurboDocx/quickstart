@@ -58,7 +58,7 @@ TurboDocxSdk::TurboSign.configure(
 )
 ```
 
-`sender_email` is **required** — without it a `TurboDocxSdk::ValidationError` is raised. `sender_name` is optional (defaults to a generic API sender). An optional `base_url:` overrides the API host.
+`sender_email` is **required** — without it a `TurboDocxSdk::ValidationError` is raised. `sender_name` is optional; when omitted it resolves to **your API key's name**, so name your keys recognisably. An optional `base_url:` overrides the API host.
 
 ### TurboSign.create_signature_review_link
 
@@ -78,7 +78,8 @@ review = TurboDocxSdk::TurboSign.create_signature_review_link(
 
 puts review["documentId"]
 puts review["previewUrl"]  # open this URL to review the document
-review["recipients"].each { |r| puts "#{r['name']}: #{r['signUrl']}" }
+# Recipients carry id / name / email / metadata — no signUrl. Use previewUrl above.
+review["recipients"].each { |r| puts "#{r['name']} <#{r['email']}> #{r['id']}" }
 ```
 
 ### TurboSign.send_signature
@@ -100,7 +101,7 @@ result = TurboDocxSdk::TurboSign.send_signature(
 )
 
 puts result["documentId"]
-result["recipients"].each { |r| puts "#{r['name']}: #{r['signUrl']}" }
+result["recipients"].each { |r| puts "#{r['name']} <#{r['email']}> #{r['id']}" }
 ```
 
 Fields support either coordinate-based placement (`page` + `x`/`y`/`width`/`height`) or anchor-based placement via `template: { anchor: "{signature1}", placement: "replace", size: { width: 100, height: 30 } }`. The anchor text must literally exist in the document.
@@ -109,8 +110,7 @@ Fields support either coordinate-based placement (`page` + `x`/`y`/`width`/`heig
 
 ```ruby
 status = TurboDocxSdk::TurboSign.get_status("doc-uuid")
-puts status["status"]  # "pending" | "completed" | "voided"
-status["recipients"].each { |r| puts "#{r['name']}: #{r['status']}" }
+puts status["status"]  # "under_review" | "completed" | "voided"
 ```
 
 ### TurboSign.download
@@ -551,7 +551,7 @@ TurboDocxSdk::TurboQuote.configure(
 )
 ```
 
-No `sender_email` — TurboQuote never sends signature emails.
+`TurboQuote.configure` takes **no** `sender_email` / `sender_name` — but that does **not** mean quotes are silent. Sending a quote **does create a signature request and email the recipient**; the sender identity is resolved server-side from your org's **quote template** (Quote Settings), not from the caller. An API key has no mailbox of its own, so if the org's quote template has no sender email set, the call fails with `TurboDocxSdk::ValidationError` (400 `SenderEmailRequired`). Set it once via `update_template` and every later create/duplicate/send resolves. Human (JWT) callers fall back to their own email and are never blocked.
 
 ### create_quote
 
@@ -640,6 +640,29 @@ puts sent["message"]         # "Quote sent successfully"
 puts sent["quote"]["status"] # "sent"
 ```
 
+Sending emails the contact **and** creates a signature request for the quote. Each precondition failure is a `TurboDocxSdk::ValidationError` (400) carrying a specific `e.code`:
+
+| `e.code` | Meaning |
+|---|---|
+| `QuoteNotSendable` | Only draft quotes can be sent |
+| `QuoteValidUntilRequired` | The quote has no `validUntil` date |
+| `QuoteExpired` | The quote is past its `validUntil` date |
+| `QuoteHasNoLineItems` | Add at least one line item first |
+| `QuoteContactRequired` | The quote's contact is missing a name or email |
+| `QuoteCustomerInactive` | The company or contact was deleted/deactivated |
+| `SenderEmailRequired` | No sender email on the org quote template (API-key callers) |
+
+### preparedBy
+
+`get_quote` (the **single**-quote fetch only — not `list_quotes`) merges in a `"preparedBy"` hash with the resolved sender identity. Prefer it over `"creator"` for anything customer-facing; `"email"` may be `nil` for an API-created quote.
+
+```ruby
+quote    = TurboDocxSdk::TurboQuote.get_quote(quote_id)
+prepared = quote["preparedBy"] || {}
+puts prepared["name"]
+puts prepared["email"]  # may be nil — render a placeholder
+```
+
 ### handle_expired_quote
 
 Act on a sent quote whose `validUntil` has passed. **`"action"` accepts exactly two values: `"void"` and `"decline"`.** There is no `"extend"` and no `"resend"` — those are not implemented and return a 400. `"reason"` (max 190 chars) and `"newValidUntil"` (ISO date) are **both required**.
@@ -686,7 +709,7 @@ bundle = TurboDocxSdk::TurboQuote.create_bundle(
   ]
 )
 
-# Price book: name + priceBookTypeId + validFrom + discountPercent are all required
+# Price book: name + priceBookTypeId + validFrom are required; discountPercent is optional
 pb_type = TurboDocxSdk::TurboQuote.create_type(
   "name" => "Partner Pricing", "categoryType" => TurboDocxSdk::CategoryType::PRICEBOOK_TYPE
 )
@@ -812,7 +835,11 @@ TurboDocxSdk::TurboQuote.update_template(template["id"],
 ```ruby
 begin
   TurboDocxSdk::TurboQuote.send_quote(quote_id)
-rescue TurboDocxSdk::ValidationError     # 400 — bad field value or missing required field
+rescue TurboDocxSdk::ValidationError => e # 400 — precondition or bad field
+  # e.code is one of QuoteNotSendable, QuoteValidUntilRequired, QuoteExpired,
+  # QuoteHasNoLineItems, QuoteContactRequired, QuoteCustomerInactive,
+  # SenderEmailRequired, or the default "VALIDATION_ERROR"
+  warn "#{e.code}: #{e.message}"
 rescue TurboDocxSdk::AuthenticationError # 401 — bad / missing API key or org_id
 rescue TurboDocxSdk::AuthorizationError  # 403 — key lacks the required role (e.g. admin-only config)
 rescue TurboDocxSdk::NotFoundError       # 404 — quote or resource not found
@@ -895,11 +922,11 @@ rescue TurboDocxSdk::NotFoundError             # 404 — document/org not found
 rescue TurboDocxSdk::RateLimitError            # 429 — too many requests
 rescue TurboDocxSdk::NetworkError              # connection failure (no status)
 rescue TurboDocxSdk::TurboDocxError => e       # catch-all typed SDK error
-  warn "Error #{e.status_code}: #{e.message}"
+  warn "Error #{e.status_code} #{e.code}: #{e.message}"
 end
 ```
 
-All errors extend `TurboDocxSdk::TurboDocxError` and carry a `status_code` (and `message`). The subtypes map to HTTP status codes:
+All errors extend `TurboDocxSdk::TurboDocxError` and expose `status_code`, `code`, and `message`. `code` is **always** populated — the API's machine-readable code when the response carries one (e.g. `SenderEmailRequired`, `TEMPLATE_ALREADY_EXISTS`, `MAX_IMAGES_EXCEEDED`), otherwise the class default (`VALIDATION_ERROR`, `AUTHENTICATION_ERROR`, `AUTHORIZATION_ERROR`, `NOT_FOUND`, `CONFLICT`, `RATE_LIMIT_EXCEEDED`, `NETWORK_ERROR`). Branch on `e.code` for precise handling; `status_code` is `nil` only for `NetworkError`. The subtypes map to HTTP status codes:
 
 | Class | HTTP Status |
 |:------|:------------|
@@ -925,7 +952,7 @@ The error classes are **not** nested under a sub-module (e.g. not `TurboDocxSdk:
 | `TurboDocxSdk::TurboSign.configure(api_key:, org_id:, sender_email:, sender_name:)` | Set credentials (sender_email required) |
 | `TurboDocxSdk::TurboSign.create_signature_review_link(request)` | Prepare a document and get a preview URL (no emails sent) |
 | `TurboDocxSdk::TurboSign.send_signature(request)` | Prepare a document and immediately email recipients |
-| `TurboDocxSdk::TurboSign.get_status(document_id)` | Get current document + recipient status |
+| `TurboDocxSdk::TurboSign.get_status(document_id)` | Get document-level status only (no recipients) |
 | `TurboDocxSdk::TurboSign.download(document_id)` | Download signed PDF as raw bytes |
 | `TurboDocxSdk::TurboSign.void_document(document_id, reason)` | Cancel a signature request (reason required) |
 | `TurboDocxSdk::TurboSign.resend_email(document_id, recipient_ids)` | Resend signature email to recipient UUIDs |
@@ -977,10 +1004,10 @@ The error classes are **not** nested under a sub-module (e.g. not `TurboDocxSdk:
 
 | Method | Description |
 |--------|-------------|
-| `TurboDocxSdk::TurboQuote.configure(api_key:, org_id:)` | Set credentials (no sender_email) |
+| `TurboDocxSdk::TurboQuote.configure(api_key:, org_id:)` | Set credentials (no sender_email — the quote sender comes from the org quote template) |
 | `list_quotes(options)` | Paginated list with filters/stats |
 | `create_quote(request)` | Create a new draft quote |
-| `get_quote(id)` | Get quote details (statusInfo merged in) |
+| `get_quote(id)` | Get quote details (`statusInfo` and `preparedBy` merged in — `preparedBy` is on this single-quote fetch only) |
 | `update_quote(id, request)` | PATCH quote fields; explicit `nil` clears nullable fields |
 | `delete_quote(id)` / `duplicate_quote(id)` | Delete / clone a quote |
 | `send_quote(id, request=nil)` | Email quote; returns `{ "quote", "message" }` |
@@ -1064,7 +1091,8 @@ The error classes are **not** nested under a sub-module (e.g. not `TurboDocxSdk:
 ## Gotchas
 
 - **Method args are snake_case; request-hash keys stay camelCase.** `send_signature`, `create_quote`, `api_key:`, `sender_email:` are snake_case. But keys **inside** a request hash (`documentName`, `signingOrder`, `recipientEmail`, `companyId`, `billingFrequency`, `productId`, …) are forwarded to the API verbatim and must stay camelCase. Writing `document_name:` in a payload hash silently drops the value.
-- **`sender_email` is required** for `TurboSign.configure` — omitting it raises `TurboDocxSdk::ValidationError`. `Deliverable`, `TurboWebhooks`, and `TurboQuote` do **not** need it.
+- **`sender_email` is required** for `TurboSign.configure` — omitting it raises `TurboDocxSdk::ValidationError`. `sender_name` is optional; when omitted the sender name resolves to **your API key's name**, so name your keys recognisably. `Deliverable`, `TurboWebhooks`, and `TurboQuote` do **not** accept it in `configure`.
+- **TurboQuote still sends email.** `TurboQuote.configure` has no `sender_email`, but `send_quote` emails the contact and creates a signature request — the sender comes from the org's **quote template** (Quote Settings). An API-key caller whose template has no sender gets 400 `SenderEmailRequired`. Fix it once with `update_template`.
 - **Static class pattern** — `configure` once per module, then call class methods (`TurboDocxSdk::TurboSign.send_signature(...)`). No instantiation.
 - **Responses are plain hashes with string keys** — access fields with `result["documentId"]`, not symbol keys or method calls.
 - **Downloads return raw bytes** — `download`, `download_pdf`, `download_source_file`, and `download_quote_pdf` return the file bytes directly; persist with `File.binwrite`.

@@ -52,7 +52,7 @@ TurboSign.configure({
 });
 ```
 
-`senderEmail` is required — without it `ValidationError` is thrown. `senderName` defaults to "API Service User" if omitted.
+`senderEmail` is required — without it `ValidationError` is thrown. `senderName` is optional; when omitted it resolves to **your API key's name**, so give the key a recognisable name in the dashboard.
 
 ### TurboSign.createSignatureReviewLink
 
@@ -704,7 +704,17 @@ TurboQuote.configure({
 });
 ```
 
-No `senderEmail` needed — TurboQuote never sends signature emails. `orgId` is technically optional in the config type but the backend rejects requests without it; always provide it.
+`QuoteClientConfig` takes only `apiKey` / `accessToken` / `orgId` / `baseUrl` — there is **no** `senderEmail` / `senderName` on the TurboQuote client. `orgId` is technically optional in the config type but the backend rejects requests without it; always provide it.
+
+**Sending a quote still emails the recipient and creates a signature request** — the sender is not taken from your config, it is resolved server-side from the org's **quote template** (Quote Settings), falling back to the quote's creator. An API key has no mailbox, so an API-key caller whose quote template has no sender email gets `400 SenderEmailRequired` (on `createQuote`/`duplicateQuote` as well as on send). Set it once:
+
+```typescript
+const template = await TurboQuote.getTemplate();
+await TurboQuote.updateTemplate(template.id, {
+  senderEmail: 'quotes@yourcompany.com',
+  senderName: 'Acme Billing',
+});
+```
 
 ### createQuote
 
@@ -723,7 +733,7 @@ console.log(quote.quoteNumber);  // human-readable number e.g. 'Q-0042'
 console.log(quote.status);       // 'draft'
 ```
 
-Response: a `Quote` object. Numeric fields such as `subtotal`, `grandTotal`, and `taxRate` are returned as JavaScript `number` (the SDK's response normalizer coerces the backend's decimal strings automatically).
+Response: a `Quote` object. Numeric fields such as `subtotalMonthly`, `subtotalAnnual`, `grandTotal`, and `taxRate` are returned as JavaScript `number` (the SDK's response normalizer coerces the backend's decimal strings automatically).
 
 **`termDays` / `renewalPeriod`** — `termDays` defaults to **60** when omitted, and may be any integer up to **3650**, or the sentinel **`-1`** meaning auto-renewal. The two fields are coupled:
 
@@ -765,8 +775,8 @@ const items = await TurboQuote.addLineItems(quote.id, {
   discountPercent: 10,
 });
 
-console.log(items[0].id);         // LineItem UUID
-console.log(items[0].finalPrice); // number — already normalised
+console.log(items[0].id);        // LineItem UUID
+console.log(items[0].subtotal);  // number — already normalised
 
 // Multiple items at once — custom (no-product) items require productId: null explicitly.
 // The array must hold between 1 and 50 items; 51+ is a 400.
@@ -792,9 +802,50 @@ console.log(bundleItems[0].id);
 ### sendQuote
 
 ```typescript
-const sent = await TurboQuote.sendQuote(quote.id);
+const sent = await TurboQuote.sendQuote(quote.id, {
+  ccEmails: ['manager@yourcompany.com'],  // optional
+});
 console.log(sent.message);       // 'Quote sent successfully'
 console.log(sent.quote.status);  // 'sent'
+```
+
+Sending emails the contact **and creates a signature request** for them. Every precondition failure is a 400 with a specific `code` — branch on `err.code`:
+
+| `code` | Meaning |
+|---|---|
+| `QuoteNotSendable` | Only draft quotes can be sent |
+| `QuoteValidUntilRequired` | The quote has no `validUntil` date set |
+| `QuoteExpired` | The quote is past its `validUntil` date |
+| `QuoteHasNoLineItems` | Add at least one line item before sending |
+| `QuoteContactRequired` | The quote's contact is missing a name or email |
+| `QuoteCustomerInactive` | The quote's company or contact was deleted/deactivated |
+| `SenderEmailRequired` | No sender email resolvable — set one on the org quote template |
+
+```typescript
+import { TurboDocxError } from '@turbodocx/sdk';
+
+try {
+  await TurboQuote.sendQuote(quote.id);
+} catch (err) {
+  if (err instanceof TurboDocxError) {
+    console.error(err.statusCode, err.code, err.message);
+    // err.code is ALWAYS populated — the API code when present,
+    // else the class default (VALIDATION_ERROR, NOT_FOUND, ...).
+    if (err.code === 'SenderEmailRequired') {
+      // configure senderEmail on the org quote template once
+    }
+  } else throw err;
+}
+```
+
+### preparedBy (single-quote fetch only)
+
+`getQuote(id)` folds in the server-resolved sender identity as `preparedBy` — prefer it over `creator` for anything customer-facing. It is **not** present on `listQuotes` results.
+
+```typescript
+const q = await TurboQuote.getQuote(quote.id);
+console.log(q.preparedBy?.name);   // template sender, else the quote's creator
+console.log(q.preparedBy?.email);  // may be undefined for an API-created quote
 ```
 
 ### handleExpiredQuote
@@ -920,7 +971,7 @@ const bundle = await TurboQuote.createBundle({
   items: [{ productId: product.id, unitPrice: 1200, billingFrequency: 'annual', quantity: 1 }],
 });
 
-// Price books — name + priceBookTypeId + validFrom + discountPercent are ALL required on create
+// Price books — name + priceBookTypeId + validFrom are required on create; discountPercent is optional
 const priceBook = await TurboQuote.createPriceBook({
   name: 'Enterprise Pricing',
   priceBookTypeId: 'pricebook-type-uuid',  // from a createType({ categoryType: 'pricebook_type' })
@@ -944,7 +995,9 @@ The correct flow is always **`getTemplate()` → `updateTemplate()`**:
 const template = await TurboQuote.getTemplate();   // always returns one; creates it if needed
 await TurboQuote.updateTemplate(template.id, {
   primaryColor: '#0B5FFF',
-  footerText: 'Thanks for your business!',
+  closingMessage: 'Thanks for your business!',
+  senderEmail: 'quotes@yourcompany.com',  // required for API-key callers to send quotes
+  senderName: 'Acme Billing',
 });
 ```
 
@@ -1110,7 +1163,7 @@ function handleError(res: Response, error: unknown) {
 }
 ```
 
-All TurboDocx errors extend `TurboDocxError` and carry `statusCode` and `code` properties. The five specific subtypes above map to HTTP 401 / 400 / 404 / 429 / network failure respectively. Import them directly from `@turbodocx/sdk` — they are **not** namespaced under `TurboSign`.
+All TurboDocx errors extend `TurboDocxError` and carry `statusCode`, `code`, and `message` (there is no `err.status`). **`code` is always populated** — the API's specific code when it sends one (`SenderEmailRequired`, `QuoteNotSendable`, `QUOTE_NOT_FOUND`, …), otherwise the error class's default: `VALIDATION_ERROR`, `AUTHENTICATION_ERROR`, `AUTHORIZATION_ERROR`, `NOT_FOUND`, `CONFLICT`, `RATE_LIMIT_EXCEEDED`, `NETWORK_ERROR`. Branch on it without a null check. The five specific subtypes above map to HTTP 401 / 400 / 404 / 429 / network failure respectively. Import them directly from `@turbodocx/sdk` — they are **not** namespaced under `TurboSign`.
 
 ---
 
@@ -1219,7 +1272,7 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode` and `code` p
 
 | Method | Description |
 |--------|-------------|
-| `TurboQuote.configure(config)` | Set apiKey, orgId (no senderEmail needed) |
+| `TurboQuote.configure(config)` | Set apiKey (or accessToken), orgId, baseUrl. There is no `senderEmail`/`senderName` on this config — the quote sender comes from the org quote template |
 | `TurboQuote.listQuotes(options?)` | Paginated list with filters; includes totals/stats |
 | `TurboQuote.createQuote(request)` | Create a new draft quote |
 | `TurboQuote.getQuote(id)` | Get quote details (statusInfo merged in) |
@@ -1323,11 +1376,11 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode` and `code` p
 
 ## Gotchas
 
-- **`senderEmail` is required** for `TurboSign.configure()` — without it `ValidationError` is thrown. `senderName` is optional but strongly recommended (otherwise emails appear from "API Service User").
+- **`senderEmail` is required** for `TurboSign.configure()` — without it `ValidationError` is thrown. `senderName` is optional; when omitted it resolves to **your API key's name** (name your keys accordingly). An API-key send with no resolvable sender email is rejected with `400 SenderEmailRequired`.
 - **File input** to TurboSign accepts: `Buffer`, file-path `string`, browser `File`, remote URL (`fileLink`), `deliverableId`, or `templateId`. Magic-byte detection identifies PDF / DOCX / PPTX automatically.
 - **Template anchors** like `{signature1}` must literally exist in the document text for `template.anchor` field placement to work.
 - **Pagination uses `offset`, not `page`**, across all `list*` methods. Defaults vary (Deliverable defaults to 6, partner list endpoints to ~25).
-- **`updateOrganizationEntitlements` takes `{ features?, tracking? }`** — not a bare features object. `features` holds capability/limit columns (`maxUsers`, `maxStorage`, `maxAPIKeys`, `hasTDAI`, …); `tracking` holds usage counters and uses the `num*` key names: `numUsers`, `numProjectspaces`, `numTemplates`, `storageUsed`, `numGeneratedDeliverables`, `numSignaturesUsed`, `numQuotesSent`, `currentAICredits`. The two key sets are not interchangeable — a `maxUsers` key inside `tracking` is rejected. `currentAICredits` accepts `-1` (unlimited); every other counter floors at 0.
+- **`updateOrganizationEntitlements` takes `{ features?, tracking? }`** — not a bare features object. `features` holds capability/limit columns (`maxUsers`, `maxStorage`, `maxSignatures`, `hasTDAI`, …); `tracking` holds usage counters and uses the `num*` key names: `numUsers`, `numProjectspaces`, `numTemplates`, `storageUsed`, `numGeneratedDeliverables`, `numSignaturesUsed`, `numQuotesSent`, `currentAICredits`. The two key sets are not interchangeable — a `maxUsers` key inside `tracking` is rejected. `currentAICredits` accepts `-1` (unlimited); every other counter floors at 0.
 - **Two different role enums — do not mix them.** Organization users and organization API keys take `'admin' | 'contributor' | 'user' | 'viewer'`. Partner-portal users take `'admin' | 'member' | 'viewer'`. `'member'` is not a valid org role, and `'contributor'` / `'user'` are not valid partner roles — either mistake is a 400.
 - **Partner `permissions` has no partial update.** The `permissions` object is optional on `updatePartnerUserPermissions`, but every key inside it is required, so if you send `permissions` you must send **all seven**: `canManageOrgs`, `canManageOrgUsers`, `canManagePartnerUsers`, `canManageOrgAPIKeys`, `canManagePartnerAPIKeys`, `canUpdateEntitlements`, `canViewAuditLogs`. Sending a subset is a 400. To flip one flag, read the current permissions and spread them; to change only the role, omit `permissions` entirely.
 - **`TurboSign.void` requires a `reason`** as the second argument. **`TurboSign.resend` takes recipient IDs (UUIDs), not email addresses** — fetch them from the send response or audit trail.
@@ -1344,6 +1397,10 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode` and `code` p
 - **Middleware ORDER matters.** Mount `express.raw()` for the webhook path BEFORE any global `app.use(express.json())`. Express body-parsers set `req._body=true` on the first parse and later parsers silently no-op — if `express.json()` is global and runs first for `/webhooks`, the route-level `express.raw()` becomes a no-op and `req.body` ends up as a parsed object, not a Buffer. Verification will then always fail. The correct pattern is `app.use('/webhooks/turbodocx', express.raw({ type: 'application/json' }))` BEFORE `app.use(express.json())`.
 - **`verifyWebhookSignature` is a free function**, not a method on `TurboWebhooks` — import it directly from `@turbodocx/sdk`. It has no `apiKey`/`orgId` dependency.
 
+- **TurboQuote does not take `senderEmail`/`senderName` on its config — but sending a quote DOES email the recipient and create a signature request.** The sender is resolved server-side from the org's quote template (Quote Settings), falling back to the quote's creator. An API key has no mailbox, so if the template has no sender email an API-key caller gets `400 SenderEmailRequired` on `createQuote` / `duplicateQuote` / send. Fix it once with `getTemplate()` → `updateTemplate(id, { senderEmail, senderName })`.
+- **Quote send preconditions each have their own 400 `code`:** `QuoteNotSendable` (not a draft), `QuoteValidUntilRequired`, `QuoteExpired`, `QuoteHasNoLineItems`, `QuoteContactRequired`, `QuoteCustomerInactive`, `SenderEmailRequired`. Branch on `err.code`, not on the message.
+- **`preparedBy` is only on the single-quote fetch.** `getQuote(id)` folds in `preparedBy: { name?, email? }`; `listQuotes()` results do not carry it. Prefer `preparedBy` over `creator` for customer-facing display — `email` may be `undefined` on an API-created quote.
+- **Quote template fields are `closingMessage` / `disclaimer` / `termsAndConditions`** (plus `logoUrl`, `primaryColor`, `primaryTextColor`, `senderName`, `senderEmail`, `senderPhone`, `contactEmail`). There is no `footerText` key.
 - **TurboQuote decimal fields come back as `number`, not strings.** The SDK's response normalizer coerces the backend's decimal strings (`listPrice`, `unitPrice`, `grandTotal`, `taxRate`, `discountPercent`, etc.) to JavaScript numbers before returning — do not parse them with `parseFloat`.
 - **`PATCH` with explicit `null` clears nullable fields.** For `updateQuote`, `updateLineItem`, `updateProduct`, and similar PATCH methods, passing `{ priceBookId: null }` sends `null` in the request body and the backend clears the field. Omitting the key entirely leaves it unchanged. This is intentional for fields like `validUntil`, `taxRate`, `priceBookId`.
 - **`discountType` is `'percent' | 'amount'`** on line items. When using `'percent'`, set `discountPercent` (0–100). When using `'amount'`, set the flat discount value. Mixing both in the same item produces a 400 `ValidationError`.
