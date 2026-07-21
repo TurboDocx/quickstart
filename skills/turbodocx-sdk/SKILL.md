@@ -63,7 +63,7 @@ Both products share the same credentials (`TURBODOCX_API_KEY` + `TURBODOCX_ORG_I
 
 **Language coverage for TurboWebhooks:** PHP, JavaScript/TypeScript, Python, Go, Java, and Ruby are fully covered today.
 
-**TurboQuote is a separate, opt-in product** for building sales quotes and proposals — quotes, line items, a product/bundle catalog, price books, companies/contacts, and quote templates. Don't surface it in the default question — only enable it when the user explicitly invokes `/turbodocx-sdk turboquote`, or asks about creating quotes, proposals, CPQ, product catalogs, or price books. It reuses the same `TURBODOCX_API_KEY` + `TURBODOCX_ORG_ID` as TurboSign and does **not** need `TURBODOCX_SENDER_EMAIL` (quotes are not signature emails).
+**TurboQuote is a separate, opt-in product** for building sales quotes and proposals — quotes, line items, a product/bundle catalog, price books, companies/contacts, and quote templates. Don't surface it in the default question — only enable it when the user explicitly invokes `/turbodocx-sdk turboquote`, or asks about creating quotes, proposals, CPQ, product catalogs, or price books. It reuses the same `TURBODOCX_API_KEY` + `TURBODOCX_ORG_ID` as TurboSign and does **not** need `TURBODOCX_SENDER_EMAIL` — not because quotes never email anyone (sending a quote *does* create a signature request and email the recipient), but because the quote sender is resolved server-side from the **org's quote template** (Quote Settings) instead of from the client config. If that template has no sender email, an API-key caller gets `400 SenderEmailRequired`.
 
 **Language coverage for TurboQuote:** JavaScript/TypeScript, Python, Go, PHP, Java, and Ruby are fully covered.
 
@@ -204,7 +204,7 @@ Create working route handlers / endpoint code for the selected product(s). The l
 - `addLineItems()` endpoint — add product line items (single object or array, max 50) to a quote. `productId`, `productName`, `unitPrice`, and `billingFrequency` are **all required** on every item — `productId` must be present but may be `null` for a custom, non-catalog item
 - `sendQuote()` endpoint — send a quote for review; returns `{ quote, message }`
 - `downloadQuotePdf()` endpoint — stream the quote PDF (raw bytes per language)
-- If the user is building a catalog, also scaffold `createProduct()` / `createBundle()` / `createPriceBook()` + `applyPriceBook()`. TurboQuote configures with `apiKey` + `orgId` only — no `senderEmail` (quotes are not signature emails).
+- If the user is building a catalog, also scaffold `createProduct()` / `createBundle()` / `createPriceBook()` + `applyPriceBook()`. TurboQuote configures with `apiKey` + `orgId` only — no `senderEmail`, because the quote sender comes from the org's quote template (Quote Settings), not from the client config. Sending a quote still emails the recipient; a template with no sender email makes `sendQuote()` fail with `400 SenderEmailRequired`.
 
 Once the basics are scaffolded, point the user at the language reference (`references/<language>.md`) for the full set of available operations — there are many more than the starter set (org/user/API-key management, audit logs, etc.) and the agent should mention which additional operations exist for the user's selected product so they know what to ask for next.
 

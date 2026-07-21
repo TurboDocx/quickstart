@@ -8,20 +8,20 @@
 <dependency>
     <groupId>com.turbodocx</groupId>
     <artifactId>turbodocx-sdk</artifactId>
-    <version>0.4.0</version>
+    <version>0.6.0</version>
 </dependency>
 ```
 
 ### Gradle
 
 ```groovy
-implementation 'com.turbodocx:turbodocx-sdk:0.4.0'
+implementation 'com.turbodocx:turbodocx-sdk:0.6.0'
 ```
 
 ### Gradle (Kotlin DSL)
 
 ```kotlin
-implementation("com.turbodocx:turbodocx-sdk:0.4.0")
+implementation("com.turbodocx:turbodocx-sdk:0.6.0")
 ```
 
 ## Imports
@@ -42,6 +42,8 @@ TurboDocxClient client = new TurboDocxClient.Builder()
     .senderName(System.getenv("TURBODOCX_SENDER_NAME"))
     .build();
 ```
+
+`senderEmail` is **REQUIRED** for TurboSign — an API key has no mailbox of its own, so the API rejects a send without it (400 `SenderEmailRequired`). `senderName` is **optional**; when omitted the sender name resolves to **the API key's name**.
 
 ## TurboSign Usage
 
@@ -78,13 +80,11 @@ System.out.println("Document ID: " + result.getDocumentId());
 ### getStatus
 
 ```java
-DocumentStatus status = client.turboSign().getStatus(documentId);
-System.out.println("Status: " + status.getStatus());
-
-for (RecipientStatus r : status.getRecipients()) {
-    System.out.println("  " + r.getEmail() + ": " + r.getStatus());
-}
+DocumentStatusResponse status = client.turboSign().getStatus(documentId);
+System.out.println("Status: " + status.getStatus()); // e.g. "sent", "completed", "voided"
 ```
+
+`DocumentStatusResponse` carries the document-level `status` only. For per-recipient detail, use `getAuditTrail(documentId)`.
 
 ### download
 
@@ -119,9 +119,9 @@ CreateSignatureReviewLinkResponse review = client.turboSign().createSignatureRev
 
 System.out.println("Document ID: " + review.getDocumentId());
 System.out.println("Preview URL: " + review.getPreviewUrl()); // open to review field placement
-// Each recipient also has a signUrl for their personal signing link
-for (RecipientResponse r : review.getRecipients()) {
-    System.out.println("  " + r.getName() + ": " + r.getSignUrl());
+// Review recipients are ReviewRecipient (id / name / email / metadata) — no signUrl yet
+for (ReviewRecipient r : review.getRecipients()) {
+    System.out.println("  " + r.getName() + ": " + r.getEmail());
 }
 ```
 
@@ -520,7 +520,7 @@ package com.example.app.controller;
 
 import com.turbodocx.TurboDocxClient;
 import com.turbodocx.models.*;
-import com.turbodocx.exceptions.TurboDocxException;
+import com.turbodocx.TurboDocxException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -577,7 +577,7 @@ public class SignatureController {
     @GetMapping("/{id}/status")
     public ResponseEntity<?> getStatus(@PathVariable String id) {
         try {
-            DocumentStatus status = client.turboSign().getStatus(id);
+            DocumentStatusResponse status = client.turboSign().getStatus(id);
             return ResponseEntity.ok(status);
         } catch (TurboDocxException e) {
             return ResponseEntity.status(e.getStatusCode()).body(e.getMessage());
@@ -821,7 +821,9 @@ TurboQuote provides end-to-end CPQ (configure-price-quote) operations: create an
 
 ### Configuration
 
-`TurboQuoteClient` does NOT require `senderEmail` — quote routes do not send TurboSign signature emails. `orgId` is technically optional in the config but the backend will return 401 if it is missing, so always supply it.
+`TurboQuoteClient` takes no `senderEmail` / `senderName` — but that does **not** mean quotes never email anyone. **Sending a quote DOES create a signature request and email the recipient.** The sender identity comes from the org's **quote template** (Quote Settings), not from the client config. An API-key caller has no mailbox of its own, so if the template has no sender email set, the call fails with HTTP 400 `SenderEmailRequired`. Set one on the template once (via `updateTemplate`) and every subsequent create/duplicate/send resolves cleanly.
+
+`orgId` is technically optional in the config but the backend will return 401 if it is missing, so always supply it.
 
 ```java
 import com.turbodocx.TurboQuoteClient;
@@ -915,6 +917,30 @@ System.out.println("Status: " + sent.getQuote().getStatus()); // "sent"
 System.out.println(sent.getMessage());
 ```
 
+Sending a quote also **creates a signature request and emails the recipient**. Each precondition failure is a 400 with its own `getCode()`:
+
+| `getCode()` | Meaning |
+|---|---|
+| `QuoteNotSendable` | Only draft quotes can be sent |
+| `QuoteValidUntilRequired` | The quote has no `validUntil` date |
+| `QuoteExpired` | The quote is past its `validUntil` date |
+| `QuoteHasNoLineItems` | Add at least one line item first |
+| `QuoteContactRequired` | The quote's contact is missing a name or email |
+| `QuoteCustomerInactive` | The quote's company or contact was deleted/deactivated |
+| `SenderEmailRequired` | No sender email on the org quote template (Quote Settings) |
+
+### preparedBy
+
+The **single-quote fetch only** (`getQuote`) resolves the customer-facing "Prepared by" identity. It is not present on list responses.
+
+```java
+Quote quote = tq.getQuote(quoteId);
+if (quote.getPreparedBy() != null) {
+    System.out.println(quote.getPreparedBy().getName());
+    System.out.println(quote.getPreparedBy().getEmail()); // may be null — render a placeholder
+}
+```
+
 ### handleExpiredQuote
 
 Act on a sent quote whose `validUntil` has passed. **`action` accepts exactly two values: `"void"` and `"decline"`.** There is no `"extend"` and no `"resend"` — those are not implemented and return a 400. `reason` (max 190 chars) and `newValidUntil` (ISO date) are **both required**.
@@ -966,7 +992,7 @@ bundle.setCategoryId(bundleCategoryId);
 bundle.setItems(List.of(bundleItem));
 Bundle b = tq.createBundle(bundle);
 
-// Create and apply a pricebook — name, priceBookTypeId, validFrom, and discountPercent are all required.
+// Create and apply a pricebook — name, priceBookTypeId, and validFrom are required; discountPercent is optional.
 // priceBookTypeId comes from a createType(...) with categoryType PRICEBOOK_TYPE.
 CreatePriceBookRequest pb = new CreatePriceBookRequest();
 pb.setName("Partner Pricing");
@@ -1119,25 +1145,31 @@ try {
 ## Error Handling
 
 ```java
-import com.turbodocx.exceptions.*;
+import com.turbodocx.TurboDocxException;
 
 try {
     client.turboSign().sendSignature(request);
-} catch (AuthenticationException e) {
-    // Invalid/missing API key
-} catch (ValidationException e) {
-    // Bad request (e.g., missing senderEmail)
-} catch (NotFoundException e) {
-    // Document/org not found
-} catch (RateLimitException e) {
-    // Too many requests
-} catch (NetworkException e) {
-    // Connection failure
+} catch (TurboDocxException.AuthenticationException e) {
+    // 401 — invalid/missing API key
+} catch (TurboDocxException.AuthorizationException e) {
+    // 403 — key lacks the required role
+} catch (TurboDocxException.ValidationException e) {
+    // 400 — bad request (e.g., missing senderEmail)
+} catch (TurboDocxException.NotFoundException e) {
+    // 404 — document/org not found
+} catch (TurboDocxException.ConflictException e) {
+    // 409 — resource already exists
+} catch (TurboDocxException.RateLimitException e) {
+    // 429 — too many requests
+} catch (TurboDocxException.NetworkException e) {
+    // connection failure — never reached the server
 } catch (TurboDocxException e) {
     // Catch-all for any SDK error
     System.err.println("Error " + e.getCode() + ": " + e.getMessage());
 }
 ```
+
+All seven subtypes are **nested classes** on `com.turbodocx.TurboDocxException` — there is no `com.turbodocx.exceptions` package. Every exception exposes `getStatusCode()` (int) and `getCode()` (String). **`getCode()` is always populated** — the API's code when it sends one, otherwise the subclass default: `VALIDATION_ERROR` (400), `AUTHENTICATION_ERROR` (401), `AUTHORIZATION_ERROR` (403), `NOT_FOUND` (404), `CONFLICT` (409), `RATE_LIMIT_EXCEEDED` (429), `NETWORK_ERROR` (no status). Branch on it without a null check.
 
 ## Method Reference
 
@@ -1145,9 +1177,9 @@ try {
 |--------|-------------|
 | `client.turboSign().sendSignature(req)` | Send document for e-signature |
 | `client.turboSign().createSignatureReviewLink(req)` | Preview without emails |
-| `client.turboSign().getStatus(id)` | Get document + recipient status |
+| `client.turboSign().getStatus(id)` | Get document-level status only (no recipients) |
 | `client.turboSign().download(id)` | Download signed PDF as byte[] |
-| `client.turboSign().voidDocument(id)` | Cancel a signature request |
+| `client.turboSign().voidDocument(id, reason)` | Cancel a signature request (`reason` required) |
 | `client.turboSign().resendEmail(id, recipientIds)` | Resend signature email to recipient UUIDs |
 | `client.turboSign().getAuditTrail(id)` | Get complete audit trail |
 | `builder.buildDeliverableClient()` | Build a Deliverable client (no senderEmail needed) |
@@ -1269,12 +1301,14 @@ try {
 ## Gotchas
 
 - **Java SDK uses Builder pattern** — create clients with `.Builder()...build()`
-- **`senderEmail` is required** for TurboSign operations
+- **`senderEmail` is required** for TurboSign operations. **`senderName` is optional** — when omitted, the sender name resolves to the **API key's name**.
+- **TurboQuote takes no `senderEmail`/`senderName`, but `sendQuote` still emails the recipient** (it creates a signature request). The sender comes from the org's quote template (Quote Settings); an API-key caller whose template has no sender gets 400 `SenderEmailRequired`.
+- **Exceptions live on `com.turbodocx.TurboDocxException` as nested classes** — `TurboDocxException.ValidationException`, `.AuthenticationException`, `.AuthorizationException`, `.NotFoundException`, `.ConflictException`, `.RateLimitException`, `.NetworkException`. There is no `com.turbodocx.exceptions` package. `getStatusCode()` and `getCode()` are on the base class, and `getCode()` is never null.
 - **Spring Boot**: use `@Value` or `application.properties` for env vars, not `System.getenv()` directly
 - **Spring Boot auto-scans** controllers in sub-packages — ensure your controller is under the base package
 - **Partner API keys are distinct** from regular API keys — using the wrong one returns `AuthenticationException`
 - **File input** accepts: `byte[]`, file path `String`, URL `String`, or `InputStream`
-- **`signUrl`** — each `RecipientResponse` in the `sendSignature`/`createSignatureReviewLink` response has a `getSignUrl()` method: the personal signing link for that recipient. `CreateSignatureReviewLinkResponse` also has `getPreviewUrl()` for document-level preview.
+- **Do not rely on `signUrl` from send/review.** `SendSignatureResponse.getRecipients()` is typed `List<RecipientResponse>`, so `getSignUrl()` compiles — but these endpoints do not return a sign URL, so it is `null` in practice (the other SDKs model the same payload as an id/name/email/metadata recipient). `createSignatureReviewLink` returns `ReviewRecipient` (`getId()` / `getName()` / `getEmail()` / `getMetadata()` — no `getSignUrl()` at all); use `CreateSignatureReviewLinkResponse.getPreviewUrl()` for the document-level preview.
 - **`resendEmail` takes recipient UUIDs** (`List<String>`), not email addresses — fetch them from the send/review response or `getAuditTrail`.
 - **`download` is a two-step operation.** `GET /api/signature/:id/download` returns JSON `{"downloadUrl", "fileName"}` — not bytes — and the presigned `downloadUrl` must then be fetched **without an `Authorization` header** (S3 rejects a presigned request that also carries one). The SDK does both steps for you; hand-rolled REST calls must too.
 - **Two different role enums — do not mix them.** Organization users and organization API keys take `"admin" | "contributor" | "user" | "viewer"`. Partner-portal users take `"admin" | "member" | "viewer"`. `"member"` is not a valid org role, and `"contributor"` / `"user"` are not valid partner roles — either mistake is a 400.

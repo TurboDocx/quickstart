@@ -44,6 +44,8 @@ TurboSign.configure(
 )
 ```
 
+`sender_email` is **required** — an API key has no mailbox of its own, so a send without it is rejected rather than mailed from an unmonitored address. `sender_name` is **optional**; when omitted the display name on the email resolves to **the API key's name**. Set it explicitly if that name is not customer-facing.
+
 ## TurboSign Usage
 
 ### send_signature
@@ -78,9 +80,10 @@ print(f"Document ID: {result['documentId']}")
 
 ```python
 status = await TurboSign.get_status(document_id)
-print(f"Status: {status['status']}")         # 'pending' | 'completed' | 'voided'
-print(f"Recipients: {status['recipients']}")
+print(f"Status: {status['status']}")   # 'under_review' | 'completed' | 'voided'
 ```
+
+The response carries **only** `status` — there is no `recipients` key. For per-recipient state use `get_audit_trail(document_id)`.
 
 ### download
 
@@ -118,9 +121,10 @@ result = await TurboSign.create_signature_review_link(
 
 print(f"Document ID: {result['documentId']}")
 print(f"Preview URL: {result['previewUrl']}")  # open to review field placement
-# Each recipient also has a signUrl for their personal signing link
+# Each recipient dict carries id / name / email / metadata — there is no signUrl.
+# Use the top-level previewUrl above for the document-level preview.
 for r in result.get("recipients", []):
-    print(f"  {r['name']}: {r.get('signUrl')}")
+    print(f"  {r['name']} <{r['email']}> id={r['id']}")
 ```
 
 ### void_document
@@ -483,14 +487,14 @@ async def send_signature(
         )
         return result
     except TurboDocxError as e:
-        raise HTTPException(status_code=e.status or 500, detail=str(e))
+        raise HTTPException(status_code=e.status_code or 500, detail=str(e))
 
 @router.get("/{document_id}/status")
 async def get_status(document_id: str):
     try:
         return await TurboSign.get_status(document_id)
     except TurboDocxError as e:
-        raise HTTPException(status_code=e.status or 500, detail=str(e))
+        raise HTTPException(status_code=e.status_code or 500, detail=str(e))
 ```
 
 ## Flask Integration Example
@@ -515,7 +519,7 @@ def send_signature():
         ))
         return jsonify(result)
     except TurboDocxError as e:
-        return jsonify({"error": str(e)}), e.status or 500
+        return jsonify({"error": str(e)}), e.status_code or 500
 ```
 
 ## TurboWebhooks
@@ -746,7 +750,7 @@ TurboQuote.configure(
 )
 ```
 
-`sender_email` is **not required** — TurboQuote does not send signature emails. `org_id` is technically optional in the SDK (auto-init from env on first use), but the backend returns `401` if it is missing, so always pass it.
+`TurboQuote.configure()` takes **no** `sender_email` / `sender_name` — but that does **not** mean quotes never email anyone. Sending a quote **does** create a signature request and email the recipient; the sender identity is resolved server-side from the **org's quote template** (Quote Settings), falling back to the quote's creator. An API key has no mailbox, so if the template has no sender email an API-key caller gets `ValidationError` with `code == "SenderEmailRequired"` (400). Set it once with `update_template(id, {"senderEmail": ..., "senderName": ...})`. `org_id` is technically optional in the SDK (auto-init from env on first use), but the backend returns `401` if it is missing, so always pass it.
 
 ### create_quote
 
@@ -833,6 +837,28 @@ result = await TurboQuote.send_quote(quote["id"])
 # result["message"]          →  human-readable confirmation string
 ```
 
+Sending **does** email the recipient — the backend creates a signature request for the quote. Each precondition failure raises `ValidationError` with its own 400 `code`, so branch on `e.code`, not on the message:
+
+| `e.code` | Meaning |
+|---|---|
+| `QuoteNotSendable` | Only draft quotes can be sent |
+| `QuoteValidUntilRequired` | The quote has no `validUntil` date set |
+| `QuoteExpired` | The quote is past its `validUntil` date |
+| `QuoteHasNoLineItems` | Add at least one line item before sending |
+| `QuoteContactRequired` | The quote's contact is missing a name or email |
+| `QuoteCustomerInactive` | The quote's company or contact was deleted/deactivated |
+| `SenderEmailRequired` | No sender email on the org quote template (Quote Settings) |
+
+### preparedBy
+
+`get_quote()` folds the server-resolved "Prepared by" identity onto the quote as `preparedBy` (`{"name", "email"}`). It is returned by the **single-quote fetch only** — `list_quotes()` does not include it. Prefer it over `creator` for customer-facing display; `creator` may be the internal API service account.
+
+```python
+quote = await TurboQuote.get_quote(quote_id)
+prepared = quote.get("preparedBy") or {}
+print(prepared.get("name"), prepared.get("email"))  # email may be absent on an API-created quote
+```
+
 ### handle_expired_quote
 
 Act on a sent quote whose `validUntil` has passed. **`action` accepts exactly two values: `"void"` and `"decline"`.** There is no `"extend"` and no `"resend"` — those are not implemented and return a 400. `reason` (max 190 chars) and `newValidUntil` (ISO date) are **both required**.
@@ -870,7 +896,7 @@ product = await TurboQuote.create_product({
 })
 
 # Create a price book and apply to a quote.
-# All four fields are REQUIRED: name, priceBookTypeId, validFrom, discountPercent.
+# Three fields are REQUIRED: name, priceBookTypeId, validFrom. discountPercent is optional.
 # priceBookTypeId comes from a create_type with categoryType "pricebook_type".
 price_book = await TurboQuote.create_price_book({
     "name": "Partner Pricing",
@@ -1037,7 +1063,7 @@ except AuthenticationError:
     # Invalid/missing API key
 except ValidationError as e:
     # Bad request (e.g., missing sender_email)
-    print(f"Validation failed: {e.message}")
+    print(f"Validation failed: {e}")
 except NotFoundError:
     # Document/org not found
 except RateLimitError:
@@ -1046,8 +1072,12 @@ except NetworkError:
     # Connection failure
 except TurboDocxError as e:
     # Catch-all for any SDK error
-    print(f"Error {e.code}: {e.message}")
+    print(f"Error {e.code} (HTTP {e.status_code}): {e}")
 ```
+
+The exception attributes are `e.status_code` (int or `None`) and `e.code` (str) — there is **no** `e.status` and **no** `e.message`; use `str(e)` for the text.
+
+`e.code` is **always populated**: the API-supplied code when the response carries one, otherwise the raising class's default (`VALIDATION_ERROR`, `AUTHENTICATION_ERROR`, `AUTHORIZATION_ERROR`, `NOT_FOUND`, `CONFLICT`, `RATE_LIMIT_EXCEEDED`, `NETWORK_ERROR`). Branch on it without a `None` check. `str(e)` carries the actionable field-level reason, not a generic envelope — multiple field errors are joined with `"; "`, e.g. `'"name" is not allowed to be empty; "companyId" must be a valid GUID'`.
 
 ## Method Reference
 
@@ -1055,7 +1085,7 @@ except TurboDocxError as e:
 |--------|-------------|
 | `TurboSign.send_signature(...)` | Send document for e-signature |
 | `TurboSign.create_signature_review_link(...)` | Preview without sending emails |
-| `TurboSign.get_status(document_id)` | Get document + recipient status |
+| `TurboSign.get_status(document_id)` | Get document-level status only (no recipients) |
 | `TurboSign.download(document_id)` | Download signed PDF as bytes |
 | `TurboSign.void_document(document_id, reason)` | Cancel a signature request (reason required) |
 | `TurboSign.resend_email(document_id, recipient_ids)` | Resend signature email to recipient UUIDs |
@@ -1181,8 +1211,8 @@ except TurboDocxError as e:
 - **All SDK methods are async** — use `await` in async functions, or `asyncio.run()` for sync contexts
 - **`sender_email` is required** — configure it globally or pass per-call
 - **Flask needs asyncio.run()** wrapping since Flask routes are synchronous by default
-- **File input** accepts: `bytes`, file path string, URL string, deliverable ID, or template ID
-- **`signUrl`** — each recipient dict in the `send_signature`/`create_signature_review_link` response includes a `signUrl` field: the personal signing link for that recipient. `create_signature_review_link` also returns a top-level `previewUrl` for document-level preview.
+- **Document source is one of four keyword args**, not one overloaded `file`: `file=` (raw `bytes`, optionally with `file_name=`), `file_link=` (URL string), `deliverable_id=`, or `template_id=`. Passing a filesystem path to `file=` will not work — read the bytes yourself.
+- **No `signUrl` on send/review recipients.** Recipient dicts in the `send_signature` / `create_signature_review_link` response carry `id`, `name`, `email`, and `metadata` only. Use `create_signature_review_link`'s top-level `previewUrl` for the document-level preview.
 - **`resend_email` takes recipient UUIDs**, not email addresses — fetch them from the `send_signature` or `create_signature_review_link` response recipients, or from `get_audit_trail`.
 - **`download` is a two-step operation.** `GET /api/signature/:id/download` returns JSON `{"downloadUrl", "fileName"}` — not bytes — and the presigned `downloadUrl` must then be fetched **without an `Authorization` header** (S3 rejects a presigned request that also carries one). The SDK does both steps for you; hand-rolled REST calls must too.
 - **Two different role enums — do not mix them.** Organization users and organization API keys take `"admin" | "contributor" | "user" | "viewer"`. Partner-portal users take `"admin" | "member" | "viewer"`. `"member"` is not a valid org role, and `"contributor"` / `"user"` are not valid partner roles — either mistake is a 400.
