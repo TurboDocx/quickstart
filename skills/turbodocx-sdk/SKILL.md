@@ -3,7 +3,7 @@ name: turbodocx-sdk
 description: Install TurboDocx SDK and generate integration code for TurboSign (digital signatures), Deliverable (template-based document generation), TurboPartner (partner management), TurboWebhooks (signature event subscriptions), and/or TurboQuote (sales quotes and proposals). Use when the user wants to add e-signatures, document signing, generate documents from templates with variable substitution, partner organization management, signature webhooks, build quotes/proposals/CPQ with products and price books, or any TurboDocx/TurboSign/TurboPartner/Deliverable/TurboWebhooks/TurboQuote functionality to their project. Supports JavaScript, TypeScript, Python, Go, PHP, Java, and Ruby.
 metadata:
   author: TurboDocx
-  version: "1.6.0"
+  version: "1.6.1"
 license: MIT
 ---
 
