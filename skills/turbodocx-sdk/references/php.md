@@ -24,7 +24,7 @@ use TurboDocx\TurboSign;
 use TurboDocx\TurboPartner;
 use TurboDocx\Config\HttpClientConfig;
 use TurboDocx\Config\PartnerClientConfig;
-use TurboDocx\TurboDocxError;
+use TurboDocx\Exceptions\TurboDocxException;
 ```
 
 ## TurboSign Configuration
@@ -39,7 +39,12 @@ TurboSign::configure(new HttpClientConfig(
     senderEmail: $_ENV['TURBODOCX_SENDER_EMAIL'],
     senderName: $_ENV['TURBODOCX_SENDER_NAME'] ?? null,
 ));
+
+// Or auto-configure from environment
+TurboSign::configure(HttpClientConfig::fromEnvironment());
 ```
+
+`senderEmail` is **required** — `HttpClientConfig` throws `ValidationException` without it. `senderName` is **optional**; when omitted the sender name resolves to **your API key's name**, so name your keys recognisably in the dashboard.
 
 ## TurboSign Usage
 
@@ -82,12 +87,11 @@ echo "Document ID: {$result->documentId}\n";
 
 ```php
 $status = TurboSign::getStatus($documentId);
-echo "Status: {$status->status}\n";
-
-foreach ($status->recipients as $recipient) {
-    echo "  {$recipient->email}: {$recipient->status}\n";
-}
+echo "Status: {$status->status}\n";   // 'draft' | 'under_review' | 'completed' | 'voided' | ...
 ```
+
+`DocumentStatusResponse` carries **only** `status` (matching the other SDKs). For per-recipient
+progress use `TurboSign::getAuditTrail($documentId)`.
 
 ### download
 
@@ -126,9 +130,10 @@ $result = TurboSign::createSignatureReviewLink(
 
 echo "Document ID: {$result->documentId}\n";
 echo "Preview URL: {$result->previewUrl}\n";  // open to review field placement
-// Each recipient also has a signUrl for their personal signing link
-foreach ($result->recipients as $recipient) {
-    echo "  {$recipient->name}: {$recipient->signUrl}\n";
+// $result->recipients is an array of plain arrays: id / name / email / metadata.
+// There is no signUrl on them — use $result->previewUrl for the document-level preview.
+foreach ($result->recipients ?? [] as $recipient) {
+    echo "  {$recipient['name']} <{$recipient['email']}> id={$recipient['id']}\n";
 }
 ```
 
@@ -484,7 +489,7 @@ TurboPartner::addUserToPartnerPortal(new AddPartnerUserRequest(
 // `false`, silently REVOKING those permissions. Rebuild from the user's current
 // permissions and override only what changes.
 $users   = TurboPartner::listPartnerPortalUsers(new ListPartnerUsersRequest(limit: 100));
-$user    = current(array_filter($users->data->results, fn ($u) => $u->id === 'user-uuid'));
+$user    = current(array_filter($users->results, fn ($u) => $u->id === 'user-uuid'));
 $current = $user->permissions;   // all 7 flags, straight from the server
 
 TurboPartner::updatePartnerUserPermissions('user-uuid', new UpdatePartnerUserRequest(
@@ -764,7 +769,7 @@ TurboQuote::configure(new QuoteClientConfig(
 TurboQuote::configure(QuoteClientConfig::fromEnvironment());
 ```
 
-Unlike `TurboSign`, `TurboQuote` does **NOT** require `senderEmail` or `senderName` — quote routes never send signature emails. `orgId` is technically optional in the config object but the backend will return 401 if it is missing, so treat it as required.
+Unlike `TurboSign`, `TurboQuote` does **NOT** take `senderEmail` or `senderName` — but sending a quote *does* create a signature request and email the recipient. The sender comes from your **organization's quote template** (Quote Settings) instead; configure a sender email there, or quote create/duplicate/send is rejected with `400 SenderEmailRequired`. `orgId` is technically optional in the config object but the backend will return 401 if it is missing, so treat it as required.
 
 ## TurboQuote Usage
 
@@ -865,6 +870,20 @@ $result = TurboQuote::sendQuote($quote->id, new SendQuoteRequest(
 echo "Status: {$result->quote->status}\n";   // 'sent'
 echo "Message: {$result->message}\n";
 ```
+
+Sending a quote **does** create a signature request and email the contact. The send is gated by a set
+of preconditions, each of which fails with `ValidationException` (400) carrying a specific
+`$e->errorCode`:
+
+| `errorCode` | Meaning |
+|---|---|
+| `QuoteNotSendable` | The quote's status does not allow sending |
+| `QuoteValidUntilRequired` | No `validUntil` on the quote and none passed in `SendQuoteRequest` |
+| `QuoteExpired` | `validUntil` is already in the past |
+| `QuoteHasNoLineItems` | The quote has no line items |
+| `QuoteContactRequired` | The quote has no contact to send to |
+| `QuoteCustomerInactive` | The customer/company is inactive |
+| `SenderEmailRequired` | The org's quote template (Quote Settings) has no sender email |
 
 ### handleExpiredQuote
 
@@ -1107,7 +1126,7 @@ use TurboDocx\Types\SignatureFieldType;
 use TurboDocx\Types\TemplateConfig;
 use TurboDocx\Types\FieldPlacement;
 use TurboDocx\Types\Requests\SendSignatureRequest;
-use TurboDocx\TurboDocxError;
+use TurboDocx\Exceptions\TurboDocxException;
 
 class SignatureController extends Controller
 {
@@ -1142,8 +1161,11 @@ class SignatureController extends Controller
             );
 
             return response()->json($result);
-        } catch (TurboDocxError $e) {
-            return response()->json(['error' => $e->getMessage()], $e->getStatusCode() ?: 500);
+        } catch (TurboDocxException $e) {
+            return response()->json(
+                ['error' => $e->getMessage(), 'code' => $e->errorCode],
+                $e->statusCode ?? 500,
+            );
         }
     }
 
@@ -1152,8 +1174,11 @@ class SignatureController extends Controller
         try {
             $status = TurboSign::getStatus($id);
             return response()->json($status);
-        } catch (TurboDocxError $e) {
-            return response()->json(['error' => $e->getMessage()], $e->getStatusCode() ?: 500);
+        } catch (TurboDocxException $e) {
+            return response()->json(
+                ['error' => $e->getMessage(), 'code' => $e->errorCode],
+                $e->statusCode ?? 500,
+            );
         }
     }
 }
@@ -1161,29 +1186,53 @@ class SignatureController extends Controller
 
 ## Error Handling
 
+All SDK exceptions live in `TurboDocx\Exceptions` and extend `TurboDocxException`. Each carries two
+**public readonly properties** — `$e->statusCode` (`?int`) and `$e->errorCode` (`?string`) — plus the
+standard `$e->getMessage()`. Do **not** use `getStatusCode()` / `getCode()`: they do not exist / are
+always `0`.
+
 ```php
-use TurboDocx\TurboDocxError;
-use TurboDocx\Errors\AuthenticationError;
-use TurboDocx\Errors\ValidationError;
-use TurboDocx\Errors\NotFoundError;
-use TurboDocx\Errors\RateLimitError;
-use TurboDocx\Errors\NetworkError;
+use TurboDocx\Exceptions\TurboDocxException;
+use TurboDocx\Exceptions\AuthenticationException;
+use TurboDocx\Exceptions\AuthorizationException;
+use TurboDocx\Exceptions\ValidationException;
+use TurboDocx\Exceptions\ConflictException;
+use TurboDocx\Exceptions\NotFoundException;
+use TurboDocx\Exceptions\RateLimitException;
+use TurboDocx\Exceptions\NetworkException;
 
 try {
     TurboSign::sendSignature($request);
-} catch (AuthenticationError $e) {
-    // Invalid/missing API key
-} catch (ValidationError $e) {
-    // Bad request (e.g., missing senderEmail)
-} catch (NotFoundError $e) {
-    // Document/org not found
-} catch (RateLimitError $e) {
-    // Too many requests
-} catch (NetworkError $e) {
-    // Connection failure
-} catch (TurboDocxError $e) {
-    // Catch-all for any SDK error
-    echo "Error {$e->getCode()}: {$e->getMessage()}\n";
+} catch (ValidationException $e) {
+    // 400 — bad request (e.g., missing senderEmail)
+} catch (AuthenticationException $e) {
+    // 401 — invalid/missing API key
+} catch (AuthorizationException $e) {
+    // 403 — key lacks the required role
+} catch (NotFoundException $e) {
+    // 404 — document/org not found
+} catch (ConflictException $e) {
+    // 409 — resource already exists
+} catch (RateLimitException $e) {
+    // 429 — too many requests
+} catch (NetworkException $e) {
+    // statusCode is null — the request never reached the server
+} catch (TurboDocxException $e) {
+    // Catch-all for any other SDK error (e.g. raw 5xx)
+    echo "Error {$e->statusCode} {$e->errorCode}: {$e->getMessage()}\n";
+}
+```
+
+`errorCode` is **always populated** on the typed subclasses: the API's code when one is present,
+otherwise the class default — `VALIDATION_ERROR`, `AUTHENTICATION_ERROR`, `AUTHORIZATION_ERROR`,
+`NOT_FOUND`, `CONFLICT`, `RATE_LIMIT_EXCEEDED`, `NETWORK_ERROR`. So you can branch on
+`$e->errorCode` without a null check:
+
+```php
+} catch (ValidationException $e) {
+    if ($e->errorCode === 'SenderEmailRequired') {
+        // configure a sender email on the org's quote template
+    }
 }
 ```
 
@@ -1193,7 +1242,7 @@ try {
 |--------|-------------|
 | `TurboSign::sendSignature($request)` | Send document for e-signature |
 | `TurboSign::createSignatureReviewLink($request)` | Preview without emails |
-| `TurboSign::getStatus($documentId)` | Get document + recipient status |
+| `TurboSign::getStatus($documentId)` | Get document status (returns `DocumentStatusResponse` — `status` only) |
 | `TurboSign::download($documentId)` | Download signed PDF as string |
 | `TurboSign::void($documentId, $reason)` | Cancel a signature request (reason required) |
 | `TurboSign::resend($documentId, $recipientIds)` | Resend signature email to recipient UUIDs |
@@ -1246,7 +1295,7 @@ try {
 | **TurboQuote — Quotes** | |
 | `TurboQuote::createQuote($request)` | Create a new quote |
 | `TurboQuote::listQuotes($request?)` | List quotes with pagination, filters, and stats |
-| `TurboQuote::getQuote($id)` | Get quote by ID (statusInfo merged in) |
+| `TurboQuote::getQuote($id)` | Get quote by ID (`statusInfo` merged in; `preparedBy` present on this call only) |
 | `TurboQuote::updateQuote($id, $request)` | Update quote fields (PATCH — null-clears nullable fields) |
 | `TurboQuote::deleteQuote($id)` | Delete a quote |
 | `TurboQuote::duplicateQuote($id)` | Duplicate a quote |
@@ -1325,11 +1374,12 @@ try {
 ## Gotchas
 
 - **PHP 8.1+ required** for named arguments and enum support
-- **`senderEmail` is required** — configure globally or pass per-call
+- **`senderEmail` is required** for TurboSign — configure globally or pass per-call; `HttpClientConfig` throws `ValidationException` without it. **`senderName` is optional** — when omitted the sender name resolves to **the API key's name** (not the org name), so name your keys recognisably.
+- **All SDK exceptions are in `TurboDocx\Exceptions`** (`TurboDocxException` + `ValidationException`, `AuthenticationException`, `AuthorizationException`, `NotFoundException`, `ConflictException`, `RateLimitException`, `NetworkException`). Read the HTTP status off the **public readonly property** `$e->statusCode` and the code off `$e->errorCode` — there is no `getStatusCode()`, and `$e->getCode()` is always `0`.
 - **PHP SDK uses static methods** — configure once, call on the class
 - **Partner API keys are distinct** from regular API keys — using the wrong one returns `AuthenticationException`
 - **Laravel config**: add TurboSign::configure() in a service provider's `boot()` method for clean initialization
-- **`signUrl`** — each `RecipientResponse` in the `sendSignature`/`createSignatureReviewLink` response has a `signUrl` property: the personal signing link for that recipient. `createSignatureReviewLink` also returns a top-level `previewUrl` for document-level preview.
+- **No `signUrl` on send/review recipients.** `SendSignatureResponse::$recipients` and `CreateSignatureReviewLinkResponse::$recipients` are `?array` of **plain arrays** (`id`, `name`, `email`, `metadata`) — not `RecipientResponse` objects, and they carry no `signUrl`. Use `createSignatureReviewLink`'s top-level `previewUrl` for the document-level preview; the per-recipient `signUrl` property exists only on `RecipientResponse`, which these endpoints do not return.
 - **`resend` takes recipient UUIDs** (array of strings), not email addresses — fetch them from the send/review response or `getAuditTrail`. Pass an empty array to resend to all pending recipients.
 - **`download` is a two-step operation.** `GET /api/signature/:id/download` returns JSON `{"downloadUrl", "fileName"}` — not bytes — and the presigned `downloadUrl` must then be fetched **without an `Authorization` header** (S3 rejects a presigned request that also carries one). The SDK does both steps for you; hand-rolled REST calls must too.
 - **Two different role enums — do not mix them.** Organization users and organization API keys take `OrgUserRole`: `admin` / `contributor` / `user` / `viewer`. Partner-portal users take `admin` / `member` / `viewer`. `member` is not a valid org role, and `contributor` / `user` are not valid partner roles — either mistake is a 400.
@@ -1343,6 +1393,8 @@ try {
 - **Signature verification** — never `json_decode` the request body before passing it to `verifyWebhookSignature()`. The HMAC is over the raw bytes; re-encoded JSON will not match.
 
 - **TurboQuote decimal fields come back as numbers**, not strings — the response normalizer coerces `listPrice`, `unitPrice`, `discountPercent`, `subtotal`, `grandTotal`, `taxRate`, and related fields from the backend's string representation to PHP floats. Do not try to parse them yourself.
+- **`TurboQuote` takes no `senderEmail`/`senderName`, but sending a quote still emails the recipient.** `sendQuote` creates a signature request; the sender identity comes from the **org's quote template** (Quote Settings). An API-key caller whose template has no sender email gets `400 SenderEmailRequired`. Other send preconditions each have their own 400 code: `QuoteNotSendable`, `QuoteValidUntilRequired`, `QuoteExpired`, `QuoteHasNoLineItems`, `QuoteContactRequired`, `QuoteCustomerInactive`.
+- **`preparedBy` is only on the single-quote fetch.** `getQuote($id)` returns `$quote->preparedBy` (`['name' => ..., 'email' => ...]`); `listQuotes()` rows do not carry it.
 - **PATCH null-clears nullable fields** — `updateQuote` (and other PATCH methods) include explicitly-set `null` values in the request body, which clears that field on the server. Only fields you actually pass are sent; fields you omit are left unchanged.
 - **`discountType` is `'percent'` or `'amount'`** — use the string literals or `DiscountType::PERCENT->value` / `DiscountType::AMOUNT->value`; mixing them up silently falls back to the backend default.
 - **Every product line item needs four fields: `productId`, `productName`, `unitPrice`, `billingFrequency`.** `productId` must be *passed*, but its value may be `null` — that is how you add a custom, non-catalog item. `quantity` defaults to 1.
