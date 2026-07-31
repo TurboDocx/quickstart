@@ -227,6 +227,57 @@ for _, entry := range audit.AuditTrail {
 }
 ```
 
+### TurboSign.SendReminder
+
+```go
+// Remind every signer whose turn it is — pass nil for the ids.
+resp, err := client.TurboSign.SendReminder(ctx, documentID, nil)
+if err != nil {
+    log.Fatal(err)
+}
+for _, r := range resp.Results {
+    fmt.Println(r.RecipientID, r.Status) // "sent" | "skipped_wrong_order" | ...
+}
+
+// Or nudge one specific signer.
+_, err = client.TurboSign.SendReminder(ctx, documentID, []string{"recipient-uuid-1"})
+```
+
+A **standalone nudge**: it ignores the automatic reminder cadence, works even when reminders are disabled or the per-signer cap is spent, and does **not** consume that cap. Only signers at the **current signing order** are emailed — a later-order or already-signed recipient comes back as a `skipped_*` result rather than being dropped, so you can tell whether anyone was actually emailed.
+
+The recipient filter is **optional**. Omit it to remind everyone eligible; do **not** pass an empty list, since the API requires at least one id when the key is present.
+
+### Reminders & expiration on send
+
+Both send methods accept eight optional per-document schedule fields. Omit them and the document inherits your organization's E-Signature defaults — and since both features ship **off** by default, omitting them preserves today's behaviour exactly.
+
+```go
+remindersOn := true
+expirationOn := true
+maxReminders := 3
+
+_, err := client.TurboSign.SendSignature(ctx, &turbodocx.SendSignatureRequest{
+    DeliverableID: "deliverable-uuid",
+    Recipients:    recipients,
+    Fields:        fields,
+    SignatureSchedule: turbodocx.SignatureSchedule{
+        // Pointers, so an explicit false or 0 stays distinct from "unset".
+        RemindersEnabled:          &remindersOn,
+        ReminderDelay:             &turbodocx.Duration{Value: 2, Unit: "days"},
+        ReminderInterval:          &turbodocx.Duration{Value: 1, Unit: "days"},
+        MaxReminders:              &maxReminders, // -1 unlimited, 0 none
+        ExpirationEnabled:         &expirationOn,
+        ExpireAfter:               &turbodocx.Duration{Value: 14, Unit: "days"},
+        ExpirationWarning:         &turbodocx.Duration{Value: 2, Unit: "days"}, // 0 = never warn
+        ExpirationWarningInterval: &turbodocx.Duration{Value: 1, Unit: "days"},
+    },
+})
+```
+
+Durations are `{ value, unit }` with `unit` of `"hours"` or `"days"`. `value` is a whole number, minimum 1 — except `expirationWarning`, where `0` means "never send a warning". The resolved schedule is frozen onto the document at send time, so changing your org defaults later never affects a document already out for signature.
+
+Once expiration is on, the document carries an `expiresAt` deadline; after it passes every signing link returns **HTTP 410** and the document reaches the terminal status `expired`.
+
 ## Deliverable
 
 Document generation: render a TurboDocx template with variable substitution into a deliverable (DOCX/PPTX), then download it or hand its ID to TurboSign as the source document.
