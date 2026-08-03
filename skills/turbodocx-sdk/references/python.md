@@ -85,6 +85,40 @@ print(f"Status: {status['status']}")   # 'under_review' | 'completed' | 'voided'
 
 The response carries **only** `status` — there is no `recipients` key. For per-recipient state use `get_audit_trail(document_id)`.
 
+### get_recipients
+
+Every recipient on the document with their signing status, email history, and who sent it. This is what answers "who has signed and who are we still waiting on".
+
+```python
+result = await TurboSign.get_recipients(document_id)
+
+summary = result["summary"]
+print(f"{summary['completed']}/{summary['total']} signed, waiting on {summary['waitingOn']}")
+
+for r in result["recipients"]:
+    # 'pending' | 'viewed' | 'completed' | 'voided' | 'expired'
+    print(f"{r['name']} <{r['email']}>: {r['effectiveStatus']}")
+    print(f"  emailed {r['delivery']['totalSent']}x")
+```
+
+Each recipient carries **two** status fields and they differ on purpose:
+
+| Field | Values | Use it for |
+|---|---|---|
+| `status` | `pending`, `viewed`, `completed` | The raw stored value |
+| `effectiveStatus` | `pending`, `viewed`, `completed`, `voided`, `expired` | Display and branching |
+
+There is no per-recipient declined/voided/expired state, so on a voided or expired document an
+unsigned signer still reads `pending` in `status` — branching on it means chasing people whose
+signing links are already dead. A completed signature is never revoked: someone who signed
+before the document was voided still reads `completed`. `effectiveStatus` also reflects a
+lapsed deadline immediately, without waiting for the background sweep to update the row.
+
+`summary` counts by `effectiveStatus` and adds `waitingOn` (pending + viewed), which is zero
+once the document is terminal. Each recipient's `delivery` block — `firstSentOn`, `lastSentOn`,
+`totalSent`, `reminderCount`, `lastRemindedAt`, `warningCount`, `lastWarningAt` — is that
+signer's email history; CC notifications are excluded, since a CC address is not a signer.
+
 ### download
 
 ```python
@@ -540,7 +574,7 @@ TurboSign dispatches **7** events. All of them are live — subscribe to whichev
 | `signature.document.finalization_failed` | The signed PDF fails to finalize (e.g. KMS signing error); the document is **not** completed |
 | `signature.document.voided` | The document is voided or cancelled |
 
-The SDK exposes these as first-class constants — `from turbodocx_sdk import WEBHOOK_EVENTS, WebhookEvent`. Individual constants use the **singular** `WEBHOOK_EVENT_` prefix (`WEBHOOK_EVENT_SENT`, `WEBHOOK_EVENT_RECIPIENT_SIGNED`, `WEBHOOK_EVENT_COMPLETED`, …), `WEBHOOK_EVENTS` is the list of all 7, and `WebhookEvent` is a `Literal` type for annotations. Use them instead of hand-typing names — `WEBHOOK_EVENT_COMPLETED == "signature.document.completed"`. The literal wire strings above are what actually travel in the `eventType` field of the delivered payload, and they are always accepted by `create_webhook`/`update_webhook`. `get_webhook()` also returns an `availableEvents` array — the backend advertises the live catalog at runtime.
+The SDK exposes these as first-class constants — `from turbodocx_sdk import WEBHOOK_EVENTS, WebhookEvent`. Individual constants use the **singular** `WEBHOOK_EVENT_` prefix (`WEBHOOK_EVENT_SENT`, `WEBHOOK_EVENT_RECIPIENT_SIGNED`, `WEBHOOK_EVENT_COMPLETED`, …), `WEBHOOK_EVENTS` is the list of all 7, and `WebhookEvent` is a `Literal` type for annotations. Use them instead of hand-typing names — `WEBHOOK_EVENT_COMPLETED == "signature.document.completed"`. The literal wire strings above are what actually travel in the top-level `event` field of the delivered payload (the envelope is `{ event, event_id, created_at, version, data }` — a receiver written against `eventType` reads `null` and silently dispatches nothing), and they are always accepted by `create_webhook`/`update_webhook`. `get_webhook()` also returns an `availableEvents` array — the backend advertises the live catalog at runtime.
 
 #### Lifecycle: `recipient_signed` vs `signed` vs `completed`
 

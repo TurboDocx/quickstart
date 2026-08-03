@@ -89,6 +89,44 @@ fmt.Printf("Status: %s\n", status.Status)
 
 `GetStatus` returns `*turbodocx.DocumentStatusResponse`, which carries **only** a `Status` string — there is no `Recipients` slice on it. For per-recipient state use `GetAuditTrail`.
 
+### GetRecipients
+
+Every recipient on the document with their signing status, email history, and who sent it. This is what answers "who has signed and who are we still waiting on".
+
+```go
+progress, err := client.TurboSign.GetRecipients(ctx, documentID)
+if err != nil {
+    log.Fatal(err)
+}
+
+fmt.Printf("%d/%d signed, waiting on %d\n",
+    progress.Summary.Completed, progress.Summary.Total, progress.Summary.WaitingOn)
+
+for _, r := range progress.Recipients {
+    // "pending" | "viewed" | "completed" | "voided" | "expired"
+    fmt.Printf("%s <%s>: %s (emailed %dx)\n",
+        r.Name, r.Email, r.EffectiveStatus, r.Delivery.TotalSent)
+}
+```
+
+Each recipient carries **two** status fields and they differ on purpose:
+
+| Field | Values | Use it for |
+|---|---|---|
+| `status` | `pending`, `viewed`, `completed` | The raw stored value |
+| `effectiveStatus` | `pending`, `viewed`, `completed`, `voided`, `expired` | Display and branching |
+
+There is no per-recipient declined/voided/expired state, so on a voided or expired document an
+unsigned signer still reads `pending` in `status` — branching on it means chasing people whose
+signing links are already dead. A completed signature is never revoked: someone who signed
+before the document was voided still reads `completed`. `effectiveStatus` also reflects a
+lapsed deadline immediately, without waiting for the background sweep to update the row.
+
+`summary` counts by `effectiveStatus` and adds `waitingOn` (pending + viewed), which is zero
+once the document is terminal. Each recipient's `delivery` block — `firstSentOn`, `lastSentOn`,
+`totalSent`, `reminderCount`, `lastRemindedAt`, `warningCount`, `lastWarningAt` — is that
+signer's email history; CC notifications are excluded, since a CC address is not a signer.
+
 ### Download
 
 ```go
@@ -672,7 +710,7 @@ Events: turbodocx.WebhookEventStrings(
 Events: turbodocx.WebhookEventStrings(turbodocx.AllWebhookEvents...)
 ```
 
-The literal wire strings above are what actually travel in the `eventType` field of the delivered payload, and they are always accepted by `CreateWebhook`/`UpdateWebhook`. `GetWebhook` also returns an `availableEvents` array — the backend advertises the live catalog at runtime.
+The literal wire strings above are what actually travel in the top-level `event` field of the delivered payload (the envelope is `{ event, event_id, created_at, version, data }` — a receiver written against `eventType` reads `null` and silently dispatches nothing), and they are always accepted by `CreateWebhook`/`UpdateWebhook`. `GetWebhook` also returns an `availableEvents` array — the backend advertises the live catalog at runtime.
 
 #### Lifecycle: `recipient_signed` vs `signed` vs `completed`
 

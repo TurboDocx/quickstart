@@ -183,7 +183,8 @@ Create working route handlers / endpoint code for the selected product(s). The l
 
 **For TurboSign, generate:**
 - `sendSignature()` endpoint — accepts file (or `fileLink` / `deliverableId` / `templateId`), recipients, fields
-- `getStatus()` endpoint — check document status by ID
+- `getStatus()` endpoint — check the document-level status by ID
+- `getRecipients()` endpoint — every recipient with their signing status, email history, and who sent the document. Generate this whenever the user wants to know **who has signed / who is still pending**; `getStatus()` alone cannot answer that. Note each recipient carries both `status` (raw: `pending`/`viewed`/`completed`) and `effectiveStatus` (adds `voided`/`expired`) — generated code should branch on `effectiveStatus`, since an unsigned signer on a voided document still reads `pending` in the raw field.
 - `download()` endpoint — stream signed PDF (returns `Blob`/`ArrayBuffer` per language)
 - If the user mentioned a preview, review step, draft, or "verify field placement before sending": also generate a `createSignatureReviewLink()` endpoint. This prepares the document and returns a `previewUrl` **without sending signature emails** — pair it with `sendSignature()` as a two-step preview-then-send workflow.
 - Optionally: `void()`, `resend()`, `getAuditTrail()` if the user mentioned cancellation, reminders, or compliance/audit needs (per-language method names vary — consult the language reference; e.g. JS uses `void()`/`resend()`, Java uses `voidDocument()`/`resendEmail()`, Ruby uses `void_document`/`resend_email`)

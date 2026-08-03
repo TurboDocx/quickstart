@@ -84,7 +84,43 @@ DocumentStatusResponse status = client.turboSign().getStatus(documentId);
 System.out.println("Status: " + status.getStatus()); // e.g. "sent", "completed", "voided"
 ```
 
-`DocumentStatusResponse` carries the document-level `status` only. For per-recipient detail, use `getAuditTrail(documentId)`.
+`DocumentStatusResponse` carries the document-level `status` only. For per-recipient detail, use `getRecipients(documentId)` below — it returns the roster directly, so there is no need to reconstruct it from `getAuditTrail(documentId)`.
+
+### getRecipients
+
+Every recipient on the document with their signing status, email history, and who sent it. This is what answers "who has signed and who are we still waiting on".
+
+```java
+DocumentRecipientsResponse progress = client.turboSign().getRecipients(documentId);
+
+System.out.println(progress.getSummary().getCompleted() + "/"
+        + progress.getSummary().getTotal() + " signed, waiting on "
+        + progress.getSummary().getWaitingOn());
+
+for (DocumentRecipientsResponse.RecipientSignatureStatus r : progress.getRecipients()) {
+    // "pending" | "viewed" | "completed" | "voided" | "expired"
+    System.out.println(r.getName() + " <" + r.getEmail() + ">: " + r.getEffectiveStatus()
+            + " (emailed " + r.getDelivery().getTotalSent() + "x)");
+}
+```
+
+Each recipient carries **two** status fields and they differ on purpose:
+
+| Field | Values | Use it for |
+|---|---|---|
+| `status` | `pending`, `viewed`, `completed` | The raw stored value |
+| `effectiveStatus` | `pending`, `viewed`, `completed`, `voided`, `expired` | Display and branching |
+
+There is no per-recipient declined/voided/expired state, so on a voided or expired document an
+unsigned signer still reads `pending` in `status` — branching on it means chasing people whose
+signing links are already dead. A completed signature is never revoked: someone who signed
+before the document was voided still reads `completed`. `effectiveStatus` also reflects a
+lapsed deadline immediately, without waiting for the background sweep to update the row.
+
+`summary` counts by `effectiveStatus` and adds `waitingOn` (pending + viewed), which is zero
+once the document is terminal. Each recipient's `delivery` block — `firstSentOn`, `lastSentOn`,
+`totalSent`, `reminderCount`, `lastRemindedAt`, `warningCount`, `lastWarningAt` — is that
+signer's email history; CC notifications are excluded, since a CC address is not a signer.
 
 ### download
 
@@ -604,7 +640,7 @@ TurboSign dispatches **7** events. All of them are live — subscribe to whichev
 | `signature.document.finalization_failed` | The signed PDF fails to finalize (e.g. KMS signing error); the document is **not** completed |
 | `signature.document.voided` | The document is voided or cancelled |
 
-The SDK exposes these as the `com.turbodocx.WebhookEvent` enum — `WebhookEvent.SENT`, `.VIEWED`, `.RECIPIENT_SIGNED`, `.SIGNED`, `.COMPLETED`, `.FINALIZATION_FAILED`, `.VOIDED`. Call `getValue()` for the wire string (`WebhookEvent.COMPLETED.getValue()` → `"signature.document.completed"`), and `WebhookEvent.allValues()` for a `List<String>` of all 7 you can hand straight to `createWebhook`. The literal wire strings above are what actually travel in the `eventType` field of the delivered payload, and they are always accepted by `createWebhook`/`updateWebhook`. `getWebhook()` also returns an `availableEvents` array — the backend advertises the live catalog at runtime.
+The SDK exposes these as the `com.turbodocx.WebhookEvent` enum — `WebhookEvent.SENT`, `.VIEWED`, `.RECIPIENT_SIGNED`, `.SIGNED`, `.COMPLETED`, `.FINALIZATION_FAILED`, `.VOIDED`. Call `getValue()` for the wire string (`WebhookEvent.COMPLETED.getValue()` → `"signature.document.completed"`), and `WebhookEvent.allValues()` for a `List<String>` of all 7 you can hand straight to `createWebhook`. The literal wire strings above are what actually travel in the top-level `event` field of the delivered payload (the envelope is `{ event, event_id, created_at, version, data }` — a receiver written against `eventType` reads `null` and silently dispatches nothing), and they are always accepted by `createWebhook`/`updateWebhook`. `getWebhook()` also returns an `availableEvents` array — the backend advertises the live catalog at runtime.
 
 #### Lifecycle: `recipient_signed` vs `signed` vs `completed`
 
