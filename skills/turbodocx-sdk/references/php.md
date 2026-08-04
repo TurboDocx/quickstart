@@ -748,7 +748,9 @@ if (!verifyWebhookSignature($rawBody, $signatureHeader, $timestampHeader, $secre
 }
 
 $event = json_decode($rawBody, true);
-// process $event['eventType'], $event['data'], ...
+// The envelope is { event, event_id, created_at, version, data } — dispatch on
+// $event['event'], NOT $event['eventType'] (that key does not exist and reads null).
+// process $event['event'], $event['data'], ...
 ```
 
 **Canonical end-to-end PHP example:** [`packages/php-sdk/examples/turbowebhooks-crud.php`](https://github.com/TurboDocx/SDK/blob/main/packages/php-sdk/examples/turbowebhooks-crud.php) walks through create → conflict → get → update → test-fire → rotate → list → replay → delete + every error branch.

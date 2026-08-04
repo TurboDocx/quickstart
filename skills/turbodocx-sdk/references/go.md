@@ -885,7 +885,10 @@ func TurboDocxWebhook(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // Now safe to json.Unmarshal(rawBody, &event) and dispatch on event.eventType.
+    // Now safe to json.Unmarshal(rawBody, &event). The envelope is
+    // { event, event_id, created_at, version, data } — dispatch on the top-level
+    // `event` field (tag it `json:"event"`), NOT `eventType`: that key does not
+    // exist on the wire, so it unmarshals to the zero value and matches nothing.
     w.WriteHeader(http.StatusOK)
 }
 ```

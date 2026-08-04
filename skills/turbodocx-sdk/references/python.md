@@ -736,7 +736,9 @@ def turbodocx_webhook():
 
     import json
     event = json.loads(raw_body)
-    # process event["eventType"], event["data"], ...
+    # The envelope is { event, event_id, created_at, version, data } — dispatch on
+    # event["event"], NOT event["eventType"] (that key does not exist and raises KeyError).
+    # process event["event"], event["data"], ...
     return ("ok", 200)
 ```
 

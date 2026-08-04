@@ -817,7 +817,9 @@ public class TurboDocxWebhookController {
             return ResponseEntity.status(401).build();
         }
 
-        // Now safe to parse rawBody as JSON and dispatch on event.eventType.
+        // Now safe to parse rawBody as JSON. The envelope is
+        // { event, event_id, created_at, version, data } — dispatch on the top-level
+        // "event" field, NOT "eventType" (that key does not exist and reads null).
         return ResponseEntity.ok().build();
     }
 }

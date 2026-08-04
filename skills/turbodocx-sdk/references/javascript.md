@@ -684,7 +684,9 @@ app.post('/webhooks/turbodocx', (req, res) => {
   }
 
   const event = JSON.parse(req.body.toString('utf8'));
-  // process event.eventType, event.data, ...
+  // The envelope is { event, event_id, created_at, version, data } — dispatch on
+  // event.event, NOT event.eventType (that key does not exist and reads undefined).
+  // process event.event, event.data, ...
   res.status(200).send('ok');
 });
 ```

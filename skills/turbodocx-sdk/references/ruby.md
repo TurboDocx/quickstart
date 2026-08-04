@@ -550,7 +550,9 @@ unless TurboDocxSdk.verify_webhook_signature(
 end
 
 event = JSON.parse(raw_body)
-# process event["eventType"], event["data"], ...
+# The envelope is { event, event_id, created_at, version, data } — dispatch on
+# event["event"], NOT event["eventType"] (that key does not exist and reads nil).
+# process event["event"], event["data"], ...
 [200, {}, ["ok"]]
 ```
 
