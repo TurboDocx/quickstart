@@ -146,6 +146,16 @@ once the document is terminal. Each recipient's `delivery` block — `firstSentO
 `totalSent`, `reminderCount`, `lastRemindedAt`, `warningCount`, `lastWarningAt` — is that
 signer's email history; CC notifications are excluded, since a CC address is not a signer.
 
+`reminderCount` and `lastRemindedAt` do NOT mean what their names suggest. `reminderCount`
+counts **automatic (scheduled) reminders only** — the counter `maxReminders` caps; a manual
+"remind now" must not consume the cap budget, so it does not increment this even though its
+email does appear in `totalSent`. `lastRemindedAt` is a **cadence clock**, not a record of a
+reminder: the initial signature-request send, each scheduled reminder, each manual "remind now"
+and each expiry warning all stamp it. A freshly-sent document therefore reads a non-null
+`lastRemindedAt` equal to the invitation timestamp alongside `reminderCount: 0` — nobody has
+been reminded. Use `totalSent` to answer "have we actually chased this person".
+`warningCount` / `lastWarningAt` have no such caveat.
+
 ### TurboSign.download
 
 ```typescript
