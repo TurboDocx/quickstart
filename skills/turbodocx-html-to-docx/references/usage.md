@@ -122,6 +122,58 @@ const options = {
 };
 ```
 
+### Styling: inline styles vs. CSS stylesheet
+
+**Prefer inline `style="..."` attributes.** They are the most reliable and
+predictable way to style a generated DOCX, and they work on every version of the
+package. Internally the library resolves all styling down to per-element inline
+styles before building the Word document, so inline styles are the canonical
+form — what you write is exactly what gets applied, with no cascade or
+specificity surprises to reason about.
+
+```typescript
+const html = `
+  <h1 style="text-align: center; color: #1a3c7a;">Quarterly Report</h1>
+  <p style="font-size: 12pt; color: #222;">Body text styled inline.</p>
+`;
+const buffer = await HTMLtoDOCX(html);
+```
+
+**CSS stylesheets are also supported** (recent versions) via the
+`documentOptions.css` option, for when you already have a stylesheet or want to
+keep large amounts of markup clean by styling many elements at once. Selectors
+are matched and folded into each element's inline style, so an element's own
+inline `style` always wins.
+
+```typescript
+const css = `
+  h1, h2 { text-align: center; }
+  .title { color: #1a3c7a; font-size: 28pt; }
+  p      { color: #222; }
+`;
+const buffer = await HTMLtoDOCX(html, null, { css });
+```
+
+When you reach for `css`, keep its limits in mind (these are why inline is the
+safer default):
+
+- An element's inline `style` overrides a matching stylesheet rule.
+- The cascade follows standard specificity (id > class > type), source order
+  breaks ties.
+- Embedded `<style>` tags in the HTML are honored and removed from the output.
+- **Not supported:** `!important`, at-rules such as `@media`/`@supports` (they
+  are ignored, not applied), and external `<link rel="stylesheet">` files — pass
+  the CSS text via the `css` option instead.
+- Only properties the renderer already understands (color, `text-align`,
+  `font-size`, `font-family`, width/height, borders, background,
+  text-decoration, …) take effect; others are ignored.
+
+**Guidance when generating code for a user:** default to inline styles in the
+HTML you produce. Only use `documentOptions.css` if the user already has a
+stylesheet to reuse, explicitly asks for class/selector-based styling, or is
+generating highly repetitive markup where a shared stylesheet meaningfully
+reduces duplication.
+
 ### Heading Styles
 
 All heading styles are nested under the `heading` key. Each level supports `font`, `fontSize`, `bold`, `spacing`, `keepLines`, `keepNext`, and `outlineLevel`.
