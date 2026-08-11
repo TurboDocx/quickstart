@@ -202,6 +202,54 @@ for (AuditTrailEntry entry : audit.getAuditTrail()) {
 }
 ```
 
+### TurboSign.sendReminder
+
+```java
+// Remind every signer whose turn it is — the one-arg overload.
+SendReminderResponse response = turboSign.sendReminder(documentId);
+for (SendReminderResponse.ReminderResult r : response.getResults()) {
+    System.out.println(r.getRecipientId() + ": " + r.getStatus()); // "sent" | "skipped_wrong_order"
+}
+
+// Or nudge one specific signer.
+turboSign.sendReminder(documentId, List.of("recipient-uuid-1"));
+```
+
+A **standalone nudge**: it ignores the automatic reminder cadence, works even when reminders are disabled or the per-signer cap is spent, and does **not** consume that cap. Only signers at the **current signing order** are emailed — a later-order or already-signed recipient comes back as a `skipped_*` result rather than being dropped, so you can tell whether anyone was actually emailed.
+
+The recipient filter is **optional**. Omit it to remind everyone eligible; do **not** pass an empty list, since the API requires at least one id when the key is present.
+
+### Reminders & expiration on send
+
+Both send methods accept eight optional per-document schedule fields. Omit them and the document inherits your organization's E-Signature defaults — and since both features ship **off** by default, omitting them preserves today's behaviour exactly.
+
+```java
+SignatureSchedule schedule = SignatureSchedule.builder()
+        // Boxed types, so an explicit false or 0 stays distinct from "unset".
+        .remindersEnabled(true)
+        .reminderDelay(new SignatureSchedule.Duration(2, "days"))    // time to the FIRST reminder
+        .reminderInterval(new SignatureSchedule.Duration(1, "days")) // gap between later ones
+        .maxReminders(3)                                             // -1 unlimited, 0 none
+        .expirationEnabled(true)
+        .expireAfter(new SignatureSchedule.Duration(14, "days"))
+        .expirationWarning(new SignatureSchedule.Duration(2, "days")) // 0 = never warn
+        .expirationWarningInterval(new SignatureSchedule.Duration(1, "days"))
+        .build();
+
+SendSignatureRequest request = new SendSignatureRequest.Builder()
+        .deliverableId("deliverable-uuid")
+        .recipients(recipients)
+        .fields(fields)
+        .schedule(schedule)
+        .build();
+
+turboSign.sendSignature(request);
+```
+
+Durations are `{ value, unit }` with `unit` of `"hours"` or `"days"`. `value` is a whole number, minimum 1 — except `expirationWarning`, where `0` means "never send a warning". The resolved schedule is frozen onto the document at send time, so changing your org defaults later never affects a document already out for signature.
+
+Once expiration is on, the document carries an `expiresAt` deadline; after it passes every signing link returns **HTTP 410** and the document reaches the terminal status `expired`.
+
 ## Deliverable
 
 Document generation: render a TurboDocx template with variable substitution into a deliverable (DOCX/PPTX), then download it or hand its ID to TurboSign as the source document.

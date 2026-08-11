@@ -199,6 +199,48 @@ for entry in audit["auditTrail"]:
     print(f"{entry['timestamp']}  {entry['actionType']}  {entry.get('user', {}).get('email', '')}")
 ```
 
+### TurboSign.send_reminder
+
+```python
+# Remind every signer whose turn it is — omit the ids entirely.
+result = await TurboSign.send_reminder(document_id)
+for entry in result["results"]:
+    print(entry["recipientId"], entry["status"])  # 'sent' | 'skipped_wrong_order' | ...
+
+# Or nudge one specific signer.
+await TurboSign.send_reminder(document_id, ["recipient-uuid-1"])
+```
+
+A **standalone nudge**: it ignores the automatic reminder cadence, works even when reminders are disabled or the per-signer cap is spent, and does **not** consume that cap. Only signers at the **current signing order** are emailed — a later-order or already-signed recipient comes back as a `skipped_*` result rather than being dropped, so you can tell whether anyone was actually emailed.
+
+The recipient filter is **optional**. Omit it to remind everyone eligible; do **not** pass an empty list, since the API requires at least one id when the key is present.
+
+### Reminders & expiration on send
+
+Both send methods accept eight optional per-document schedule fields. Omit them and the document inherits your organization's E-Signature defaults — and since both features ship **off** by default, omitting them preserves today's behaviour exactly.
+
+```python
+await TurboSign.send_signature(
+    recipients=recipients,
+    fields=fields,
+    deliverable_id="deliverable-uuid",
+    # Reminders
+    reminders_enabled=True,
+    reminder_delay={"value": 2, "unit": "days"},    # time to the FIRST reminder
+    reminder_interval={"value": 1, "unit": "days"}, # gap between later ones
+    max_reminders=3,                                # -1 unlimited, 0 none
+    # Expiration
+    expiration_enabled=True,
+    expire_after={"value": 14, "unit": "days"},
+    expiration_warning={"value": 2, "unit": "days"},         # 0 = never warn
+    expiration_warning_interval={"value": 1, "unit": "days"},
+)
+```
+
+Durations are `{ value, unit }` with `unit` of `"hours"` or `"days"`. `value` is a whole number, minimum 1 — except `expirationWarning`, where `0` means "never send a warning". The resolved schedule is frozen onto the document at send time, so changing your org defaults later never affects a document already out for signature.
+
+Once expiration is on, the document carries an `expiresAt` deadline; after it passes every signing link returns **HTTP 410** and the document reaches the terminal status `expired`.
+
 ## Deliverable
 
 Document generation: render a TurboDocx template with variable substitution into a deliverable (DOCX/PPTX), then download it or hand its ID to TurboSign as the source document.

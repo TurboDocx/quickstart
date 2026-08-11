@@ -2645,6 +2645,90 @@
           "description": "pom.xml includes the com.turbodocx turbodocx-sdk dependency"
         }
       ]
+    },
+    {
+      "id": 47,
+      "prompt": "Add a 'Nudge signer' button to my Express app that reminds whoever still needs to sign a TurboDocx document, even if automatic reminders are switched off for it.",
+      "expected_output": "Adds a route handler calling TurboSign.sendReminder(documentId) with NO recipientIds so every eligible signer is reminded, surfaces the per-recipient results array, and does not pass an empty array",
+      "files": [
+        "package.json",
+        "tsconfig.json",
+        "src/index.ts",
+        "package-lock.json"
+      ],
+      "assertions": [
+        {
+          "name": "uses-send-reminder",
+          "type": "file_contains",
+          "description": "Calls TurboSign.sendReminder with the document id"
+        },
+        {
+          "name": "omits-empty-recipient-array",
+          "type": "file_not_contains",
+          "description": "Does NOT pass an empty recipientIds array \u2014 the API rejects it with a 400; the id list must be omitted to remind everyone"
+        },
+        {
+          "name": "handles-results",
+          "type": "file_contains",
+          "description": "Reads the results array and accounts for skipped statuses (e.g. skipped_wrong_order), not just a success boolean"
+        }
+      ]
+    },
+    {
+      "id": 48,
+      "prompt": "When I send a contract with TurboDocx, make it chase the signer every 2 days up to 3 times and expire after 14 days.",
+      "expected_output": "Passes the per-document schedule overrides on sendSignature: remindersEnabled, reminderDelay/reminderInterval as {value,unit} duration objects, maxReminders 3, expirationEnabled, expireAfter 14 days",
+      "files": [
+        "package.json",
+        "tsconfig.json",
+        "src/index.ts",
+        "package-lock.json"
+      ],
+      "assertions": [
+        {
+          "name": "sets-reminders",
+          "type": "file_contains",
+          "description": "Sets remindersEnabled true and a reminder cadence on the send call"
+        },
+        {
+          "name": "duration-objects",
+          "type": "file_contains",
+          "description": "Durations are {value, unit} objects with unit 'days' or 'hours' \u2014 NOT bare numbers"
+        },
+        {
+          "name": "sets-expiration",
+          "type": "file_contains",
+          "description": "Sets expirationEnabled true and expireAfter to 14 days"
+        },
+        {
+          "name": "caps-reminders",
+          "type": "file_contains",
+          "description": "Sets maxReminders to 3"
+        }
+      ]
+    },
+    {
+      "id": 49,
+      "prompt": "My TurboDocx signing links need to stop working after a week. Handle the case where someone opens an expired link.",
+      "expected_output": "Sets expirationEnabled with expireAfter of 7 days on send, and handles the terminal 'expired' status plus the HTTP 410 an expired signing link returns",
+      "files": [
+        "package.json",
+        "tsconfig.json",
+        "src/index.ts",
+        "package-lock.json"
+      ],
+      "assertions": [
+        {
+          "name": "sets-expiration",
+          "type": "file_contains",
+          "description": "Enables expiration with a 7-day expireAfter duration object"
+        },
+        {
+          "name": "handles-expired-status",
+          "type": "file_contains",
+          "description": "Handles the terminal 'expired' document status and/or the 410 returned by an expired signing link"
+        }
+      ]
     }
   ]
 }

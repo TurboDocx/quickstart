@@ -39,7 +39,7 @@ Only import what you use — for a project that only sends signatures, import on
 
 ## TurboSign
 
-Digital signature operations: prepare, send, track, download, void, resend, and audit-trail signed PDFs.
+Digital signature operations: prepare, send, track, download, void, resend, remind, and audit-trail signed PDFs.
 
 ### TurboSign.configure
 
@@ -192,6 +192,49 @@ console.log(result.success, result.recipientCount);
 ```
 
 `recipientIds` is an array of recipient UUIDs, **not** email addresses.
+
+### TurboSign.sendReminder
+
+```typescript
+// Remind every signer whose turn it is — omit the ids entirely.
+const { results } = await TurboSign.sendReminder(documentId);
+for (const r of results) {
+  console.log(r.recipientId, r.status); // 'sent' | 'skipped_wrong_order' | ...
+}
+
+// Or nudge one specific signer.
+await TurboSign.sendReminder(documentId, ['recipient-uuid-1']);
+```
+
+A **standalone nudge**: it ignores the automatic reminder cadence, works even when reminders are disabled or the per-signer cap is spent, and does **not** consume that cap. Only signers at the **current signing order** are emailed — a later-order or already-signed recipient comes back as a `skipped_*` result rather than being dropped, so you can tell whether anyone was actually emailed.
+
+The recipient filter is **optional**. Omit it to remind everyone eligible; do **not** pass an empty list, since the API requires at least one id when the key is present.
+
+### Reminders & expiration on send
+
+Both send methods accept eight optional per-document schedule fields. Omit them and the document inherits your organization's E-Signature defaults — and since both features ship **off** by default, omitting them preserves today's behaviour exactly.
+
+```typescript
+await TurboSign.sendSignature({
+  deliverableId: 'deliverable-uuid',
+  recipients,
+  fields,
+  // Reminders
+  remindersEnabled: true,
+  reminderDelay: { value: 2, unit: 'days' },   // time to the FIRST reminder
+  reminderInterval: { value: 1, unit: 'days' },// gap between later ones
+  maxReminders: 3,                             // -1 unlimited, 0 none
+  // Expiration
+  expirationEnabled: true,
+  expireAfter: { value: 14, unit: 'days' },
+  expirationWarning: { value: 2, unit: 'days' },        // 0 = never warn
+  expirationWarningInterval: { value: 1, unit: 'days' },
+});
+```
+
+Durations are `{ value, unit }` with `unit` of `"hours"` or `"days"`. `value` is a whole number, minimum 1 — except `expirationWarning`, where `0` means "never send a warning". The resolved schedule is frozen onto the document at send time, so changing your org defaults later never affects a document already out for signature.
+
+Once expiration is on, the document carries an `expiresAt` deadline; after it passes every signing link returns **HTTP 410** and the document reaches the terminal status `expired`.
 
 ### TurboSign.getAuditTrail
 
