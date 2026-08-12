@@ -1423,7 +1423,7 @@ otherwise the class default — `VALIDATION_ERROR`, `AUTHENTICATION_ERROR`, `AUT
 | `TurboQuote::downloadQuotePdf($id)` | Download quote as raw PDF bytes |
 | `TurboQuote::sendQuote($id, $request?)` | Send quote to the contact |
 | `TurboQuote::sendQuoteWithDeliverable($id, $request)` | Send with a TurboDocx-generated document attached |
-| `TurboQuote::declineQuote($id, $request)` | Mark a quote as declined |
+| `TurboQuote::declineQuote($id, $request)` | Mark a quote as declined (reason required only once sent) |
 | `TurboQuote::voidQuote($id, $request)` | Void a quote |
 | `TurboQuote::handleExpiredQuote($id, $request)` | Void or decline an expired sent quote and re-issue it as a duplicate. `action` is `'void'` \| `'decline'` only; `reason` (max 190) and `newValidUntil` (ISO date) are both required |
 | `TurboQuote::applyPriceBook($quoteId, $priceBookId)` | Apply a price book, repricing line items |
