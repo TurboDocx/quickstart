@@ -1132,7 +1132,7 @@ The error classes are **not** nested under a sub-module (e.g. not `TurboDocxSdk:
 | `delete_quote(id)` / `duplicate_quote(id)` | Delete / clone a quote |
 | `send_quote(id, request=nil)` | Email quote; returns `{ "quote", "message" }` |
 | `send_quote_with_deliverable(id, request)` | Send with attached deliverable; returns `{ quote, message, documentId }` |
-| `decline_quote(id, request)` / `void_quote(id, request)` | Decline / void a quote (decline's reason is optional on a draft; void always needs one) |
+| `decline_quote(id, request)` / `void_quote(id, request)` | Decline / void a quote (a draft's decline reason is not recorded; void always needs one) |
 | `handle_expired_quote(id, request)` | Void or decline an expired sent quote and re-issue it as a duplicate. `"action"` is `"void"` \| `"decline"` only; `"reason"` (max 190) and `"newValidUntil"` (ISO date) are both required |
 | `apply_price_book(quote_id, price_book_id)` / `remove_price_book(quote_id)` | Attach/detach a price book |
 | `download_quote_pdf(id)` | Download rendered quote PDF as raw bytes |
