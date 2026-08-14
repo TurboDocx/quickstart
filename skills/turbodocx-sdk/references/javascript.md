@@ -410,6 +410,31 @@ await TurboPartner.updateOrganizationEntitlements('org-uuid', {
 });
 ```
 
+### Organization display preferences
+
+Read and set a tenant's TurboSign display preferences without logging into its settings UI. Three
+booleans are partner-settable; the API returns only these keys, never the org's other settings.
+
+```typescript
+// Read — every key comes back with its effective value (defaults applied)
+const { data } = await TurboPartner.getOrganizationPreferences('org-uuid');
+console.log(data.preferences.hideSignatureOutline);   // false by default
+console.log(data.preferences.hideSignatureHash);      // false by default
+console.log(data.preferences.lockedFieldsBackground); // true by default
+
+// Update — pass only the keys you want to change; the rest are left as they are
+const updated = await TurboPartner.updateOrganizationPreferences('org-uuid', {
+  lockedFieldsBackground: false, // render locked fields as plain text, not a grey box
+});
+console.log(updated.data.preferences.lockedFieldsBackground); // false
+```
+
+| Preference | Default | Effect |
+|------------|---------|--------|
+| `hideSignatureOutline` | `false` | Hide the outline/label drawn around signed fields |
+| `hideSignatureHash` | `false` | Hide the verification hash printed on signed fields |
+| `lockedFieldsBackground` | `true` | Grey box behind locked fields (`false` = plain text) |
+
 ### Organization user management
 
 ```typescript
@@ -1296,6 +1321,8 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode`, `code`, and
 | `TurboPartner.updateOrganizationInfo(orgId, request)` | Rename an org |
 | `TurboPartner.deleteOrganization(orgId)` | Delete an org |
 | `TurboPartner.updateOrganizationEntitlements(orgId, request)` | Update features and/or tracking |
+| `TurboPartner.getOrganizationPreferences(orgId)` | Read the org's TurboSign display preferences |
+| `TurboPartner.updateOrganizationPreferences(orgId, preferences)` | Set display preferences (only the keys you pass) |
 
 ### TurboPartner — Organization Users
 

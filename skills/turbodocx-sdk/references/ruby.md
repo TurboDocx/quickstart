@@ -382,6 +382,35 @@ TurboDocxSdk::TurboPartner.update_organization_entitlements("org-uuid",
 )
 ```
 
+### Organization display preferences
+
+Read and set a tenant's TurboSign display preferences without logging into its settings UI. Three
+booleans are partner-settable; the API returns only these keys, never the org's other settings.
+
+```ruby
+# Read — every key comes back with its effective value (defaults applied)
+prefs = TurboDocxSdk::TurboPartner.get_organization_preferences("org-uuid")["data"]["preferences"]
+prefs["hideSignatureOutline"]    # => false by default
+prefs["hideSignatureHash"]       # => false by default
+prefs["lockedFieldsBackground"]  # => true by default
+
+# Update — pass only the keys you want to change; the rest are left as they are.
+# The hash keys stay camelCase: they are the API contract, not Ruby names. A
+# snake_case key is silently dropped by the backend allowlist. Values must be
+# real booleans — the API validates strictly, so the STRING "true" is a 400,
+# not a coerced true. Cast before sending if the value came from ENV/params.
+updated = TurboDocxSdk::TurboPartner.update_organization_preferences("org-uuid",
+  "lockedFieldsBackground" => false   # plain text instead of a grey box
+)
+updated["data"]["preferences"]["lockedFieldsBackground"]  # => false
+```
+
+| Preference | Default | Effect |
+|------------|---------|--------|
+| `hideSignatureOutline` | `false` | Hide the outline/label drawn around signed fields |
+| `hideSignatureHash` | `false` | Hide the verification hash printed on signed fields |
+| `lockedFieldsBackground` | `true` | Grey box behind locked fields (`false` = plain text) |
+
 ### Organization users, API keys
 
 ```ruby
@@ -1067,6 +1096,7 @@ The error classes are **not** nested under a sub-module (e.g. not `TurboDocxSdk:
 |--------|-------------|
 | `TurboDocxSdk::TurboPartner.configure(partner_api_key:, partner_id:)` | Set partner credentials |
 | `create_organization`, `list_organizations`, `get_organization_details`, `update_organization_info`, `delete_organization`, `update_organization_entitlements` | Organization CRUD + entitlements |
+| `get_organization_preferences`, `update_organization_preferences` | Read/set the org's TurboSign display preferences. Update sends only the keys you pass, and they stay **camelCase** |
 | `add_user_to_organization`, `list_organization_users`, `update_organization_user_role`, `remove_user_from_organization`, `resend_organization_invitation_to_user` | Org user management. ORG role enum: `admin` \| `contributor` \| `user` \| `viewer` |
 | `create_organization_api_key`, `list_organization_api_keys`, `update_organization_api_key`, `revoke_organization_api_key` | Org API keys (key returned only on creation) |
 | `create_partner_api_key`, `list_partner_api_keys`, `update_partner_api_key`, `revoke_partner_api_key` | Partner API keys (key returned only on creation) |

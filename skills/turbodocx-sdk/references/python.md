@@ -415,6 +415,37 @@ await TurboPartner.update_organization_entitlements(
 )
 ```
 
+### Organization display preferences
+
+Read and set a tenant's TurboSign display preferences without logging into its settings UI. Three
+booleans are partner-settable; the API returns only these keys, never the org's other settings.
+
+```python
+# Read — every key comes back with its effective value (defaults applied)
+result = await TurboPartner.get_organization_preferences("org-uuid")
+prefs = result["data"]["preferences"]
+print(prefs["hideSignatureOutline"])    # False by default
+print(prefs["hideSignatureHash"])       # False by default
+print(prefs["lockedFieldsBackground"])  # True by default
+
+# Update — pass only the keys you want to change; the rest are left as they are.
+# The keys stay camelCase: they are the API contract, not Python names.
+# Values must be real bools — the API validates strictly, so the STRING "true"
+# is a 400, not a coerced True. Cast before sending if the value came from
+# env/JSON/form input.
+updated = await TurboPartner.update_organization_preferences(
+    "org-uuid",
+    {"lockedFieldsBackground": False},  # plain text instead of a grey box
+)
+print(updated["data"]["preferences"]["lockedFieldsBackground"])  # False
+```
+
+| Preference | Default | Effect |
+|------------|---------|--------|
+| `hideSignatureOutline` | `False` | Hide the outline/label drawn around signed fields |
+| `hideSignatureHash` | `False` | Hide the verification hash printed on signed fields |
+| `lockedFieldsBackground` | `True` | Grey box behind locked fields (`False` = plain text) |
+
 ### Organization user management
 
 ```python
@@ -1193,6 +1224,8 @@ The exception attributes are `e.status_code` (int or `None`) and `e.code` (str) 
 | `TurboPartner.update_organization_info(org_id, name=)` | Rename an org |
 | `TurboPartner.delete_organization(org_id)` | Delete an org |
 | `TurboPartner.update_organization_entitlements(org_id, features=, tracking=)` | Update features and/or tracking |
+| `TurboPartner.get_organization_preferences(org_id)` | Read the org's TurboSign display preferences |
+| `TurboPartner.update_organization_preferences(org_id, preferences)` | Set display preferences (only the keys you pass; camelCase) |
 | `TurboPartner.list_organization_users(org_id, limit=, offset=, search=)` | Paginated org-user list |
 | `TurboPartner.add_user_to_organization(org_id, email=, role=)` | Invite a user with an ORG role (`admin` \| `contributor` \| `user` \| `viewer`) |
 | `TurboPartner.update_organization_user_role(org_id, user_id, role=)` | Change a user's ORG role (`admin` \| `contributor` \| `user` \| `viewer`) |
