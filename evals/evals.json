@@ -2749,7 +2749,7 @@
         {
           "name": "sends-only-requested-key",
           "type": "file_contains",
-          "description": "The update sends only hideSignatureHash — it does NOT also send hideSignatureOutline or lockedFieldsBackground, which would overwrite the tenant's settings"
+          "description": "The update sends only hideSignatureHash — it does NOT also send hideSignatureOutline, lockedFieldsBackground, or allowDownloadBeforeSigning, which would overwrite the tenant's settings"
         },
         {
           "name": "camelcase-keys",

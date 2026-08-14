@@ -384,15 +384,16 @@ TurboDocxSdk::TurboPartner.update_organization_entitlements("org-uuid",
 
 ### Organization display preferences
 
-Read and set a tenant's TurboSign display preferences without logging into its settings UI. Three
+Read and set a tenant's TurboSign display preferences without logging into its settings UI. Four
 booleans are partner-settable; the API returns only these keys, never the org's other settings.
 
 ```ruby
 # Read — every key comes back with its effective value (defaults applied)
 prefs = TurboDocxSdk::TurboPartner.get_organization_preferences("org-uuid")["data"]["preferences"]
-prefs["hideSignatureOutline"]    # => false by default
-prefs["hideSignatureHash"]       # => false by default
-prefs["lockedFieldsBackground"]  # => true by default
+prefs["hideSignatureOutline"]        # => false by default
+prefs["hideSignatureHash"]           # => false by default
+prefs["lockedFieldsBackground"]      # => true by default
+prefs["allowDownloadBeforeSigning"]  # => false by default
 
 # Update — pass only the keys you want to change; the rest are left as they are.
 # The hash keys stay camelCase: they are the API contract, not Ruby names. A
@@ -410,6 +411,7 @@ updated["data"]["preferences"]["lockedFieldsBackground"]  # => false
 | `hideSignatureOutline` | `false` | Hide the outline/label drawn around signed fields |
 | `hideSignatureHash` | `false` | Hide the verification hash printed on signed fields |
 | `lockedFieldsBackground` | `true` | Grey box behind locked fields (`false` = plain text) |
+| `allowDownloadBeforeSigning` | `false` | When enabled, a signer can download the unsigned PDF from the signing page before they sign it (for example, to review it with their legal team). Defaults to off. |
 
 ### Organization users, API keys
 

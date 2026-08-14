@@ -453,7 +453,7 @@ tp.updateOrganizationEntitlements(
 
 ### Organization display preferences
 
-Read and set a tenant's TurboSign display preferences without logging into its settings UI. Three
+Read and set a tenant's TurboSign display preferences without logging into its settings UI. Four
 booleans are partner-settable; the API returns only these keys, never the org's other settings.
 
 ```java
@@ -463,9 +463,10 @@ import com.turbodocx.models.PartnerOrgPreferencesResponse;
 // Read — every key comes back with its effective value (defaults applied)
 PartnerOrgPreferencesResponse read = tp.getOrganizationPreferences("org-uuid");
 PartnerOrgPreferences prefs = read.getData().getPreferences();
-System.out.println(prefs.getHideSignatureOutline());   // false by default
-System.out.println(prefs.getHideSignatureHash());      // false by default
-System.out.println(prefs.getLockedFieldsBackground()); // true by default
+System.out.println(prefs.getHideSignatureOutline());       // false by default
+System.out.println(prefs.getHideSignatureHash());          // false by default
+System.out.println(prefs.getLockedFieldsBackground());     // true by default
+System.out.println(prefs.getAllowDownloadBeforeSigning()); // false by default
 
 // Update — setters chain, and any field left null is omitted from the request,
 // so you change only what you name. An explicit false IS sent.
@@ -480,6 +481,7 @@ System.out.println(updated.getData().getPreferences().getLockedFieldsBackground(
 | `hideSignatureOutline` | `false` | Hide the outline/label drawn around signed fields |
 | `hideSignatureHash` | `false` | Hide the verification hash printed on signed fields |
 | `lockedFieldsBackground` | `true` | Grey box behind locked fields (`false` = plain text) |
+| `allowDownloadBeforeSigning` | `false` | When enabled, a signer can download the unsigned PDF from the signing page before they sign it (for example, to review it with their legal team). Defaults to off. |
 
 ### Organization user management
 

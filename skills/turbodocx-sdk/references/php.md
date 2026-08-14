@@ -461,16 +461,17 @@ TurboPartner::updateOrganizationEntitlements('org-uuid', new UpdateEntitlementsR
 
 ### Organization display preferences
 
-Read and set a tenant's TurboSign display preferences without logging into its settings UI. Three
+Read and set a tenant's TurboSign display preferences without logging into its settings UI. Four
 booleans are partner-settable; the API returns only these keys, never the org's other settings.
 
 ```php
 // Read — every key comes back with its effective value (defaults applied).
 // The response flattens the envelope: preferences hang off the response directly.
 $prefs = TurboPartner::getOrganizationPreferences('org-uuid')->preferences;
-var_dump($prefs->hideSignatureOutline);   // false by default
-var_dump($prefs->hideSignatureHash);      // false by default
-var_dump($prefs->lockedFieldsBackground); // true by default
+var_dump($prefs->hideSignatureOutline);       // false by default
+var_dump($prefs->hideSignatureHash);          // false by default
+var_dump($prefs->lockedFieldsBackground);     // true by default
+var_dump($prefs->allowDownloadBeforeSigning); // false by default
 
 // Update — pass only the keys you want to change, as a plain camelCase array.
 // The SDK wraps them under `preferences` for you. Values must be real bools —
@@ -487,6 +488,7 @@ var_dump($updated->preferences->lockedFieldsBackground); // false
 | `hideSignatureOutline` | `false` | Hide the outline/label drawn around signed fields |
 | `hideSignatureHash` | `false` | Hide the verification hash printed on signed fields |
 | `lockedFieldsBackground` | `true` | Grey box behind locked fields (`false` = plain text) |
+| `allowDownloadBeforeSigning` | `false` | When enabled, a signer can download the unsigned PDF from the signing page before they sign it (for example, to review it with their legal team). Defaults to off. |
 
 ### Organization user management
 

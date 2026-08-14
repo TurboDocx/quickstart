@@ -518,7 +518,7 @@ partner.UpdateOrganizationEntitlements(ctx, "org-uuid", &turbodocx.UpdateEntitle
 
 ### Organization display preferences
 
-Read and set a tenant's TurboSign display preferences without logging into its settings UI. Three
+Read and set a tenant's TurboSign display preferences without logging into its settings UI. Four
 booleans are partner-settable; the API returns only these keys, never the org's other settings.
 
 ```go
@@ -527,9 +527,10 @@ prefs, err := partner.GetOrganizationPreferences(ctx, "org-uuid")
 if err != nil {
     log.Fatal(err)
 }
-fmt.Println(prefs.Data.Preferences.HideSignatureOutline)   // false by default
-fmt.Println(prefs.Data.Preferences.HideSignatureHash)      // false by default
-fmt.Println(prefs.Data.Preferences.LockedFieldsBackground) // true by default
+fmt.Println(prefs.Data.Preferences.HideSignatureOutline)       // false by default
+fmt.Println(prefs.Data.Preferences.HideSignatureHash)          // false by default
+fmt.Println(prefs.Data.Preferences.LockedFieldsBackground)     // true by default
+fmt.Println(prefs.Data.Preferences.AllowDownloadBeforeSigning) // false by default
 
 // Update — every field is a *bool with omitempty, so a nil field is left untouched
 // and an explicit false is still sent (not dropped). Use turbodocx.BoolPtr.
@@ -548,6 +549,7 @@ fmt.Println(updated.Data.Preferences.LockedFieldsBackground) // false
 | `HideSignatureOutline` | `false` | Hide the outline/label drawn around signed fields |
 | `HideSignatureHash` | `false` | Hide the verification hash printed on signed fields |
 | `LockedFieldsBackground` | `true` | Grey box behind locked fields (`false` = plain text) |
+| `AllowDownloadBeforeSigning` | `false` | When enabled, a signer can download the unsigned PDF from the signing page before they sign it (for example, to review it with their legal team). Defaults to off. |
 
 ### Organization user management
 

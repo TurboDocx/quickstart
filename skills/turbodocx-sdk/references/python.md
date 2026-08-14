@@ -417,16 +417,17 @@ await TurboPartner.update_organization_entitlements(
 
 ### Organization display preferences
 
-Read and set a tenant's TurboSign display preferences without logging into its settings UI. Three
+Read and set a tenant's TurboSign display preferences without logging into its settings UI. Four
 booleans are partner-settable; the API returns only these keys, never the org's other settings.
 
 ```python
 # Read — every key comes back with its effective value (defaults applied)
 result = await TurboPartner.get_organization_preferences("org-uuid")
 prefs = result["data"]["preferences"]
-print(prefs["hideSignatureOutline"])    # False by default
-print(prefs["hideSignatureHash"])       # False by default
-print(prefs["lockedFieldsBackground"])  # True by default
+print(prefs["hideSignatureOutline"])        # False by default
+print(prefs["hideSignatureHash"])           # False by default
+print(prefs["lockedFieldsBackground"])      # True by default
+print(prefs["allowDownloadBeforeSigning"])  # False by default
 
 # Update — pass only the keys you want to change; the rest are left as they are.
 # The keys stay camelCase: they are the API contract, not Python names.
@@ -445,6 +446,7 @@ print(updated["data"]["preferences"]["lockedFieldsBackground"])  # False
 | `hideSignatureOutline` | `False` | Hide the outline/label drawn around signed fields |
 | `hideSignatureHash` | `False` | Hide the verification hash printed on signed fields |
 | `lockedFieldsBackground` | `True` | Grey box behind locked fields (`False` = plain text) |
+| `allowDownloadBeforeSigning` | `False` | When enabled, a signer can download the unsigned PDF from the signing page before they sign it (for example, to review it with their legal team). Defaults to off. |
 
 ### Organization user management
 
