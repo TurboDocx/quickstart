@@ -8,20 +8,20 @@
 <dependency>
     <groupId>com.turbodocx</groupId>
     <artifactId>turbodocx-sdk</artifactId>
-    <version>0.6.0</version>
+    <version>0.7.0</version>
 </dependency>
 ```
 
 ### Gradle
 
 ```groovy
-implementation 'com.turbodocx:turbodocx-sdk:0.6.0'
+implementation 'com.turbodocx:turbodocx-sdk:0.7.0'
 ```
 
 ### Gradle (Kotlin DSL)
 
 ```kotlin
-implementation("com.turbodocx:turbodocx-sdk:0.6.0")
+implementation("com.turbodocx:turbodocx-sdk:0.7.0")
 ```
 
 ## Imports
@@ -450,6 +450,36 @@ tp.updateOrganizationEntitlements(
     Map.of("maxUsers", 100, "hasTDAI", true, "hasSalesforce", true), // features
     Map.of("numUsers", 12));                                          // tracking (or null)
 ```
+
+### Organization display preferences
+
+Read and set a tenant's TurboSign display preferences without logging into its settings UI. Three
+booleans are partner-settable; the API returns only these keys, never the org's other settings.
+
+```java
+import com.turbodocx.models.PartnerOrgPreferences;
+import com.turbodocx.models.PartnerOrgPreferencesResponse;
+
+// Read — every key comes back with its effective value (defaults applied)
+PartnerOrgPreferencesResponse read = tp.getOrganizationPreferences("org-uuid");
+PartnerOrgPreferences prefs = read.getData().getPreferences();
+System.out.println(prefs.getHideSignatureOutline());   // false by default
+System.out.println(prefs.getHideSignatureHash());      // false by default
+System.out.println(prefs.getLockedFieldsBackground()); // true by default
+
+// Update — setters chain, and any field left null is omitted from the request,
+// so you change only what you name. An explicit false IS sent.
+PartnerOrgPreferencesResponse updated = tp.updateOrganizationPreferences(
+    "org-uuid",
+    new PartnerOrgPreferences().setLockedFieldsBackground(false)); // plain text, not a grey box
+System.out.println(updated.getData().getPreferences().getLockedFieldsBackground()); // false
+```
+
+| Preference | Default | Effect |
+|------------|---------|--------|
+| `hideSignatureOutline` | `false` | Hide the outline/label drawn around signed fields |
+| `hideSignatureHash` | `false` | Hide the verification hash printed on signed fields |
+| `lockedFieldsBackground` | `true` | Grey box behind locked fields (`false` = plain text) |
 
 ### Organization user management
 
@@ -1293,6 +1323,8 @@ All seven subtypes are **nested classes** on `com.turbodocx.TurboDocxException` 
 | `tp.updateOrganizationInfo(id, name)` | Rename an org |
 | `tp.deleteOrganization(id)` | Delete an org |
 | `tp.updateOrganizationEntitlements(id, features, tracking)` | Update features and/or tracking |
+| `tp.getOrganizationPreferences(id)` | Read the org's TurboSign display preferences |
+| `tp.updateOrganizationPreferences(id, preferences)` | Set display preferences (null fields are omitted) |
 | `tp.listOrganizationUsers(id, limit, offset, search)` | Paginated org-user list |
 | `tp.addUserToOrganization(id, email, role)` | Invite a user with an ORG role (`admin` \| `contributor` \| `user` \| `viewer`) |
 | `tp.updateOrganizationUserRole(id, userId, role)` | Change a user's ORG role (`admin` \| `contributor` \| `user` \| `viewer`) |

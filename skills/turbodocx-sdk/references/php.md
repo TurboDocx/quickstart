@@ -459,6 +459,35 @@ TurboPartner::updateOrganizationEntitlements('org-uuid', new UpdateEntitlementsR
 ));
 ```
 
+### Organization display preferences
+
+Read and set a tenant's TurboSign display preferences without logging into its settings UI. Three
+booleans are partner-settable; the API returns only these keys, never the org's other settings.
+
+```php
+// Read — every key comes back with its effective value (defaults applied).
+// The response flattens the envelope: preferences hang off the response directly.
+$prefs = TurboPartner::getOrganizationPreferences('org-uuid')->preferences;
+var_dump($prefs->hideSignatureOutline);   // false by default
+var_dump($prefs->hideSignatureHash);      // false by default
+var_dump($prefs->lockedFieldsBackground); // true by default
+
+// Update — pass only the keys you want to change, as a plain camelCase array.
+// The SDK wraps them under `preferences` for you. Values must be real bools —
+// the API validates strictly, so the STRING 'true' is a 400, not a coerced true.
+// Cast before sending if the value came from $_POST/env/JSON.
+$updated = TurboPartner::updateOrganizationPreferences('org-uuid', [
+    'lockedFieldsBackground' => false, // plain text instead of a grey box
+]);
+var_dump($updated->preferences->lockedFieldsBackground); // false
+```
+
+| Preference | Default | Effect |
+|------------|---------|--------|
+| `hideSignatureOutline` | `false` | Hide the outline/label drawn around signed fields |
+| `hideSignatureHash` | `false` | Hide the verification hash printed on signed fields |
+| `lockedFieldsBackground` | `true` | Grey box behind locked fields (`false` = plain text) |
+
 ### Organization user management
 
 ```php
@@ -1352,6 +1381,8 @@ otherwise the class default — `VALIDATION_ERROR`, `AUTHENTICATION_ERROR`, `AUT
 | `TurboPartner::updateOrganizationInfo($orgId, $request)` | Rename an org |
 | `TurboPartner::deleteOrganization($orgId)` | Delete an org |
 | `TurboPartner::updateOrganizationEntitlements($orgId, $request)` | Update features and/or tracking |
+| `TurboPartner::getOrganizationPreferences($orgId)` | Read the org's TurboSign display preferences |
+| `TurboPartner::updateOrganizationPreferences($orgId, $preferences)` | Set display preferences (camelCase array of only the keys you pass) |
 | `TurboPartner::listOrganizationUsers($orgId, $request?)` | Paginated org-user list |
 | `TurboPartner::addUserToOrganization($orgId, $request)` | Invite a user with an ORG role (`admin` \| `contributor` \| `user` \| `viewer`) |
 | `TurboPartner::updateOrganizationUserRole($orgId, $userId, $request)` | Change a user's role |

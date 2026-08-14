@@ -150,6 +150,7 @@ Skip the product selection prompt:
 ### TurboPartner Integration *(opt-in via `/turbodocx-sdk turbopartner`)*
 - Partner client configuration
 - Organizations, users, API keys, entitlements, and audit logs
+- Per-tenant TurboSign display preferences (signature outline, verification hash, locked-fields background)
 - Designed for TurboDocx reseller/integrator accounts (uses a separate partner API key)
 
 ---

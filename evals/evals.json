@@ -2729,6 +2729,39 @@
           "description": "Handles the terminal 'expired' document status and/or the 410 returned by an expired signing link"
         }
       ]
+    },
+    {
+      "id": 50,
+      "prompt": "I'm a TurboDocx partner. I want to turn off the signature verification hash for one of my customer organizations without logging into their account.",
+      "expected_output": "Generates TurboPartner preferences endpoints — getOrganizationPreferences to read the tenant's current display settings and updateOrganizationPreferences sending only hideSignatureHash, wired with partner credentials",
+      "files": [
+        "package.json",
+        "tsconfig.json",
+        "src/index.ts",
+        "package-lock.json"
+      ],
+      "assertions": [
+        {
+          "name": "uses-preferences-methods",
+          "type": "file_contains",
+          "description": "Calls TurboPartner.getOrganizationPreferences and/or TurboPartner.updateOrganizationPreferences"
+        },
+        {
+          "name": "sends-only-requested-key",
+          "type": "file_contains",
+          "description": "The update sends only hideSignatureHash — it does NOT also send hideSignatureOutline or lockedFieldsBackground, which would overwrite the tenant's settings"
+        },
+        {
+          "name": "camelcase-keys",
+          "type": "file_contains",
+          "description": "Preference keys stay camelCase verbatim (hideSignatureHash), not snake_cased"
+        },
+        {
+          "name": "env-has-partner-vars",
+          "type": "file_contains",
+          "description": ".env contains TURBODOCX_PARTNER_API_KEY and TURBODOCX_PARTNER_ID"
+        }
+      ]
     }
   ]
 }

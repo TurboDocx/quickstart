@@ -516,6 +516,39 @@ partner.UpdateOrganizationEntitlements(ctx, "org-uuid", &turbodocx.UpdateEntitle
 })
 ```
 
+### Organization display preferences
+
+Read and set a tenant's TurboSign display preferences without logging into its settings UI. Three
+booleans are partner-settable; the API returns only these keys, never the org's other settings.
+
+```go
+// Read — every key comes back with its effective value (defaults applied)
+prefs, err := partner.GetOrganizationPreferences(ctx, "org-uuid")
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Println(prefs.Data.Preferences.HideSignatureOutline)   // false by default
+fmt.Println(prefs.Data.Preferences.HideSignatureHash)      // false by default
+fmt.Println(prefs.Data.Preferences.LockedFieldsBackground) // true by default
+
+// Update — every field is a *bool with omitempty, so a nil field is left untouched
+// and an explicit false is still sent (not dropped). Use turbodocx.BoolPtr.
+updated, err := partner.UpdateOrganizationPreferences(ctx, "org-uuid",
+    &turbodocx.UpdateOrgPreferencesRequest{
+        LockedFieldsBackground: turbodocx.BoolPtr(false), // plain text instead of a grey box
+    })
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Println(updated.Data.Preferences.LockedFieldsBackground) // false
+```
+
+| Preference | Default | Effect |
+|------------|---------|--------|
+| `HideSignatureOutline` | `false` | Hide the outline/label drawn around signed fields |
+| `HideSignatureHash` | `false` | Hide the verification hash printed on signed fields |
+| `LockedFieldsBackground` | `true` | Grey box behind locked fields (`false` = plain text) |
+
 ### Organization user management
 
 ```go
@@ -1384,6 +1417,8 @@ Every typed error embeds `turbodocx.TurboDocxError`, so `Code` (string), `Messag
 | `partner.UpdateOrganizationInfo(ctx, id, req)` | Rename an org |
 | `partner.DeleteOrganization(ctx, id)` | Delete an org |
 | `partner.UpdateOrganizationEntitlements(ctx, id, req)` | Update features and/or tracking |
+| `partner.GetOrganizationPreferences(ctx, id)` | Read the org's TurboSign display preferences |
+| `partner.UpdateOrganizationPreferences(ctx, id, req)` | Set display preferences (`*bool` fields; nil = leave alone) |
 | `partner.ListOrganizationUsers(ctx, id, req)` | Paginated org-user list |
 | `partner.AddUserToOrganization(ctx, id, req)` | Invite a user with an ORG role (`admin` \| `contributor` \| `user` \| `viewer`) |
 | `partner.UpdateOrganizationUserRole(ctx, id, userID, req)` | Change a user's role |
