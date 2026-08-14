@@ -412,15 +412,16 @@ await TurboPartner.updateOrganizationEntitlements('org-uuid', {
 
 ### Organization display preferences
 
-Read and set a tenant's TurboSign display preferences without logging into its settings UI. Three
+Read and set a tenant's TurboSign display preferences without logging into its settings UI. Four
 booleans are partner-settable; the API returns only these keys, never the org's other settings.
 
 ```typescript
 // Read — every key comes back with its effective value (defaults applied)
 const { data } = await TurboPartner.getOrganizationPreferences('org-uuid');
-console.log(data.preferences.hideSignatureOutline);   // false by default
-console.log(data.preferences.hideSignatureHash);      // false by default
-console.log(data.preferences.lockedFieldsBackground); // true by default
+console.log(data.preferences.hideSignatureOutline);       // false by default
+console.log(data.preferences.hideSignatureHash);          // false by default
+console.log(data.preferences.lockedFieldsBackground);     // true by default
+console.log(data.preferences.allowDownloadBeforeSigning); // false by default
 
 // Update — pass only the keys you want to change; the rest are left as they are
 const updated = await TurboPartner.updateOrganizationPreferences('org-uuid', {
@@ -434,6 +435,7 @@ console.log(updated.data.preferences.lockedFieldsBackground); // false
 | `hideSignatureOutline` | `false` | Hide the outline/label drawn around signed fields |
 | `hideSignatureHash` | `false` | Hide the verification hash printed on signed fields |
 | `lockedFieldsBackground` | `true` | Grey box behind locked fields (`false` = plain text) |
+| `allowDownloadBeforeSigning` | `false` | When enabled, a signer can download the unsigned PDF from the signing page before they sign it (for example, to review it with their legal team). Defaults to off. |
 
 ### Organization user management
 
