@@ -8,20 +8,20 @@
 <dependency>
     <groupId>com.turbodocx</groupId>
     <artifactId>turbodocx-sdk</artifactId>
-    <version>0.7.0</version>
+    <version>0.8.0</version>
 </dependency>
 ```
 
 ### Gradle
 
 ```groovy
-implementation 'com.turbodocx:turbodocx-sdk:0.7.0'
+implementation 'com.turbodocx:turbodocx-sdk:0.8.0'
 ```
 
 ### Gradle (Kotlin DSL)
 
 ```kotlin
-implementation("com.turbodocx:turbodocx-sdk:0.7.0")
+implementation("com.turbodocx:turbodocx-sdk:0.8.0")
 ```
 
 ## Imports
