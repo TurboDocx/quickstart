@@ -1400,7 +1400,7 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode`, `code`, and
 | `TurboQuote.duplicateQuote(id)` | Clone a quote to a new draft |
 | `TurboQuote.sendQuote(id, request?)` | Email quote to customer; returns `{ quote, message }` |
 | `TurboQuote.sendQuoteWithDeliverable(id, request)` | Send with attached TurboDocx deliverable; returns `{ quote, message, documentId }` |
-| `TurboQuote.declineQuote(id, { reason })` | Mark as declined |
+| `TurboQuote.declineQuote(id, { reason })` | Mark as declined (reason required once sent; a draft's is not recorded) |
 | `TurboQuote.voidQuote(id, { reason })` | Void a sent quote |
 | `TurboQuote.handleExpiredQuote(id, request)` | Void or decline an expired sent quote and re-issue it as a duplicate. `action` is `'void'` \| `'decline'` only; `reason` (max 190) and `newValidUntil` (ISO date) are both required |
 | `TurboQuote.applyPriceBook(quoteId, priceBookId)` | Apply price-book pricing to all matching line items |
