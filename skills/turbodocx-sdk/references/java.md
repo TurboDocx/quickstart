@@ -1369,7 +1369,7 @@ All seven subtypes are **nested classes** on `com.turbodocx.TurboDocxException` 
 | `tq.sendQuote(id)` | Send quote to recipient; transitions status to `sent` |
 | `tq.sendQuoteWithDeliverable(id, req)` | Send quote and attach a TurboDocx deliverable |
 | `tq.declineQuote(id, req)` | Decline a quote (reason required once sent; a draft's is not recorded) |
-| `tq.voidQuote(id, req)` | Void a quote (reason required) |
+| `tq.voidQuote(id, req)` | Void a sent quote (reason required) |
 | `tq.handleExpiredQuote(id, req)` | Void or decline an expired sent quote and re-issue it as a duplicate. `action` is `"void"` \| `"decline"` only; `reason` (max 190) and `newValidUntil` (ISO date) are both required |
 | `tq.listLineItems(quoteId)` | List line items on a quote |
 | `tq.addLineItems(quoteId, item)` | Add 1–50 product line items (single or `List` overload). `productId` (may be null), `productName`, `unitPrice`, `billingFrequency` all required |

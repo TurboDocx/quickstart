@@ -1267,7 +1267,7 @@ The exception attributes are `e.status_code` (int or `None`) and `e.code` (str) 
 | `TurboQuote.send_quote(id, request=)` | Send quote to recipient; returns `{quote, message}` |
 | `TurboQuote.send_quote_with_deliverable(id, request)` | Send with attached deliverable; returns `{quote, message, documentId}` |
 | `TurboQuote.decline_quote(id, {reason})` | Decline a sent quote or a draft (a draft is declined with no reason — one passed is not recorded) |
-| `TurboQuote.void_quote(id, {reason})` | Void a quote |
+| `TurboQuote.void_quote(id, {reason})` | Void a sent quote |
 | `TurboQuote.handle_expired_quote(id, request)` | Void or decline an expired sent quote and re-issue it as a duplicate. `action` is `"void"` \| `"decline"` only; `reason` (max 190) and `newValidUntil` (ISO date) are both required |
 | `TurboQuote.apply_price_book(quote_id, price_book_id)` | Apply price book to quote; returns `{quote, message, updatedCount, skippedCount}` |
 | `TurboQuote.remove_price_book(quote_id)` | Remove price book from quote |

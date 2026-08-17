@@ -1463,7 +1463,7 @@ Every typed error embeds `turbodocx.TurboDocxError`, so `Code` (string), `Messag
 | `qc.SendQuote(ctx, id, req)` | Send quote to prospect (req may be nil) |
 | `qc.SendQuoteWithDeliverable(ctx, id, req)` | Send quote with a TurboDocx deliverable attachment |
 | `qc.DeclineQuote(ctx, id, req)` | Decline a sent quote or a draft (reason required once sent; a draft's is not recorded) |
-| `qc.VoidQuote(ctx, id, req)` | Void a quote (reason required) |
+| `qc.VoidQuote(ctx, id, req)` | Void a sent quote (reason required) |
 | `qc.HandleExpiredQuote(ctx, id, req)` | Void or decline an expired sent quote and re-issue it as a duplicate. `Action` is `"void"` \| `"decline"` only; `Reason` (max 190) and `NewValidUntil` (ISO date) are both required |
 | `qc.CreateAndSend(ctx, req)` | Convenience: create + add items + send in one call |
 | `qc.GetQuoteNumberConfig(ctx)` | Get the org's quote-number config (admin; `{ format, currentFloor }`) |
