@@ -138,6 +138,7 @@ Skip the product selection prompt:
 ### TurboSign Integration
 - Client configuration with env var loading
 - `sendSignature()`, `getStatus()`, `download()` — send, track, retrieve signed PDFs
+- Conditional (IF/THEN) fields — a controlling `checkbox` plus dependent fields that show or unlock only when it is ticked (via optional field `metadata`)
 - Optional: `void()`, `resend()`, `getAuditTrail()` — cancellation, reminders, tamper-evident audit log
 - Route handlers wired into your existing app
 

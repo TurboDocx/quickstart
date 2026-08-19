@@ -77,6 +77,49 @@ SendSignatureResponse result = client.turboSign().sendSignature(
 System.out.println("Document ID: " + result.getDocumentId());
 ```
 
+### Conditional (IF/THEN) fields
+
+Any field can be made to depend on a **controlling checkbox** so it only appears — or only becomes editable — once the signer ticks that box. Give the checkbox a stable `FieldMetadata` with a `fieldKey`, then reference that key from the dependent field's `FieldMetadata` → `FieldConditional` → `controllingFieldKey`. `.metadata(...)` on the builder is **optional**; a field left without it behaves exactly as before.
+
+```java
+SendSignatureResponse result = client.turboSign().sendSignature(
+    new SendSignatureRequest.Builder()
+        .file(pdfFile)
+        .fileName("contract.pdf")
+        .documentName("Employment Agreement")
+        .recipients(Arrays.asList(
+            new Recipient("John Doe", "john@example.com", 1)
+        ))
+        .fields(Arrays.asList(
+            // Controlling checkbox — the box the signer ticks. Its fieldKey is the stable id others reference.
+            new Field.Builder()
+                .type("checkbox")
+                .recipientEmail("john@example.com")
+                .page(1)
+                .x(100).y(400).width(20).height(20)
+                .metadata(FieldMetadata.forFieldKey("relocation_optin"))
+                .build(),
+            // Dependent field — hidden until the box above is checked (action "show").
+            new Field.Builder()
+                .type("signature")
+                .recipientEmail("john@example.com")
+                .page(1)
+                .x(100).y(460).width(200).height(50)
+                .metadata(FieldMetadata.forConditional(
+                    new FieldConditional(
+                        "relocation_optin", // controllingFieldKey = the checkbox's metadata fieldKey
+                        "is_checked",       // "is_checked" | "is_not_checked"
+                        "show")))           // "show" = hidden until met; "unlock" = visible but read-only until met
+                .build()
+        ))
+        .build()
+);
+
+System.out.println("Document ID: " + result.getDocumentId());
+```
+
+The link is `fieldKey` → `controllingFieldKey`: the two strings must match exactly (the checkbox carries `FieldMetadata.fieldKey`, the dependent field points at it via `FieldConditional.controllingFieldKey`). `operator` chooses which checkbox state satisfies the condition — `"is_checked"` or `"is_not_checked"`. `action` chooses what happens while the condition is unmet: `"show"` keeps the dependent field **hidden until met**, while `"unlock"` renders it **visible but read-only (locked) until met**.
+
 ### getStatus
 
 ```java

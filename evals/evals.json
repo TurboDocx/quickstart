@@ -1230,6 +1230,64 @@
       ]
     },
     {
+      "id": 51,
+      "prompt": "Set up TurboSign in my Express app. On the signing document I need a conditional field: the signer ticks a checkbox to opt into relocation assistance, and only then should a second signature field become visible. Add an endpoint that sends this document.",
+      "expected_output": "Creates a TurboSign config file and a sendSignature endpoint whose fields array contains a controlling checkbox field with metadata.fieldKey and a dependent field with metadata.conditional (controllingFieldKey matching the checkbox fieldKey, operator is_checked, action show), wires routes into the main app, adds .env with TurboSign vars",
+      "files": [
+        "package.json",
+        "tsconfig.json",
+        "src/index.ts",
+        "package-lock.json"
+      ],
+      "assertions": [
+        {
+          "name": "config-file-created",
+          "type": "file_exists",
+          "description": "A TurboSign config/client file was created"
+        },
+        {
+          "name": "uses-sendSignature",
+          "type": "file_contains",
+          "description": "Route handler calls TurboSign.sendSignature with a fields array"
+        },
+        {
+          "name": "has-checkbox-field",
+          "type": "file_contains",
+          "description": "The fields array includes a field with type 'checkbox' acting as the controlling field"
+        },
+        {
+          "name": "checkbox-has-fieldKey",
+          "type": "file_contains",
+          "description": "The controlling checkbox field carries metadata.fieldKey (a stable id, e.g. metadata: { fieldKey: '...' })"
+        },
+        {
+          "name": "dependent-has-conditional",
+          "type": "file_contains",
+          "description": "A dependent field carries metadata.conditional with controllingFieldKey, operator, and action keys"
+        },
+        {
+          "name": "controllingFieldKey-matches",
+          "type": "file_contains",
+          "description": "The dependent field's conditional.controllingFieldKey matches the controlling checkbox's metadata.fieldKey value exactly"
+        },
+        {
+          "name": "uses-valid-operator-and-action",
+          "type": "file_contains",
+          "description": "conditional.operator is 'is_checked' or 'is_not_checked' and conditional.action is 'show' or 'unlock'"
+        },
+        {
+          "name": "routes-wired",
+          "type": "file_contains",
+          "description": "Main app file (src/index.ts) was modified to import and register the signature routes"
+        },
+        {
+          "name": "env-has-sign-vars",
+          "type": "file_contains",
+          "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_SENDER_EMAIL"
+        }
+      ]
+    },
+    {
       "id": 10,
       "skill_name": "turbodocx-html-to-docx",
       "prompt": "Add an endpoint to my Express app that converts HTML to DOCX documents. I want to POST HTML and get back a downloadable .docx file.",

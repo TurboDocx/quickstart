@@ -106,6 +106,46 @@ result["recipients"].each { |r| puts "#{r['name']} <#{r['email']}> #{r['id']}" }
 
 Fields support either coordinate-based placement (`page` + `x`/`y`/`width`/`height`) or anchor-based placement via `template: { anchor: "{signature1}", placement: "replace", size: { width: 100, height: 30 } }`. The anchor text must literally exist in the document.
 
+### Conditional (IF/THEN) fields
+
+Any field can be made to depend on a **controlling checkbox** so it only appears — or only becomes editable — once the signer ticks that box. Give the checkbox a stable `metadata` with a `fieldKey`, then reference that key from the dependent field's `metadata[:conditional][:controllingFieldKey]`. The `metadata:` hash is **optional**; a field without it behaves exactly as before. As everywhere in this SDK, the keys **inside** `metadata` stay camelCase (`fieldKey`, `controllingFieldKey`) — they are forwarded to the API verbatim, so a snake_case key silently drops the value.
+
+```ruby
+result = TurboDocxSdk::TurboSign.send_signature(
+  fileLink: "https://example.com/contract.pdf",
+  documentName: "Employment Agreement",
+  recipients: [
+    { name: "Alice", email: "alice@example.com", signingOrder: 1 }
+  ],
+  fields: [
+    # Controlling checkbox — the box the signer ticks. Its fieldKey is the stable id others reference.
+    {
+      type: "checkbox",
+      page: 1, x: 100, y: 400, width: 20, height: 20,
+      recipientEmail: "alice@example.com",
+      metadata: { fieldKey: "relocation_optin" }
+    },
+    # Dependent field — hidden until the box above is checked (action: "show").
+    {
+      type: "signature",
+      page: 1, x: 100, y: 460, width: 200, height: 50,
+      recipientEmail: "alice@example.com",
+      metadata: {
+        conditional: {
+          controllingFieldKey: "relocation_optin", # = the checkbox's metadata fieldKey
+          operator: "is_checked",                  # "is_checked" | "is_not_checked"
+          action: "show"                           # "show" = hidden until met; "unlock" = visible but read-only until met
+        }
+      }
+    }
+  ]
+)
+
+puts result["documentId"]
+```
+
+The link is `fieldKey` → `controllingFieldKey`: the two strings must match exactly (the checkbox carries `metadata[:fieldKey]`, the dependent field points at it via `metadata[:conditional][:controllingFieldKey]`). `operator` chooses which checkbox state satisfies the condition — `"is_checked"` or `"is_not_checked"`. `action` chooses what happens while the condition is unmet: `"show"` keeps the dependent field **hidden until met**, while `"unlock"` renders it **visible but read-only (locked) until met**.
+
 ### TurboSign.get_status
 
 ```ruby

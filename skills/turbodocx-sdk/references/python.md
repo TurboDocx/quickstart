@@ -76,6 +76,44 @@ result = await TurboSign.send_signature(
 print(f"Document ID: {result['documentId']}")
 ```
 
+### Conditional (IF/THEN) fields
+
+Any field can be made to depend on a **controlling checkbox** so it only appears — or only becomes editable — once the signer ticks that box. Give the checkbox a stable `metadata["fieldKey"]`, then reference that key from the dependent field's `metadata["conditional"]["controllingFieldKey"]`. Both live in an **optional** `metadata` dict on the field; fields without it behave exactly as before. Note the keys inside `metadata` stay camelCase (`fieldKey`, `controllingFieldKey`) — they are forwarded to the API verbatim.
+
+```python
+result = await TurboSign.send_signature(
+    file=pdf_file,
+    document_name="Employment Agreement",
+    recipients=[
+        {"name": "John Doe", "email": "john@example.com", "signingOrder": 1},
+    ],
+    fields=[
+        # Controlling checkbox — the box the signer ticks. Its metadata.fieldKey is the stable id others reference.
+        {
+            "type": "checkbox",
+            "page": 1, "x": 100, "y": 400, "width": 20, "height": 20,
+            "recipientEmail": "john@example.com",
+            "metadata": {"fieldKey": "relocation_optin"},
+        },
+        # Dependent field — hidden until the box above is checked (action: "show").
+        {
+            "type": "signature",
+            "page": 1, "x": 100, "y": 460, "width": 200, "height": 50,
+            "recipientEmail": "john@example.com",
+            "metadata": {
+                "conditional": {
+                    "controllingFieldKey": "relocation_optin",  # = the checkbox's metadata.fieldKey
+                    "operator": "is_checked",                    # "is_checked" | "is_not_checked"
+                    "action": "show",                            # "show" = hidden until met; "unlock" = visible but read-only until met
+                },
+            },
+        },
+    ],
+)
+```
+
+The link is `fieldKey` → `controllingFieldKey`: the two strings must match exactly (the checkbox carries `metadata["fieldKey"]`, the dependent field points at it via `metadata["conditional"]["controllingFieldKey"]`). `operator` chooses which checkbox state satisfies the condition — `is_checked` or `is_not_checked`. `action` chooses what happens while the condition is unmet: `show` keeps the dependent field **hidden until met**, while `unlock` renders it **visible but read-only (locked) until met**.
+
 ### get_status
 
 ```python
