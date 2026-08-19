@@ -83,6 +83,66 @@ $result = TurboSign::sendSignature(
 echo "Document ID: {$result->documentId}\n";
 ```
 
+### Conditional (IF/THEN) fields
+
+Any field can be made to depend on a **controlling checkbox** so it only appears — or only becomes editable — once the signer ticks that box. Give the checkbox a stable `metadata` with a `fieldKey`, then reference that key from the dependent field's `metadata->conditional->controllingFieldKey`. The `metadata:` argument on `Field` is **optional**; a `Field` without it behaves exactly as before.
+
+```php
+use TurboDocx\TurboSign;
+use TurboDocx\Types\Recipient;
+use TurboDocx\Types\Field;
+use TurboDocx\Types\SignatureFieldType;
+use TurboDocx\Types\FieldMetadata;
+use TurboDocx\Types\FieldConditional;
+use TurboDocx\Types\ConditionalOperator;
+use TurboDocx\Types\ConditionalAction;
+use TurboDocx\Types\Requests\SendSignatureRequest;
+
+$result = TurboSign::sendSignature(
+    new SendSignatureRequest(
+        file: file_get_contents('contract.pdf'),
+        documentName: 'Employment Agreement',
+        recipients: [
+            new Recipient('John Doe', 'john@example.com', 1),
+        ],
+        fields: [
+            // Controlling checkbox — the box the signer ticks. Its fieldKey is the stable id others reference.
+            new Field(
+                type: SignatureFieldType::CHECKBOX,
+                recipientEmail: 'john@example.com',
+                page: 1,
+                x: 100,
+                y: 400,
+                width: 20,
+                height: 20,
+                metadata: new FieldMetadata(fieldKey: 'relocation_optin'),
+            ),
+            // Dependent field — hidden until the box above is checked (action: "show").
+            new Field(
+                type: SignatureFieldType::SIGNATURE,
+                recipientEmail: 'john@example.com',
+                page: 1,
+                x: 100,
+                y: 460,
+                width: 200,
+                height: 50,
+                metadata: new FieldMetadata(
+                    conditional: new FieldConditional(
+                        controllingFieldKey: 'relocation_optin',      // = the checkbox's metadata fieldKey
+                        operator: ConditionalOperator::IS_CHECKED,    // ::IS_CHECKED | ::IS_NOT_CHECKED
+                        action: ConditionalAction::SHOW,              // ::SHOW = hidden until met; ::UNLOCK = visible but read-only until met
+                    ),
+                ),
+            ),
+        ],
+    )
+);
+
+echo "Document ID: {$result->documentId}\n";
+```
+
+The link is `fieldKey` → `controllingFieldKey`: the two strings must match exactly (the checkbox carries `metadata->fieldKey`, the dependent field points at it via `metadata->conditional->controllingFieldKey`). `operator` chooses which checkbox state satisfies the condition — `'is_checked'` or `'is_not_checked'`. `action` chooses what happens while the condition is unmet: `'show'` keeps the dependent field **hidden until met**, while `'unlock'` renders it **visible but read-only (locked) until met**.
+
 ### getStatus
 
 ```php

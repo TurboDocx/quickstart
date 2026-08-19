@@ -183,6 +183,7 @@ Create working route handlers / endpoint code for the selected product(s). The l
 
 **For TurboSign, generate:**
 - `sendSignature()` endpoint — accepts file (or `fileLink` / `deliverableId` / `templateId`), recipients, fields
+- If the user wants **conditional (IF/THEN) fields** — a field that shows or unlocks only when the signer ticks a box: add a controlling `checkbox` field carrying `metadata.fieldKey`, and a dependent field carrying `metadata.conditional` (`{ controllingFieldKey, operator: "is_checked" | "is_not_checked", action: "show" | "unlock" }`) whose `controllingFieldKey` matches the checkbox's `fieldKey`. `action: "show"` keeps the dependent field hidden until the condition is met; `action: "unlock"` shows it but read-only until met. `metadata` is optional and both live on the normal `sendSignature()` field array — see the language reference for the exact per-language shape.
 - `getStatus()` endpoint — check the document-level status by ID
 - `getRecipients()` endpoint — every recipient with their signing status, email history, and who sent the document. Generate this whenever the user wants to know **who has signed / who is still pending**; `getStatus()` alone cannot answer that. Note each recipient carries both `status` (raw: `pending`/`viewed`/`completed`) and `effectiveStatus` (adds `voided`/`expired`) — generated code should branch on `effectiveStatus`, since an unsigned signer on a voided document still reads `pending` in the raw field.
 - `download()` endpoint — stream signed PDF (returns `Blob`/`ArrayBuffer` per language)

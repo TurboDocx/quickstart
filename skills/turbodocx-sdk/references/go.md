@@ -76,6 +76,58 @@ if err != nil {
 fmt.Printf("Document ID: %s\n", result.DocumentID)
 ```
 
+### Conditional (IF/THEN) fields
+
+Any field can be made to depend on a **controlling checkbox** so it only appears — or only becomes editable — once the signer ticks that box. Give the checkbox a stable `Metadata.FieldKey`, then reference that key from the dependent field's `Metadata.Conditional.ControllingFieldKey`. `Field.Metadata` is an **optional** `*turbodocx.FieldMetadata`; a nil `Metadata` (the default) behaves exactly as before.
+
+```go
+result, err := client.TurboSign.SendSignature(ctx, &turbodocx.SendSignatureRequest{
+    File:         pdfFile,
+    FileName:     "contract.pdf",
+    DocumentName: "Employment Agreement",
+    Recipients: []turbodocx.Recipient{
+        {Name: "John Doe", Email: "john@example.com", SigningOrder: 1},
+    },
+    Fields: []turbodocx.Field{
+        // Controlling checkbox — the box the signer ticks. Its FieldKey is the stable id others reference.
+        {
+            Type:           "checkbox",
+            RecipientEmail: "john@example.com",
+            Page:           1,
+            X:              100,
+            Y:              400,
+            Width:          20,
+            Height:         20,
+            Metadata: &turbodocx.FieldMetadata{
+                FieldKey: "relocation_optin",
+            },
+        },
+        // Dependent field — hidden until the box above is checked (Action: "show").
+        {
+            Type:           "signature",
+            RecipientEmail: "john@example.com",
+            Page:           1,
+            X:              100,
+            Y:              460,
+            Width:          200,
+            Height:         50,
+            Metadata: &turbodocx.FieldMetadata{
+                Conditional: &turbodocx.FieldConditional{
+                    ControllingFieldKey: "relocation_optin", // = the checkbox's Metadata.FieldKey
+                    Operator:            "is_checked",        // "is_checked" | "is_not_checked"
+                    Action:              "show",              // "show" = hidden until met; "unlock" = visible but read-only until met
+                },
+            },
+        },
+    },
+})
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+The link is `FieldKey` → `ControllingFieldKey`: the two strings must match exactly (the checkbox carries `Metadata.FieldKey`, the dependent field points at it via `Metadata.Conditional.ControllingFieldKey`). `Operator` chooses which checkbox state satisfies the condition — `"is_checked"` or `"is_not_checked"`. `Action` chooses what happens while the condition is unmet: `"show"` keeps the dependent field **hidden until met**, while `"unlock"` renders it **visible but read-only (locked) until met**.
+
 ### GetStatus
 
 ```go
