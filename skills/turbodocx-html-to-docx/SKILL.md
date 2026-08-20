@@ -3,15 +3,15 @@ name: turbodocx-html-to-docx
 description: Set up @turbodocx/html-to-docx to convert HTML to Microsoft Word (.docx) documents in a Node.js project. Use this skill when the user wants to generate DOCX files from HTML, add document generation to their app, convert HTML templates to Word documents, or integrate TurboDocx html-to-docx into their project. Also trigger for mentions of HTML-to-Word, HTML-to-DOCX, document generation, report generation from HTML, or any request involving the @turbodocx/html-to-docx package.
 metadata:
   author: TurboDocx
-  version: "1.2.0"
+  version: "1.3.0"
 license: MIT
 ---
 
 # HTML to DOCX Setup
 
-This skill adds `@turbodocx/html-to-docx` to a JavaScript/TypeScript project — a zero-dependency library that converts HTML strings to Word documents without Puppeteer, Chrome, or LibreOffice. It runs in Node.js **and** in the browser (via the bundled IIFE/ESM builds).
+This skill adds `@turbodocx/html-to-docx` to a JavaScript/TypeScript project — a zero-dependency library that converts HTML strings to Word documents without Puppeteer, Chrome, or LibreOffice. It runs in Node.js **and** in the browser (via the bundled browser ESM / IIFE builds, resolved automatically through the package `exports` map).
 
-> **Prefer server-side when possible.** Running this server-side is faster, avoids the ~2.4 MB browser bundle, sidesteps polyfill requirements, and keeps `sharp` (for SVG → PNG conversion) available. Default to a server-side integration whenever the project has any backend (Express/Fastify/Next.js API route/etc.) and only fall back to the browser bundle when the project is genuinely static or the user explicitly asks for client-side generation.
+> **Prefer server-side when possible.** Running this server-side is faster, keeps the ~1.6 MB browser build out of your client bundle, and keeps `sharp` (for SVG → PNG conversion) available. Default to a server-side integration whenever the project has any backend (Express/Fastify/Next.js API route/etc.) and only fall back to the browser build when the project is genuinely static or the user explicitly asks for client-side generation.
 
 ## Phase 1: Detect the Project Type
 
@@ -29,7 +29,7 @@ Use Glob to check what kind of project this is:
    - Proceed to **Phase 2 (npm install path)**.
 
 2. **Browser-only project** — no `package.json`, but HTML files exist (`*.html`) or the user has explicitly said they want to use this in a static page / CDN setup. Before committing to this path, briefly confirm with the user that they don't have a backend they'd rather run this in — server-side is preferred. If they confirm browser is required:
-   - Skip npm install entirely. The library ships a self-contained browser bundle (`dist/html-to-docx.browser.js`, ~2.4 MB IIFE) with all dependencies inlined.
+   - Skip npm install entirely. The library ships a self-contained browser bundle (`dist/html-to-docx.browser.js`, ~1.6 MB IIFE) with all dependencies inlined.
    - Read the **Browser Usage** section in `references/usage.md` for the polyfill snippet, the `HTMLToDOCX(...)` global, and the limitations (no `sharp`, CORS-restricted remote images, no filesystem).
    - Drop in a `<script src="...">` referencing either a hosted copy or a CDN build, and generate a minimal working example tailored to the user's page.
    - Skip Phases 2-4 below; the browser path is install-less.
