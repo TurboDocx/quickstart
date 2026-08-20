@@ -119,6 +119,17 @@ result, err := client.TurboSign.SendSignature(ctx, &turbodocx.SendSignatureReque
                 },
             },
         },
+        // Date field — pins a fixed date in MM/DD/YYYY; omit DefaultValue to auto-fill the signing date.
+        {
+            Type:           "date",
+            RecipientEmail: "john@example.com",
+            Page:           1,
+            X:              100,
+            Y:              530,
+            Width:          150,
+            Height:         30,
+            DefaultValue:   "12/31/2026",
+        },
     },
 })
 if err != nil {
