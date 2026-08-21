@@ -110,6 +110,14 @@ SendSignatureResponse result = client.turboSign().sendSignature(
                         "relocation_optin", // controllingFieldKey = the checkbox's metadata fieldKey
                         "is_checked",       // "is_checked" | "is_not_checked"
                         "show")))           // "show" = hidden until met; "unlock" = visible but read-only until met
+                .build(),
+            // Date field — pins a fixed date in MM/DD/YYYY; omit defaultValue to auto-fill the signing date.
+            new Field.Builder()
+                .type("date")
+                .recipientEmail("john@example.com")
+                .page(1)
+                .x(100).y(530).width(150).height(30)
+                .defaultValue("12/31/2026")
                 .build()
         ))
         .build()

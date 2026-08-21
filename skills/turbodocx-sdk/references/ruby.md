@@ -137,6 +137,13 @@ result = TurboDocxSdk::TurboSign.send_signature(
           action: "show"                           # "show" = hidden until met; "unlock" = visible but read-only until met
         }
       }
+    },
+    # Date field — pins a fixed date in MM/DD/YYYY; omit defaultValue to auto-fill the signing date.
+    {
+      type: "date",
+      page: 1, x: 100, y: 530, width: 150, height: 30,
+      recipientEmail: "alice@example.com",
+      defaultValue: "12/31/2026"
     }
   ]
 )
