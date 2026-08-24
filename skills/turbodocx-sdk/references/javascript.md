@@ -151,10 +151,11 @@ The link is `fieldKey` → `controllingFieldKey`: the two strings must match exa
 
 ```typescript
 const status = await TurboSign.getStatus(documentId);
-console.log(status.status); // e.g., 'under_review', 'completed', 'voided', 'sent'
+console.log(status.status);    // e.g., 'under_review', 'completed', 'voided', 'sent'
+console.log(status.expiresAt); // ISO timestamp, or null when expiration is off
 ```
 
-Response: `{ status: string }`. For per-recipient state, use `getAuditTrail`.
+Response: `{ status: string, expiresAt: string | null }` (`expiresAt` is null when expiration is off). For per-recipient state, use `getAuditTrail`.
 
 ### TurboSign.getRecipients
 
@@ -268,7 +269,7 @@ await TurboSign.sendSignature({
   remindersEnabled: true,
   reminderDelay: { value: 2, unit: 'days' },   // time to the FIRST reminder
   reminderInterval: { value: 1, unit: 'days' },// gap between later ones
-  maxReminders: 3,                             // -1 unlimited, 0 none
+  maxReminders: 3,                             // -1 unlimited, 0 none, max 50
   // Expiration
   expirationEnabled: true,
   expireAfter: { value: 14, unit: 'days' },
@@ -277,9 +278,14 @@ await TurboSign.sendSignature({
 });
 ```
 
-Durations are `{ value, unit }` with `unit` of `"hours"` or `"days"`. `value` is a whole number, minimum 1 — except `expirationWarning`, where `0` means "never send a warning". The resolved schedule is frozen onto the document at send time, so changing your org defaults later never affects a document already out for signature.
+Durations are `{ value, unit }` with `unit` of `"hours"` or `"days"`. `value` is a whole number, minimum 1 and at most 999 days (23976 hours) — except `expirationWarning`, where `0` means "never send a warning". The resolved schedule is frozen onto the document at send time, so changing your org defaults later never affects a document already out for signature.
 
-Once expiration is on, the document carries an `expiresAt` deadline; after it passes every signing link returns **HTTP 410** and the document reaches the terminal status `expired`.
+Once expiration is on, the document carries an `expiresAt` deadline; after it passes every signing link returns **HTTP 410** and the document reaches the terminal status `expired`. Read that deadline back off `getStatus` — it returns `expiresAt` alongside the status:
+
+```typescript
+const status = await TurboSign.getStatus(documentId);
+console.log(status.expiresAt); // ISO timestamp, or null when expiration is off
+```
 
 ### TurboSign.getAuditTrail
 
@@ -1000,6 +1006,18 @@ try {
 }
 ```
 
+**Reminders & expiration on quote send.** `sendQuote` / `sendQuoteWithDeliverable` accept the same schedule fields as signature send — reminders/expiration work the same way, **except the expiry date is pinned to the quote's `validUntil`, so `expireAfter` is ignored** (`expirationEnabled` still toggles expiration per-quote, and the reminder/warning cadence must fit inside the `validUntil` window).
+
+```typescript
+await TurboQuote.sendQuote(quote.id, {
+  remindersEnabled: true,
+  reminderDelay: { value: 2, unit: 'days' },
+  reminderInterval: { value: 1, unit: 'days' },
+  maxReminders: 3,          // -1 unlimited, 0 none, max 50
+  expirationEnabled: true,  // deadline = quote.validUntil; expireAfter is ignored
+});
+```
+
 ### preparedBy (single-quote fetch only)
 
 `getQuote(id)` folds in the server-resolved sender identity as `preparedBy` — prefer it over `creator` for anything customer-facing. It is **not** present on `listQuotes` results.
@@ -1338,7 +1356,7 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode`, `code`, and
 | `TurboSign.configure(config)` | Set apiKey, orgId, senderEmail, senderName |
 | `TurboSign.createSignatureReviewLink(request)` | Prepare a document and get a preview URL (no emails sent) |
 | `TurboSign.sendSignature(request)` | Prepare a document and immediately email recipients |
-| `TurboSign.getStatus(documentId)` | Get current document status string |
+| `TurboSign.getStatus(documentId)` | Get current document status + expiresAt |
 | `TurboSign.download(documentId)` | Download signed PDF as `Blob` |
 | `TurboSign.void(documentId, reason)` | Cancel a signature request (reason is required) |
 | `TurboSign.resend(documentId, recipientIds)` | Resend signature email to recipient IDs (array of UUIDs) |

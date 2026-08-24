@@ -158,10 +158,12 @@ The link is `fieldKey` → `controllingFieldKey`: the two strings must match exa
 
 ```php
 $status = TurboSign::getStatus($documentId);
-echo "Status: {$status->status}\n";   // 'draft' | 'under_review' | 'completed' | 'voided' | ...
+echo "Status: {$status->status}\n";      // 'draft' | 'under_review' | 'completed' | 'voided' | ...
+echo "Expires: {$status->expiresAt}\n";  // ISO timestamp, or null when expiration is off
 ```
 
-`DocumentStatusResponse` carries **only** `status` (matching the other SDKs). For per-recipient
+`DocumentStatusResponse` carries `status` plus `expiresAt` (an ISO string, or null when expiration
+is off; matching the other SDKs). For per-recipient
 progress use `TurboSign::getAuditTrail($documentId)`.
 
 ### getRecipients
@@ -316,7 +318,7 @@ TurboSign::sendSignature(new SendSignatureRequest(
     remindersEnabled: true,
     reminderDelay: ['value' => 2, 'unit' => 'days'],    // time to the FIRST reminder
     reminderInterval: ['value' => 1, 'unit' => 'days'], // gap between later ones
-    maxReminders: 3,                                    // -1 unlimited, 0 none
+    maxReminders: 3,                                    // -1 unlimited, 0 none, max 50
     // Expiration
     expirationEnabled: true,
     expireAfter: ['value' => 14, 'unit' => 'days'],
@@ -325,9 +327,14 @@ TurboSign::sendSignature(new SendSignatureRequest(
 ));
 ```
 
-Durations are `{ value, unit }` with `unit` of `"hours"` or `"days"`. `value` is a whole number, minimum 1 — except `expirationWarning`, where `0` means "never send a warning". The resolved schedule is frozen onto the document at send time, so changing your org defaults later never affects a document already out for signature.
+Durations are `{ value, unit }` with `unit` of `"hours"` or `"days"`. `value` is a whole number, minimum 1 and at most 999 days (23976 hours) — except `expirationWarning`, where `0` means "never send a warning". The resolved schedule is frozen onto the document at send time, so changing your org defaults later never affects a document already out for signature.
 
-Once expiration is on, the document carries an `expiresAt` deadline; after it passes every signing link returns **HTTP 410** and the document reaches the terminal status `expired`.
+Once expiration is on, the document carries an `expiresAt` deadline; after it passes every signing link returns **HTTP 410** and the document reaches the terminal status `expired`. Read that deadline back off `getStatus` — it returns `expiresAt` alongside the status:
+
+```php
+$status = TurboSign::getStatus($documentId);
+echo $status->expiresAt;   // ISO timestamp, or null when expiration is off
+```
 
 ## Deliverable
 
@@ -1077,6 +1084,18 @@ of preconditions, each of which fails with `ValidationException` (400) carrying 
 | `QuoteCustomerInactive` | The customer/company is inactive |
 | `SenderEmailRequired` | The org's quote template (Quote Settings) has no sender email |
 
+**Reminders & expiration on quote send.** `sendQuote` / `sendQuoteWithDeliverable` accept the same schedule fields as signature send — reminders/expiration work the same way, **except the expiry date is pinned to the quote's `validUntil`, so `expireAfter` is ignored** (`expirationEnabled` still toggles expiration per-quote, and the reminder/warning cadence must fit inside the `validUntil` window).
+
+```php
+TurboQuote::sendQuote($quote->id, new SendQuoteRequest(
+    remindersEnabled: true,
+    reminderDelay: ['value' => 2, 'unit' => 'days'],
+    reminderInterval: ['value' => 1, 'unit' => 'days'],
+    maxReminders: 3,          // -1 unlimited, 0 none, max 50
+    expirationEnabled: true,  // deadline = validUntil; expireAfter is ignored
+));
+```
+
 ### handleExpiredQuote
 
 Act on a sent quote whose `validUntil` has passed. **`action` accepts exactly two values: `'void'` and `'decline'`.** There is no `'extend'` and no `'resend'` — those are not implemented and return a 400. `reason` (max 190 chars) and `newValidUntil` (ISO date) are **both required**.
@@ -1434,7 +1453,7 @@ otherwise the class default — `VALIDATION_ERROR`, `AUTHENTICATION_ERROR`, `AUT
 |--------|-------------|
 | `TurboSign::sendSignature($request)` | Send document for e-signature |
 | `TurboSign::createSignatureReviewLink($request)` | Preview without emails |
-| `TurboSign::getStatus($documentId)` | Get document status (returns `DocumentStatusResponse` — `status` only) |
+| `TurboSign::getStatus($documentId)` | Get document status (returns `DocumentStatusResponse` — `status` + `expiresAt`) |
 | `TurboSign::download($documentId)` | Download signed PDF as string |
 | `TurboSign::void($documentId, $reason)` | Cancel a signature request (reason required) |
 | `TurboSign::resend($documentId, $recipientIds)` | Resend signature email to recipient UUIDs |

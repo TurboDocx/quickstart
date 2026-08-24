@@ -125,10 +125,11 @@ The link is `fieldKey` → `controllingFieldKey`: the two strings must match exa
 
 ```python
 status = await TurboSign.get_status(document_id)
-print(f"Status: {status['status']}")   # 'under_review' | 'completed' | 'voided'
+print(f"Status: {status['status']}")        # 'under_review' | 'completed' | 'voided'
+print(f"Expires: {status['expiresAt']}")     # ISO timestamp, or None when expiration is off
 ```
 
-The response carries **only** `status` — there is no `recipients` key. For per-recipient state use `get_audit_trail(document_id)`.
+The response carries `status` and `expiresAt` (an ISO string, or `None` when expiration is off) — there is no `recipients` key. For per-recipient state use `get_audit_trail(document_id)`.
 
 ### get_recipients
 
@@ -273,7 +274,7 @@ await TurboSign.send_signature(
     reminders_enabled=True,
     reminder_delay={"value": 2, "unit": "days"},    # time to the FIRST reminder
     reminder_interval={"value": 1, "unit": "days"}, # gap between later ones
-    max_reminders=3,                                # -1 unlimited, 0 none
+    max_reminders=3,                                # -1 unlimited, 0 none, max 50
     # Expiration
     expiration_enabled=True,
     expire_after={"value": 14, "unit": "days"},
@@ -282,9 +283,14 @@ await TurboSign.send_signature(
 )
 ```
 
-Durations are `{ value, unit }` with `unit` of `"hours"` or `"days"`. `value` is a whole number, minimum 1 — except `expirationWarning`, where `0` means "never send a warning". The resolved schedule is frozen onto the document at send time, so changing your org defaults later never affects a document already out for signature.
+Durations are `{ value, unit }` with `unit` of `"hours"` or `"days"`. `value` is a whole number, minimum 1 and at most 999 days (23976 hours) — except `expirationWarning`, where `0` means "never send a warning". The resolved schedule is frozen onto the document at send time, so changing your org defaults later never affects a document already out for signature.
 
-Once expiration is on, the document carries an `expiresAt` deadline; after it passes every signing link returns **HTTP 410** and the document reaches the terminal status `expired`.
+Once expiration is on, the document carries an `expiresAt` deadline; after it passes every signing link returns **HTTP 410** and the document reaches the terminal status `expired`. Read that deadline back off `get_status` — it returns `expiresAt` alongside the status:
+
+```python
+status = await TurboSign.get_status(document_id)
+print(status["expiresAt"])  # ISO timestamp, or None when expiration is off
+```
 
 ## Deliverable
 
@@ -1015,6 +1021,18 @@ Sending **does** email the recipient — the backend creates a signature request
 | `QuoteCustomerInactive` | The quote's company or contact was deleted/deactivated |
 | `SenderEmailRequired` | No sender email on the org quote template (Quote Settings) |
 
+**Reminders & expiration on quote send.** `send_quote` / `send_quote_with_deliverable` accept the same schedule fields as signature send — reminders/expiration work the same way, **except the expiry date is pinned to the quote's `validUntil`, so `expireAfter` is ignored** (`expirationEnabled` still toggles expiration per-quote, and the reminder/warning cadence must fit inside the `validUntil` window).
+
+```python
+await TurboQuote.send_quote(quote["id"], {
+    "remindersEnabled": True,
+    "reminderDelay": {"value": 2, "unit": "days"},
+    "reminderInterval": {"value": 1, "unit": "days"},
+    "maxReminders": 3,          # -1 unlimited, 0 none, max 50
+    "expirationEnabled": True,  # deadline = validUntil; expireAfter is ignored
+})
+```
+
 ### preparedBy
 
 `get_quote()` folds the server-resolved "Prepared by" identity onto the quote as `preparedBy` (`{"name", "email"}`). It is returned by the **single-quote fetch only** — `list_quotes()` does not include it. Prefer it over `creator` for customer-facing display; `creator` may be the internal API service account.
@@ -1251,7 +1269,7 @@ The exception attributes are `e.status_code` (int or `None`) and `e.code` (str) 
 |--------|-------------|
 | `TurboSign.send_signature(...)` | Send document for e-signature |
 | `TurboSign.create_signature_review_link(...)` | Preview without sending emails |
-| `TurboSign.get_status(document_id)` | Get document-level status only (no recipients) |
+| `TurboSign.get_status(document_id)` | Get document-level status + expiresAt (no recipients) |
 | `TurboSign.download(document_id)` | Download signed PDF as bytes |
 | `TurboSign.void_document(document_id, reason)` | Cancel a signature request (reason required) |
 | `TurboSign.resend_email(document_id, recipient_ids)` | Resend signature email to recipient UUIDs |

@@ -148,9 +148,10 @@ if err != nil {
 }
 
 fmt.Printf("Status: %s\n", status.Status)
+fmt.Printf("Expires: %s\n", status.ExpiresAt) // ISO timestamp, empty when expiration is off
 ```
 
-`GetStatus` returns `*turbodocx.DocumentStatusResponse`, which carries **only** a `Status` string — there is no `Recipients` slice on it. For per-recipient state use `GetAuditTrail`.
+`GetStatus` returns `*turbodocx.DocumentStatusResponse`, which carries a `Status` string and an `ExpiresAt` (an ISO string, empty when expiration is off) — there is no `Recipients` slice on it. For per-recipient state use `GetAuditTrail`.
 
 ### GetRecipients
 
@@ -328,7 +329,7 @@ _, err := client.TurboSign.SendSignature(ctx, &turbodocx.SendSignatureRequest{
         RemindersEnabled:          &remindersOn,
         ReminderDelay:             &turbodocx.Duration{Value: 2, Unit: "days"},
         ReminderInterval:          &turbodocx.Duration{Value: 1, Unit: "days"},
-        MaxReminders:              &maxReminders, // -1 unlimited, 0 none
+        MaxReminders:              &maxReminders, // -1 unlimited, 0 none, max 50
         ExpirationEnabled:         &expirationOn,
         ExpireAfter:               &turbodocx.Duration{Value: 14, Unit: "days"},
         ExpirationWarning:         &turbodocx.Duration{Value: 2, Unit: "days"}, // 0 = never warn
@@ -337,9 +338,14 @@ _, err := client.TurboSign.SendSignature(ctx, &turbodocx.SendSignatureRequest{
 })
 ```
 
-Durations are `{ value, unit }` with `unit` of `"hours"` or `"days"`. `value` is a whole number, minimum 1 — except `expirationWarning`, where `0` means "never send a warning". The resolved schedule is frozen onto the document at send time, so changing your org defaults later never affects a document already out for signature.
+Durations are `{ value, unit }` with `unit` of `"hours"` or `"days"`. `value` is a whole number, minimum 1 and at most 999 days (23976 hours) — except `expirationWarning`, where `0` means "never send a warning". The resolved schedule is frozen onto the document at send time, so changing your org defaults later never affects a document already out for signature.
 
-Once expiration is on, the document carries an `expiresAt` deadline; after it passes every signing link returns **HTTP 410** and the document reaches the terminal status `expired`.
+Once expiration is on, the document carries an `expiresAt` deadline; after it passes every signing link returns **HTTP 410** and the document reaches the terminal status `expired`. Read that deadline back off `GetStatus` — it returns `ExpiresAt` alongside the status:
+
+```go
+status, _ := client.TurboSign.GetStatus(ctx, documentID)
+fmt.Println(status.ExpiresAt) // ISO timestamp, empty when expiration is off
+```
 
 ## Deliverable
 
@@ -1209,6 +1215,22 @@ Sending emails the contact and creates a signature request. Each precondition fa
 | `QuoteCustomerInactive` | The company or contact was deleted/deactivated |
 | `SenderEmailRequired` | No sender email on the org quote template (see Configuration) |
 
+**Reminders & expiration on quote send.** `SendQuote` / `SendQuoteWithDeliverable` accept the same `SignatureSchedule` as signature send — reminders/expiration work the same way, **except the expiry date is pinned to the quote's `validUntil`, so `ExpireAfter` is ignored** (`ExpirationEnabled` still toggles expiration per-quote, and the reminder/warning cadence must fit inside the `validUntil` window).
+
+```go
+remindersOn, expirationOn := true, true
+maxReminders := 3
+_, err := qc.SendQuote(ctx, quote.ID, &turbodocx.SendQuoteRequest{
+    SignatureSchedule: turbodocx.SignatureSchedule{
+        RemindersEnabled:  &remindersOn,
+        ReminderDelay:     &turbodocx.Duration{Value: 2, Unit: "days"},
+        ReminderInterval:  &turbodocx.Duration{Value: 1, Unit: "days"},
+        MaxReminders:      &maxReminders, // -1 unlimited, 0 none, max 50
+        ExpirationEnabled: &expirationOn, // deadline = validUntil; ExpireAfter is ignored
+    },
+})
+```
+
 ### HandleExpiredQuote
 
 Act on a sent quote whose `validUntil` has passed. **`Action` accepts exactly two values: `"void"` and `"decline"`.** There is no `"extend"` and no `"resend"` — those are not implemented and return a 400. `Reason` (max 190 chars) and `NewValidUntil` (ISO date) are **both required**.
@@ -1462,7 +1484,7 @@ Every typed error embeds `turbodocx.TurboDocxError`, so `Code` (string), `Messag
 |--------|-------------|
 | `client.TurboSign.SendSignature(ctx, req)` | Send document for e-signature |
 | `client.TurboSign.CreateSignatureReviewLink(ctx, req)` | Preview without emails |
-| `client.TurboSign.GetStatus(ctx, id)` | Get document-level status only (no recipients) |
+| `client.TurboSign.GetStatus(ctx, id)` | Get document-level status + expiresAt (no recipients) |
 | `client.TurboSign.Download(ctx, id)` | Download signed PDF as []byte |
 | `client.TurboSign.VoidDocument(ctx, id, reason)` | Cancel a signature request (reason required) |
 | `client.TurboSign.ResendEmail(ctx, id, recipientIDs)` | Resend signature email to recipient UUIDs |
@@ -1593,7 +1615,7 @@ Every typed error embeds `turbodocx.TurboDocxError`, so `Code` (string), `Messag
 - **Helper functions** `turbodocx.IntPtr()` and `turbodocx.BoolPtr()` for optional pointer fields. There is **no** exported `StringPtr` — take the address of a local variable (`s := "x"; &s`) for `*string` fields.
 - **File input** accepts: `[]byte`, file path string, or URL string
 - **`SendSignature` / `CreateSignatureReviewLink` recipients are `[]turbodocx.ReviewRecipient`** — `ID`, `Name`, `Email`, `Metadata`. There is **no** `SignURL` field on them (`SignURL` lives on `turbodocx.RecipientResponse`, a separate type). `CreateSignatureReviewLink` returns a top-level `PreviewURL` for document-level preview.
-- **`GetStatus` returns only a `Status` string** — `turbodocx.DocumentStatusResponse` has no `Recipients` slice. Use `GetAuditTrail` for per-recipient detail.
+- **`GetStatus` returns a `Status` string plus an `ExpiresAt`** — `turbodocx.DocumentStatusResponse` has no `Recipients` slice. Use `GetAuditTrail` for per-recipient detail.
 - **`ResendEmail` takes recipient UUIDs** (`[]string`), not email addresses — fetch them from the send/review response recipients or from `GetAuditTrail`.
 - **`Download` is a two-step operation.** `GET /api/signature/:id/download` returns JSON `{"downloadUrl", "fileName"}` — not bytes — and the presigned `downloadUrl` must then be fetched **without an `Authorization` header** (S3 rejects a presigned request that also carries one). The SDK does both steps for you; hand-rolled REST calls must too.
 - **Two different role enums — do not mix them.** Organization users and organization API keys take `"admin" | "contributor" | "user" | "viewer"`. Partner-portal users take `"admin" | "member" | "viewer"`. `"member"` is not a valid org role, and `"contributor"` / `"user"` are not valid partner roles — either mistake is a 400.
