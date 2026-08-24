@@ -157,7 +157,8 @@ The link is `fieldKey` → `controllingFieldKey`: the two strings must match exa
 
 ```ruby
 status = TurboDocxSdk::TurboSign.get_status("doc-uuid")
-puts status["status"]  # "under_review" | "completed" | "voided"
+puts status["status"]     # "under_review" | "completed" | "voided"
+puts status["expiresAt"]  # ISO timestamp, or nil when expiration is off
 ```
 
 ### TurboSign.get_recipients
@@ -263,7 +264,7 @@ TurboDocxSdk::TurboSign.send_signature(
   remindersEnabled: true,
   reminderDelay: { "value" => 2, "unit" => "days" },    # time to the FIRST reminder
   reminderInterval: { "value" => 1, "unit" => "days" }, # gap between later ones
-  maxReminders: 3,                                      # -1 unlimited, 0 none
+  maxReminders: 3,                                      # -1 unlimited, 0 none, max 50
   # Expiration
   expirationEnabled: true,
   expireAfter: { "value" => 14, "unit" => "days" },
@@ -272,9 +273,14 @@ TurboDocxSdk::TurboSign.send_signature(
 )
 ```
 
-Durations are `{ value, unit }` with `unit` of `"hours"` or `"days"`. `value` is a whole number, minimum 1 — except `expirationWarning`, where `0` means "never send a warning". The resolved schedule is frozen onto the document at send time, so changing your org defaults later never affects a document already out for signature.
+Durations are `{ value, unit }` with `unit` of `"hours"` or `"days"`. `value` is a whole number, minimum 1 and at most 999 days (23976 hours) — except `expirationWarning`, where `0` means "never send a warning". The resolved schedule is frozen onto the document at send time, so changing your org defaults later never affects a document already out for signature.
 
-Once expiration is on, the document carries an `expiresAt` deadline; after it passes every signing link returns **HTTP 410** and the document reaches the terminal status `expired`.
+Once expiration is on, the document carries an `expiresAt` deadline; after it passes every signing link returns **HTTP 410** and the document reaches the terminal status `expired`. Read that deadline back off `get_status` — it returns `expiresAt` alongside the status:
+
+```ruby
+status = TurboDocxSdk::TurboSign.get_status("doc-uuid")
+puts status["expiresAt"]  # ISO timestamp, or nil when expiration is off
+```
 
 ### TurboSign.get_audit_trail
 
@@ -820,6 +826,18 @@ Sending emails the contact **and** creates a signature request for the quote. Ea
 | `QuoteCustomerInactive` | The company or contact was deleted/deactivated |
 | `SenderEmailRequired` | No sender email on the org quote template (API-key callers) |
 
+**Reminders & expiration on quote send.** `send_quote` / `send_quote_with_deliverable` accept the same schedule fields as signature send — reminders/expiration work the same way, **except the expiry date is pinned to the quote's `validUntil`, so `expireAfter` is ignored** (`expirationEnabled` still toggles expiration per-quote, and the reminder/warning cadence must fit inside the `validUntil` window). As everywhere in this SDK, the request-hash keys stay camelCase.
+
+```ruby
+TurboDocxSdk::TurboQuote.send_quote(quote["id"],
+  "remindersEnabled"  => true,
+  "reminderDelay"     => { "value" => 2, "unit" => "days" },
+  "reminderInterval"  => { "value" => 1, "unit" => "days" },
+  "maxReminders"      => 3,     # -1 unlimited, 0 none, max 50
+  "expirationEnabled" => true   # deadline = validUntil; expireAfter is ignored
+)
+```
+
 ### preparedBy
 
 `get_quote` (the **single**-quote fetch only — not `list_quotes`) merges in a `"preparedBy"` hash with the resolved sender identity. Prefer it over `"creator"` for anything customer-facing; `"email"` may be `nil` for an API-created quote.
@@ -1120,7 +1138,7 @@ The error classes are **not** nested under a sub-module (e.g. not `TurboDocxSdk:
 | `TurboDocxSdk::TurboSign.configure(api_key:, org_id:, sender_email:, sender_name:)` | Set credentials (sender_email required) |
 | `TurboDocxSdk::TurboSign.create_signature_review_link(request)` | Prepare a document and get a preview URL (no emails sent) |
 | `TurboDocxSdk::TurboSign.send_signature(request)` | Prepare a document and immediately email recipients |
-| `TurboDocxSdk::TurboSign.get_status(document_id)` | Get document-level status only (no recipients) |
+| `TurboDocxSdk::TurboSign.get_status(document_id)` | Get document-level status + expiresAt (no recipients) |
 | `TurboDocxSdk::TurboSign.download(document_id)` | Download signed PDF as raw bytes |
 | `TurboDocxSdk::TurboSign.void_document(document_id, reason)` | Cancel a signature request (reason required) |
 | `TurboDocxSdk::TurboSign.resend_email(document_id, recipient_ids)` | Resend signature email to recipient UUIDs |

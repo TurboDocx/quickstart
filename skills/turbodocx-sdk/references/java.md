@@ -132,10 +132,11 @@ The link is `fieldKey` → `controllingFieldKey`: the two strings must match exa
 
 ```java
 DocumentStatusResponse status = client.turboSign().getStatus(documentId);
-System.out.println("Status: " + status.getStatus()); // e.g. "sent", "completed", "voided"
+System.out.println("Status: " + status.getStatus());     // e.g. "sent", "completed", "voided"
+System.out.println("Expires: " + status.getExpiresAt()); // ISO timestamp, or null when expiration is off
 ```
 
-`DocumentStatusResponse` carries the document-level `status` only. For per-recipient detail, use `getRecipients(documentId)` below — it returns the roster directly, so there is no need to reconstruct it from `getAuditTrail(documentId)`.
+`DocumentStatusResponse` carries the document-level `status` plus `expiresAt` (an ISO string, or null when expiration is off). For per-recipient detail, use `getRecipients(documentId)` below — it returns the roster directly, so there is no need to reconstruct it from `getAuditTrail(documentId)`.
 
 ### getRecipients
 
@@ -280,7 +281,7 @@ SignatureSchedule schedule = SignatureSchedule.builder()
         .remindersEnabled(true)
         .reminderDelay(new SignatureSchedule.Duration(2, "days"))    // time to the FIRST reminder
         .reminderInterval(new SignatureSchedule.Duration(1, "days")) // gap between later ones
-        .maxReminders(3)                                             // -1 unlimited, 0 none
+        .maxReminders(3)                                             // -1 unlimited, 0 none, max 50
         .expirationEnabled(true)
         .expireAfter(new SignatureSchedule.Duration(14, "days"))
         .expirationWarning(new SignatureSchedule.Duration(2, "days")) // 0 = never warn
@@ -297,9 +298,14 @@ SendSignatureRequest request = new SendSignatureRequest.Builder()
 turboSign.sendSignature(request);
 ```
 
-Durations are `{ value, unit }` with `unit` of `"hours"` or `"days"`. `value` is a whole number, minimum 1 — except `expirationWarning`, where `0` means "never send a warning". The resolved schedule is frozen onto the document at send time, so changing your org defaults later never affects a document already out for signature.
+Durations are `{ value, unit }` with `unit` of `"hours"` or `"days"`. `value` is a whole number, minimum 1 and at most 999 days (23976 hours) — except `expirationWarning`, where `0` means "never send a warning". The resolved schedule is frozen onto the document at send time, so changing your org defaults later never affects a document already out for signature.
 
-Once expiration is on, the document carries an `expiresAt` deadline; after it passes every signing link returns **HTTP 410** and the document reaches the terminal status `expired`.
+Once expiration is on, the document carries an `expiresAt` deadline; after it passes every signing link returns **HTTP 410** and the document reaches the terminal status `expired`. Read that deadline back off `getStatus` — it returns `expiresAt` alongside the status:
+
+```java
+DocumentStatusResponse status = client.turboSign().getStatus(documentId);
+System.out.println(status.getExpiresAt()); // ISO timestamp, or null when expiration is off
+```
 
 ## Deliverable
 
@@ -1108,6 +1114,22 @@ Sending a quote also **creates a signature request and emails the recipient**. E
 | `QuoteCustomerInactive` | The quote's company or contact was deleted/deactivated |
 | `SenderEmailRequired` | No sender email on the org quote template (Quote Settings) |
 
+**Reminders & expiration on quote send.** `sendQuote` / `sendQuoteWithDeliverable` accept the same `SignatureSchedule` as signature send — reminders/expiration work the same way, **except the expiry date is pinned to the quote's `validUntil`, so `expireAfter` is ignored** (`expirationEnabled` still toggles expiration per-quote, and the reminder/warning cadence must fit inside the `validUntil` window).
+
+```java
+SignatureSchedule schedule = SignatureSchedule.builder()
+        .remindersEnabled(true)
+        .reminderDelay(new SignatureSchedule.Duration(2, "days"))
+        .reminderInterval(new SignatureSchedule.Duration(1, "days"))
+        .maxReminders(3)         // -1 unlimited, 0 none, max 50
+        .expirationEnabled(true) // deadline = validUntil; expireAfter is ignored
+        .build();
+
+SendQuoteRequest req = new SendQuoteRequest();
+req.setSchedule(schedule);
+tq.sendQuote(quote.getId(), req);
+```
+
 ### preparedBy
 
 The **single-quote fetch only** (`getQuote`) resolves the customer-facing "Prepared by" identity. It is not present on list responses.
@@ -1356,7 +1378,7 @@ All seven subtypes are **nested classes** on `com.turbodocx.TurboDocxException` 
 |--------|-------------|
 | `client.turboSign().sendSignature(req)` | Send document for e-signature |
 | `client.turboSign().createSignatureReviewLink(req)` | Preview without emails |
-| `client.turboSign().getStatus(id)` | Get document-level status only (no recipients) |
+| `client.turboSign().getStatus(id)` | Get document-level status + expiresAt (no recipients) |
 | `client.turboSign().download(id)` | Download signed PDF as byte[] |
 | `client.turboSign().voidDocument(id, reason)` | Cancel a signature request (`reason` required) |
 | `client.turboSign().resendEmail(id, recipientIds)` | Resend signature email to recipient UUIDs |
