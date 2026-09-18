@@ -347,6 +347,126 @@ status, _ := client.TurboSign.GetStatus(ctx, documentID)
 fmt.Println(status.ExpiresAt) // ISO timestamp, empty when expiration is off
 ```
 
+### Embedded Signing & Identity Verification
+
+Embedded signing takes a signer from **your own app** straight to a TurboSign signing page, with no signing-link email. It is two steps: your server mints a signing URL for the recipient, then your app opens it (new tab, redirect, or iframe). A recipient with **no** identity verification configured signs with no extra step — the page opens straight to the document.
+
+Identity verification is an optional layer on top. Each signer runs in exactly one of three modes:
+
+| Mode | What the signer does | How you set it |
+|---|---|---|
+| `otp` | Clears a one-time passcode (email or SMS) before the document opens | `IdentityVerification{Mode: "otp", Channel: "email"}` — or `"sms"`, which also needs the recipient's `Phone` in E.164 — or the `Auth` shorthand on `CreateEmbeddedSignature` |
+| `external_idv` | Was already verified by your own identity provider; you assert it when minting the URL | `IdentityVerification{Mode: "external_idv", Provider: "CAPA"}` on `SendSignature`, then pass `IdentityAssertion` to `CreateSigningURL` |
+| `override` | Skips verification entirely (development/testing); the signature is recorded as not identity-verified on the certificate | `IdentityVerification{Mode: "override", OverrideIdentityVerification: true, Reason: "..."}` |
+
+`IdentityVerification` is an optional `*turbodocx.IdentityVerification` on a `Recipient`; leave it nil for a plain embedded recipient. The `Auth` shorthand on `CreateEmbeddedSignature` covers **OTP only** (`EmailOTP` / `SMS`). Reach `external_idv` and `override` with `SendSignature` (a full `IdentityVerification` block on the recipient) followed by `CreateSigningURL`.
+
+**Allowed embedding domains are DENY-by-default.** The embeddable signing URL (`/e-signature/embed/...`) carries a per-tenant `Content-Security-Policy: frame-ancestors`. An origin that is not on the org's allow-list is hard-blocked from framing the page (a blank or refused frame, not a warning) — that is the clickjacking protection working, not a bug. An org admin adds your app's origin under E-Signature settings, Identity & embedding, Allowed origins (production origins must be `https://`; `http://localhost` is accepted only as a flagged dev override). Read the current list from `GetEmbeddedSigningSettings().AllowedFrameAncestors`. The email-invite signing links (`/e-signature/sign/...`) deny all framing.
+
+### GetEmbeddedSigningSettings
+
+Read-only. The org-wide gates an admin sets once (in E-Signature settings on the Identity & embedding tab, or via the organization preferences API). Check them before you start requesting signing URLs.
+
+```go
+settings, err := client.TurboSign.GetEmbeddedSigningSettings(ctx)
+if err != nil {
+    log.Fatal(err)
+}
+if !settings.Enabled {
+    log.Fatal("Embedded signing is not enabled for this organization.")
+}
+fmt.Println(settings.AllowExternalIDV)      // may you assert identity with your own provider?
+fmt.Println(settings.AllowIdentityOverride) // may a sender skip verification (dev/testing)?
+fmt.Println(settings.AllowedFrameAncestors) // origins allowed to iframe the signing page
+```
+
+Returns `*turbodocx.EmbeddedSigningSettings` — `Enabled`, `AllowExternalIDV`, `AllowIdentityOverride`, `DefaultChannel`, `AllowedFrameAncestors`. `DefaultChannel` (`"none" | "email" | "sms"`) is the OTP channel applied to recipients that do not specify one on the **interactive (UI) create path only**; SDK/API sends set identity per recipient, so it does not affect them. Everything here is read-only from the SDK.
+
+### CreateSigningURL
+
+Mint a single embedded signing URL for one recipient, requested the moment the signer is ready. Open the returned `URL` in a new tab, a redirect, or an iframe.
+
+```go
+// Select the recipient by TurboDocx RecipientID OR by your own ExternalID — exactly one.
+link, err := client.TurboSign.CreateSigningURL(ctx, documentID, &turbodocx.CreateSigningURLRequest{
+    ExternalID: "your_customer_123",                  // XOR RecipientID
+    ReturnURL:  "https://app.yourcompany.com/signed", // optional, https only
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+fmt.Println(link.URL)                      // open / redirect / iframe this
+fmt.Println(link.IdentityVerificationMode) // "otp" | "external_idv" | "override" | ""
+fmt.Println(link.PendingChecks)            // []string{"email_otp"} | []string{"sms_otp"} | [] (non-empty only for otp)
+if link.ExpiresAt != nil {                 // *string: nil for otp/no-verification recipients
+    fmt.Println(*link.ExpiresAt)
+}
+
+// external_idv recipients: pass the assertion from your own identity provider.
+verified, err := client.TurboSign.CreateSigningURL(ctx, documentID, &turbodocx.CreateSigningURLRequest{
+    RecipientID: recipientID,
+    IdentityAssertion: &turbodocx.IdentityAssertion{
+        Provider:       "CAPA",                              // must match the recipient's configured provider
+        VerificationID: "capa_verif_8f2a91",
+        VerifiedAt:     time.Now().UTC().Format(time.RFC3339), // rejected if in the future or too old
+        SubjectEmail:   "jane@example.com",                  // must match the recipient's email
+    },
+})
+```
+
+Returns `*turbodocx.CreateSigningURLResponse` — `URL`, `ExpiresAt` (`*string`), `RecipientID`, `ExternalID`, `IdentityVerificationMode`, `PendingChecks`.
+
+- **Provide exactly one selector.** `RecipientID` or `ExternalID`, not both and not neither, or the SDK returns a `*turbodocx.ValidationError` with code `RecipientSelectorInvalid` before the network call. `ExternalID` is your own key for the signer (an Airtable row, a CRM id), set on the recipient at `SendSignature` time.
+- **`IdentityAssertion` is only for `external_idv` recipients.** OTP, override, and no-verification recipients ignore it.
+- **Request at click time, never store the URL.** For the bypass modes (`external_idv` / `override`) the link is single-use and short-lived (a `?sut=` redeem-once URL, with `ExpiresAt` set), so mint a fresh one each time. For `otp` and no-verification recipients `URL` is the reusable signing link (a `?token=` URL) that follows the document's own signing window and returns `ExpiresAt` nil.
+- **`ReturnURL` must be https**, or the SDK returns a `*turbodocx.ValidationError` with code `InvalidReturnUrl`.
+
+### CreateEmbeddedSignature
+
+Create the signature request **and** mint a per-recipient embed URL in one call. It is a thin wrapper over `SendSignature` + `CreateSigningURL` (no new endpoint) with an ergonomic per-recipient `Auth` and `Fields` shorthand. Recipient emails are suppressed by default, since you own the signing UX.
+
+```go
+resp, err := client.TurboSign.CreateEmbeddedSignature(ctx, &turbodocx.CreateEmbeddedSignatureRequest{
+    File:         pdfFile,
+    FileName:     "auto-policy.pdf",
+    DocumentName: "Auto Policy",
+    Recipients: []turbodocx.EmbeddedSignatureRecipient{
+        {
+            Name:  "John Doe",
+            Email: "john@example.com",
+            // OTP shorthand: email OTP...
+            Auth: &turbodocx.EmbeddedRecipientAuth{EmailOTP: true},
+            // ...or SMS OTP: Auth: &turbodocx.EmbeddedRecipientAuth{SMS: &turbodocx.EmbeddedRecipientSMS{PhoneNumber: "+13055551234"}}
+            Fields: &turbodocx.EmbeddedRecipientFields{Signature: "{signature1}", Date: "{date1}"},
+        },
+    },
+    ReturnURL: "https://app.yourcompany.com/signed", // optional, https, passed to each embed URL
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+for _, r := range resp.Recipients {
+    // "ready" → EmbedURL is set, frame it now; "pending" / "completed" → EmbedURL is ""
+    fmt.Println(r.Name, r.Status, r.EmbedURL, r.IdentityVerificationMode)
+}
+```
+
+Returns `*turbodocx.CreateEmbeddedSignatureResponse` — `DocumentID` plus `Recipients` (`[]turbodocx.EmbeddedSignatureRecipientResult`), one result per signer **in signing order**, each carrying `RecipientID`, `Name`, `Email`, `EmbedURL`, `Status`, `IdentityVerificationMode`.
+
+- **Turn-aware `Status`.** `SigningOrder` defaults to each recipient's index + 1, so a two-signer call is sequential: only signer 1 comes back `"ready"` with an `EmbedURL`, and the rest are `"pending"` (an earlier signer has not finished, `EmbedURL` empty) or `"completed"` (already signed). Re-mint the next signer's URL with `CreateSigningURL` once earlier signers finish (the just-in-time kiosk pattern). Give every recipient the same `SigningOrder` if you want them all `"ready"` at once.
+- **`Auth` is OTP-only.** `EmailOTP: true` maps to `{Mode: "otp", Channel: "email"}`; `SMS: &EmbeddedRecipientSMS{PhoneNumber: "+13055551234"}` maps to `{Mode: "otp", Channel: "sms"}` and sets the recipient's `Phone`. `EmailOTP` wins if both are set. An SMS recipient with no resolvable phone returns a `*turbodocx.ValidationError` with code `PhoneRequiredForSmsOtp`. For `external_idv` / `override`, use `SendSignature` + `CreateSigningURL` instead.
+- **The `Fields` shorthand anchors by text.** Each key (`Signature`, `Date`, `Initials`, `FullName`) takes the anchor text to replace, expanded to a full field with `Placement: "replace"` and a default size. Note `Initials` emits the field type `"initial"` (there is no `"initials"` type). Pass a top-level `Fields []turbodocx.Field` for full control; it **replaces** the per-recipient shorthand, it does not merge with it.
+- **`SendEmail` defaults to `false`** for this flow (the host owns the UX); set `SendEmail` to a `*bool` to override. Email suppression requires backend support; until that ships the backend may still send the invite email.
+
+### Reference implementations
+
+- **Embedding web app:** [`examples/embedded-web-app`](https://github.com/TurboDocx/SDK/blob/main/examples/embedded-web-app) is a Vite + React + shadcn host app (TypeScript) wired the production way — the pattern transfers to Go unchanged. The SPA never sees the API key: it calls a small backend-for-frontend (`server.ts`) that holds the key and mints embed URLs, and the SPA just frames the minted URL. It shows three paths side by side — a **single signer** (the host hand-rolls the `<iframe>` and an origin-checked `message` completion listener), a **sequential kiosk** (two signers in order on one device, the next signer's URL minted just-in-time when it is their turn), and a **widget** (a drop-in form component that owns the iframe, origin pinning, and completion event for you).
+- **Minimal script:** [`packages/go-sdk/examples/turbosign_embedded_identity.go`](https://github.com/TurboDocx/SDK/blob/main/packages/go-sdk/examples/turbosign_embedded_identity.go) walks the baseline embedded flow plus each identity mode in one file.
+
+---
+
 ## Deliverable
 
 Document generation: render a TurboDocx template with variable substitution into a deliverable (DOCX/PPTX), then download it or hand its ID to TurboSign as the source document.

@@ -21,6 +21,12 @@ TurboSign, Deliverable, TurboWebhooks, and TurboQuote share the same API key + o
 
 Deliverable and TurboWebhooks don't need the sender variables — only `TURBODOCX_API_KEY` + `TURBODOCX_ORG_ID`.
 
+### Embedded signing / identity verification
+
+Embedded (in-app) signing and OTP identity verification need **no additional SDK env vars**. They run through the same `TurboSign.configure`, so `TURBODOCX_API_KEY`, `TURBODOCX_ORG_ID`, and (for sends) `TURBODOCX_SENDER_EMAIL` still apply and nothing new is added. The org turns the feature on **server-side** under **TurboDocx → E-Signature settings → Identity & embedding**; the SDK reads those gates read-only via `getEmbeddedSigningSettings()`. The iframe origin allow-list (allowed frame-ancestors) is one of those settings, not an env var (production origins must be `https://`).
+
+The example embedding web app is a React SPA talking to its own backend-for-frontend (BFF). Keep the API key on the **server**: the BFF holds `TURBODOCX_API_KEY` and calls the SDK, and the browser never imports the SDK or sees the key (it only frames the minted signing URL).
+
 TurboQuote doesn't need them either, but for a different reason: sending a quote **does** create a signature request and email the recipient — the sender just comes from your **organization's quote template** (Quote Settings) rather than from these variables. Configure a sender email there, or quote create/duplicate/send is rejected with `400 SenderEmailRequired`.
 
 ## TurboPartner Variables

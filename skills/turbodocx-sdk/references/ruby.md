@@ -296,6 +296,117 @@ end
 
 The audit trail includes a cryptographic hash chain for tamper-evidence.
 
+### Embedded Signing & Identity Verification
+
+Embedded signing takes a signer from **your own app** straight to a TurboSign signing page — no signing-link email. At its core it is two steps: prepare the document with a recipient, then ask TurboSign for that recipient's signing URL and open it (a new tab, a redirect, or an `<iframe>`). A plain embedded recipient signs with **no extra verification step**. Identity verification is an optional layer you add **per recipient**.
+
+Three methods cover the flow: `get_embedded_signing_settings` reads the org's gates, `create_signing_url` mints one recipient's URL **at click time**, and `create_embedded_signature` does the prepare-and-mint in a single call.
+
+> **KEY GOTCHA — keyword args are snake_case, request-hash keys stay camelCase.** `recipient_id:`, `external_id:`, `identity_assertion:`, `return_url:` follow Ruby convention (like `api_key:`), but the keys **inside** any hash you pass — the `identity_assertion:` hash (`provider`, `verificationId`, `verifiedAt`, `subjectEmail`) and a recipient's `identityVerification` hash (`mode`, `channel`, `overrideIdentityVerification`) — are forwarded to the API verbatim and must stay **camelCase**, exactly as everywhere else in this SDK.
+
+#### Identity modes
+
+The mode is chosen **per recipient**, not on the org. Set it with an `identityVerification` hash on the recipient you pass to `send_signature` (or use the `auth:` shorthand on `create_embedded_signature`, below). Omit it entirely and the recipient signs with no step-up.
+
+| Mode | Recipient's `identityVerification` hash | Step-up before signing |
+|------|------------------------------------------|------------------------|
+| (none) | *omit the key* | None — the signing page opens straight to the document |
+| OTP (email) | `{ "mode" => "otp", "channel" => "email" }` | A one-time passcode is emailed and entered on the page |
+| OTP (SMS) | `{ "mode" => "otp", "channel" => "sms" }` + recipient `phone` (E.164) | A one-time passcode is texted to the recipient |
+| External IDV | `{ "mode" => "external_idv", "provider" => "CAPA" }` | Your own identity provider verified them; you assert it via `identity_assertion:` when you mint the URL |
+| Override | `{ "mode" => "override", "overrideIdentityVerification" => true, "reason" => "Sandbox testing" }` | None — verification is skipped and recorded as not-verified (development/testing) |
+
+`external_idv` and `override` are org-gated — see `allowExternalIdv` / `allowIdentityOverride` from `get_embedded_signing_settings`.
+
+**Allowed embedding domains are deny-by-default.** The returned `url` is embeddable, but the signing page ships a per-tenant `Content-Security-Policy: frame-ancestors`. An origin **not** on the org's allow-list is **hard-blocked** from framing it — a refused/blank frame, not a warning. Ask your org admin to add your app's origin under E-Signature settings → Identity & embedding → Allowed origins (production origins must be `https://`; `http://localhost` is accepted only as a flagged dev override), and read the current list from `settings["allowedFrameAncestors"]`.
+
+### TurboSign.get_embedded_signing_settings
+
+Read-only. The org-wide **gates** an admin sets once — use them to see what is permitted before you request signing URLs.
+
+```ruby
+settings = TurboDocxSdk::TurboSign.get_embedded_signing_settings
+
+settings["enabled"]                # embedded signing turned on for the org?
+settings["allowExternalIdv"]       # may you assert identity with your own provider?
+settings["allowIdentityOverride"]  # may a link skip verification (development/testing)?
+settings["defaultChannel"]         # "none" | "email" | "sms" — default OTP channel
+settings["allowedFrameAncestors"]  # origins allowed to iframe the signing page
+```
+
+### TurboSign.create_signing_url
+
+Mint a signing URL for **one** recipient. Request it the moment the signer is ready (they clicked "Sign now" in your app and you have confirmed the logged-in user is this recipient) and **never store it**. Select the recipient by **exactly one** of `recipient_id:` or `external_id:` — supplying both or neither raises `ValidationError` before any HTTP call (an empty string counts as absent). `return_url:`, when given, must be an `https` URL.
+
+```ruby
+link = TurboDocxSdk::TurboSign.create_signing_url(
+  "doc-uuid",
+  external_id: "your_customer_123",              # XOR recipient_id: — exactly one
+  return_url:  "https://app.example.com/signed"  # https only; where the signer returns after signing
+)
+
+puts link["url"]                       # embeddable signing URL — open in a tab, redirect, or iframe
+puts link["identityVerificationMode"]  # "otp" | "external_idv" | "override" | nil
+puts link["pendingChecks"]             # e.g. ["email_otp"]; [] when there is no verification
+puts link["expiresAt"]                 # nil for reusable links (they follow the document's window)
+```
+
+For an `external_idv` recipient, pass the assertion from your own provider (camelCase keys):
+
+```ruby
+link = TurboDocxSdk::TurboSign.create_signing_url(
+  "doc-uuid",
+  recipient_id: "recipient-uuid",
+  identity_assertion: {
+    "provider"       => "CAPA",
+    "verificationId" => "capa_verif_8f2a91",
+    "verifiedAt"     => Time.now.utc.iso8601,
+    "subjectEmail"   => "jane@example.com"
+  }
+)
+```
+
+The URL comes in **two flavors depending on the recipient's mode**, and this drives whether you may reuse it:
+
+- **No verification or `otp`** → a **reusable** `?token=` link that follows the document's own signing window and survives a refresh; `expiresAt` is `nil`. For `otp` the page asks for the passcode first.
+- **`external_idv` or `override`** → a **single-use, short-lived** `?sut=` link that is redeemed once when opened. Mint a fresh one each time; do **not** reuse or store it.
+
+### TurboSign.create_embedded_signature
+
+Prepare a document **and** mint a per-recipient embed URL in **one call** — the counterpart of a create-with-embed flow. It is a thin wrapper over `send_signature` + `create_signing_url`, so `sendEmail` defaults to **false** (the host app owns the signer UX). Recipients come back **in signing order**.
+
+```ruby
+result = TurboDocxSdk::TurboSign.create_embedded_signature(
+  fileLink:     "https://example.com/contract.pdf",  # or file:/templateId:/deliverableId:
+  documentName: "Kiosk Agreement",
+  recipients: [
+    { name: "Alice", email: "alice@example.com", signingOrder: 1,
+      auth:   { emailOtp: true },                                   # → otp email step-up
+      fields: { signature: "{signature1}", date: "{date1}" } },     # anchor shorthand
+    { name: "Bob", email: "bob@example.com", signingOrder: 2,
+      auth:   { sms: { phoneNumber: "+15551234567" } },             # → otp sms (phone required)
+      fields: { signature: "{signature2}" } }
+  ]
+  # fields: [...]  # optional top-level full field objects; overrides the per-recipient shorthand
+)
+
+puts result["documentId"]
+result["recipients"].each do |r|
+  # "ready"     → it's their turn; "embedUrl" is set — frame it now
+  # "pending"   → an earlier signer hasn't finished; "embedUrl" is nil — re-mint later with create_signing_url
+  # "completed" → they already signed; "embedUrl" is nil
+  puts "#{r['name']}: #{r['status']} #{r['embedUrl']} (#{r['identityVerificationMode'] || 'no verification'})"
+end
+```
+
+- **The `auth:` shorthand only produces OTP.** `auth: { emailOtp: true }` maps to `{ mode: "otp", channel: "email" }`; `auth: { sms: { phoneNumber: "..." } }` maps to `{ mode: "otp", channel: "sms" }` and sets the recipient's phone. `emailOtp` wins when both are set. `external_idv` and `override` are **not** reachable from this shorthand — use the two-call path (`send_signature` with an explicit `identityVerification` hash, then `create_signing_url`) for those.
+- **SMS OTP without a phone raises client-side.** A recipient with `sms` auth and no resolvable phone (E.164) raises `ValidationError` (`PhoneRequiredForSmsOtp`) before any HTTP call.
+- **The `fields:` shorthand** anchors one field per key — `signature`, `date`, `initials`, `fullName` — to the given text with `placement: "replace"` and a default size. Pass a top-level `fields:` array to take full field control instead.
+
+#### Reference implementation
+
+A full working example lives at **`examples/embedded-web-app`** in the SDK repo — a Vite + React + shadcn host app that embeds TurboSign three ways so you can compare them: a **single signer** (the host hand-rolls the `<iframe>` and an origin-checked `postMessage` completion listener), a **sequential kiosk** (two signers in order on one device, the next signer's URL minted **just-in-time** when it's their turn), and a **widget** (`<TurboSignForm>` from `@turbodocx/embed`, which owns the iframe and completion event for you). It is TypeScript, but the shape transfers: the browser never holds the API key — a small **backend-for-frontend** (`server.ts`) holds it and calls the SDK, exactly the role a Rails controller or Sinatra route plays in the examples below.
+
 ---
 
 ## Deliverable
@@ -1139,6 +1250,9 @@ The error classes are **not** nested under a sub-module (e.g. not `TurboDocxSdk:
 | `TurboDocxSdk::TurboSign.create_signature_review_link(request)` | Prepare a document and get a preview URL (no emails sent) |
 | `TurboDocxSdk::TurboSign.send_signature(request)` | Prepare a document and immediately email recipients |
 | `TurboDocxSdk::TurboSign.get_status(document_id)` | Get document-level status + expiresAt (no recipients) |
+| `TurboDocxSdk::TurboSign.get_embedded_signing_settings` | Read the org's embedded-signing gates (enabled, allowExternalIdv, allowIdentityOverride, defaultChannel, allowedFrameAncestors) |
+| `TurboDocxSdk::TurboSign.create_signing_url(document_id, recipient_id:/external_id:, identity_assertion:, return_url:)` | Mint one recipient's embedded signing URL at click time (exactly one selector) |
+| `TurboDocxSdk::TurboSign.create_embedded_signature(request)` | Prepare a document and mint a per-recipient embed URL in one call (per-recipient `status`/`embedUrl`) |
 | `TurboDocxSdk::TurboSign.download(document_id)` | Download signed PDF as raw bytes |
 | `TurboDocxSdk::TurboSign.void_document(document_id, reason)` | Cancel a signature request (reason required) |
 | `TurboDocxSdk::TurboSign.resend_email(document_id, recipient_ids)` | Resend signature email to recipient UUIDs |
@@ -1307,6 +1421,7 @@ The error classes are **not** nested under a sub-module (e.g. not `TurboDocxSdk:
 - **Bulk creates are partial-success, not transactional.** `bulk_create_products`/`bulk_create_price_books`/`bulk_create_bundles`/`bulk_create_companies`/`bulk_create_contacts`/`bulk_create_types` never raise on a bad row — read `report["failed"]` (`[{ "row", "reason" }]`, `row` 1-indexed) and `report["adjusted"]`; earlier rows are not rolled back. Cap is 500 rows/request (over → `ValidationError` 400). Admin + contributor keys only. Row-hash keys stay camelCase.
 - **Bulk product rows take `"categoryId"`, never `"categoryName"`.** The row schema is strict and rejects unknown keys, so a `"categoryName"` field 400s the row. Resolve or create the category with `list_types` / `create_type` first and pass its UUID. Required per row: `"name"`, `"categoryId"`, `"listPrice"`, `"billingFrequency"`.
 - **Use the SDK constants** (`TurboDocxSdk::BillingFrequency::MONTHLY`, `DiscountType::PERCENT`, `Currency::USD`, `CategoryType::PRODUCT_CATEGORY`, `QuoteNumberResetCadence::NEVER`, …) instead of hard-coding string literals. Each constants module also exposes an `ALL` array of valid values.
+- **Embedded signing is deny-by-default.** The `url` from `create_signing_url` / `create_embedded_signature` is embeddable, but the signing page ships a per-tenant `Content-Security-Policy: frame-ancestors`, so an origin **not** on the org's allow-list is **hard-blocked** from framing it (a refused/blank frame, not a warning). Add your app's origin under E-Signature settings → Identity & embedding → Allowed origins, and read the current list from `get_embedded_signing_settings["allowedFrameAncestors"]`.
 - **Ruby 2.7+ and zero runtime dependencies** — the gem uses only `net/http`, `json`, and `openssl` from the standard library.
 
 **Full API reference:** https://docs.turbodocx.com/docs

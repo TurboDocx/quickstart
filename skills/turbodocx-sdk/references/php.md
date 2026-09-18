@@ -336,6 +336,191 @@ $status = TurboSign::getStatus($documentId);
 echo $status->expiresAt;   // ISO timestamp, or null when expiration is off
 ```
 
+## Embedded Signing & Identity Verification
+
+Embedded signing takes a signer from **your own app** straight to a TurboSign signing page, without sending a signing-link email. The shape is always the same: your backend asks TurboSign for a signing URL for one recipient, then opens it (a new tab, a redirect, or an iframe). A plain embedded recipient signs with no extra step; identity verification is an optional layer on top.
+
+Three methods cover it: `getEmbeddedSigningSettings()` reads the org gates, `createSigningUrl()` mints a URL for an already-prepared recipient, and `createEmbeddedSignature()` does send + per-recipient mint in one call.
+
+### getEmbeddedSigningSettings
+
+Read the org-wide gates before you start. These are set once by an admin (E-Signature settings → Identity & embedding) and are **read-only** from the SDK — the per-recipient mode you pick on each signer is separate.
+
+```php
+use TurboDocx\TurboSign;
+
+$settings = TurboSign::getEmbeddedSigningSettings();
+if (!$settings->enabled) {
+    throw new RuntimeException('Embedded signing is not enabled for this organization.');
+}
+
+var_dump($settings->allowExternalIdv);        // may you assert identity with your own provider
+var_dump($settings->allowIdentityOverride);   // may a sender skip identity verification
+var_dump($settings->allowedFrameAncestors);   // string[] of origins allowed to iframe the signing page
+```
+
+| Field | Meaning |
+|---|---|
+| `enabled` | Embedded signing (and OTP identity verification) is turned on for the org |
+| `allowExternalIdv` | You may assert a signer's identity with your own provider |
+| `allowIdentityOverride` | A sender may issue a link that skips identity verification |
+| `allowedFrameAncestors` | Origins allowed to embed the signing page in an iframe (empty = none configured) |
+
+`$settings->defaultChannel` (`'none' | 'email' | 'sms' | null`) is also returned — the OTP channel applied to recipients that don't specify one, on the interactive (UI) create path only.
+
+### createSigningUrl
+
+Prepare the document with an **embedded recipient** (via `sendSignature`), then mint a signing URL for that recipient the moment they're ready to sign. Give the recipient an `externalId` — your own key (a CRM id, an Airtable row) — so you can request the URL later without storing TurboDocx's recipient id.
+
+```php
+use TurboDocx\TurboSign;
+use TurboDocx\Types\Recipient;
+use TurboDocx\Types\Field;
+use TurboDocx\Types\SignatureFieldType;
+use TurboDocx\Types\TemplateConfig;
+use TurboDocx\Types\FieldPlacement;
+use TurboDocx\Types\Requests\SendSignatureRequest;
+use TurboDocx\Types\Requests\CreateSigningUrlRequest;
+
+// 1) Prepare the document. No identityVerification here = a plain embedded recipient (no step-up).
+$sent = TurboSign::sendSignature(new SendSignatureRequest(
+    file: file_get_contents('agreement.pdf'),
+    documentName: 'Service Agreement',
+    recipients: [
+        new Recipient(
+            name: 'Jane Doe',
+            email: 'jane@example.com',
+            signingOrder: 1,
+            externalId: 'your_customer_123',   // YOUR key for this signer
+        ),
+    ],
+    fields: [
+        new Field(
+            type: SignatureFieldType::SIGNATURE,
+            recipientEmail: 'jane@example.com',
+            template: new TemplateConfig(
+                anchor: '{signature1}',
+                placement: FieldPlacement::REPLACE,
+                size: ['width' => 100, 'height' => 30],
+            ),
+        ),
+    ],
+));
+
+// 2) When the signer clicks "Sign now" in YOUR app, mint the URL. Request it at click time and
+//    never store it. Select the recipient by exactly ONE of externalId or recipientId.
+$link = TurboSign::createSigningUrl($sent->documentId, new CreateSigningUrlRequest(
+    externalId: 'your_customer_123',
+    returnUrl: 'https://app.yourcompany.com/signed',  // optional, https only
+));
+
+echo "Open for the signer: {$link->url}\n";
+echo "Mode: " . ($link->identityVerificationMode ?? '(none)') . "\n";  // 'otp' | 'external_idv' | 'override' | null
+echo "Pending checks: " . json_encode($link->pendingChecks) . "\n";   // ['email_otp'] | ['sms_otp'] | []
+echo "Expires: " . ($link->expiresAt ?? '(follows the document window)') . "\n";
+```
+
+`CreateSigningUrlResponse` carries `url`, `expiresAt`, `recipientId`, `externalId`, `identityVerificationMode`, and `pendingChecks`. Semantics that matter:
+
+- **Exactly one selector** — pass `recipientId` **or** `externalId`, never both and never neither, or the SDK throws `ValidationException` (`RecipientSelectorInvalid`) before any HTTP call. `returnUrl`, when present, must be `https://`.
+- **Request at click time, never store.** For the **bypass modes** (`external_idv`, `override`) the URL is **single-use and short-lived** (a `?sut=` link the page redeems once, with a real `expiresAt`) — mint a fresh one each time. For `otp` / no-verification the `url` is a reusable `?token=` link that follows the document's own signing window, and `expiresAt` comes back **null**.
+- `pendingChecks` lists the passcode step the signer clears on the page (`['email_otp']` / `['sms_otp']`); it is non-empty **only for `otp`**. With no verification, external_idv, or override it is `[]`.
+- **`identityAssertion` is for external_idv only** — pass it here when the recipient's mode is `external_idv` (see below).
+
+### Identity verification modes
+
+Identity verification is optional and set **per recipient** on the `Recipient` you send. A recipient with **no** `identityVerification` signs with **no step-up**. To require a check, pass exactly one mode, built with a named constructor:
+
+```php
+use TurboDocx\Types\IdentityVerification;
+use TurboDocx\Types\IdentityAssertion;
+use TurboDocx\Types\Requests\CreateSigningUrlRequest;
+
+// otp — TurboSign challenges a one-time passcode before the document opens.
+// channel 'email' (default) or 'sms'; 'sms' requires the recipient to carry a `phone` (E.164).
+new Recipient(name: 'Jane Doe', email: 'jane@example.com', signingOrder: 1,
+    identityVerification: IdentityVerification::otp('email'));
+
+// external_idv — your own identity provider already verified the signer. You assert it when you
+// mint the URL. `allowExternalIdv` must be on for the org.
+new Recipient(name: 'Jane Doe', email: 'jane@example.com', signingOrder: 1, externalId: 'your_customer_123',
+    identityVerification: IdentityVerification::externalIdv('CAPA'));
+
+$link = TurboSign::createSigningUrl($documentId, new CreateSigningUrlRequest(
+    externalId: 'your_customer_123',
+    identityAssertion: new IdentityAssertion(
+        provider: 'CAPA',                    // must match the recipient's configured provider
+        verificationId: 'capa_verif_8f2a91', // your provider's unique id (replay detection)
+        verifiedAt: date('c'),               // ISO 8601
+        subjectEmail: 'jane@example.com',    // must match the recipient's email
+    ),
+));
+
+// override — skip verification (development/testing). Recorded as not identity-verified on the
+// certificate. `allowIdentityOverride` must be on for the org; `reason` is required.
+new Recipient(name: 'Jane Doe', email: 'jane@example.com', signingOrder: 1,
+    identityVerification: IdentityVerification::override('Sandbox testing'));
+```
+
+| Mode | Constructor | What the signer sees |
+|---|---|---|
+| `otp` | `IdentityVerification::otp('email' \| 'sms')` | A one-time passcode challenge (email or SMS) before the document |
+| `external_idv` | `IdentityVerification::externalIdv($provider)` | No TurboSign step — you assert their identity via `identityAssertion` at mint time |
+| `override` | `IdentityVerification::override($reason)` | No step — verification is skipped and marked not-verified on the certificate |
+| _(none)_ | omit `identityVerification` | The document opens straight away, no step-up |
+
+### createEmbeddedSignature
+
+Create the signature request **and** mint a per-recipient embed URL in a single call. This is a thin wrapper over `sendSignature()` + `createSigningUrl()` with an ergonomic per-recipient `auth` + `fields` shorthand. It takes a `CreateEmbeddedSignatureRequest` DTO (no array form), and defaults `sendEmail` to `false` — the host owns the UX, so recipients are not emailed.
+
+```php
+use TurboDocx\TurboSign;
+use TurboDocx\Types\Requests\CreateEmbeddedSignatureRequest;
+use TurboDocx\Types\Requests\EmbeddedSignatureRecipient;
+use TurboDocx\Types\Requests\EmbeddedRecipientAuth;
+use TurboDocx\Types\Requests\EmbeddedRecipientFields;
+
+$result = TurboSign::createEmbeddedSignature(new CreateEmbeddedSignatureRequest(
+    recipients: [
+        new EmbeddedSignatureRecipient(
+            name: 'Jane Doe',
+            email: 'jane@example.com',
+            signingOrder: 1,
+            auth: new EmbeddedRecipientAuth(emailOtp: true),          // email OTP; or smsPhoneNumber: '+1...'
+            fields: new EmbeddedRecipientFields(signature: '{signature1}'),
+        ),
+    ],
+    file: file_get_contents('agreement.pdf'),
+    fileName: 'agreement.pdf',
+    documentName: 'Service Agreement',
+    returnUrl: 'https://app.yourcompany.com/signed',
+));
+
+echo "Document {$result->documentId}\n";
+foreach ($result->recipients as $r) {   // one entry per signer, in signing order
+    // status: 'ready' (embedUrl is set) | 'pending' (earlier signer unfinished) | 'completed'
+    echo "  {$r->name} <{$r->email}>: {$r->status}";
+    if ($r->embedUrl !== null) {
+        echo " -> {$r->embedUrl}";
+    }
+    echo "\n";
+}
+```
+
+`CreateEmbeddedSignatureResponse` carries `documentId` and a `recipients` array; each `EmbeddedSignatureRecipientResult` has `recipientId`, `name`, `email`, `status`, `identityVerificationMode`, and `embedUrl`. It is **turn-aware**: with a sequential signing order the backend only mints a URL for the signer whose turn it is — so a later signer comes back `status: 'pending'` with `embedUrl: null` (re-mint with `createSigningUrl()` once earlier signers finish), and an already-signed one comes back `completed`. Any genuine error still throws.
+
+The `auth` shorthand expresses **OTP or no verification only** (`emailOtp` / `smsPhoneNumber`). For `external_idv` or `override`, use the `sendSignature()` + `createSigningUrl()` path above with `IdentityVerification::externalIdv()` / `::override()` on the `Recipient`.
+
+### Allowed embedding domains are deny-by-default
+
+`link->url` is an embeddable signing URL (`/e-signature/embed/...`). When you frame it, the browser enforces a per-tenant `Content-Security-Policy: frame-ancestors` on the page: an origin **not** on the org's allow-list is **hard-blocked** from embedding (a blank/refused frame), not merely warned — that is the clickjacking protection working, not a bug. Ask your org admin to add your app's origin to the "Allowed embedding domains" list (E-Signature settings → Identity & embedding); read the current list from `settings->allowedFrameAncestors`. Production origins must be `https://`. The non-embedded email-invite links (`/e-signature/sign/...`) deny all framing.
+
+### Reference implementations
+
+**Canonical single-file PHP example:** [`packages/php-sdk/examples/turbosign-embedded-identity.php`](https://github.com/TurboDocx/SDK/blob/main/packages/php-sdk/examples/turbosign-embedded-identity.php) walks the full flow — read settings → prepare an embedded recipient → mint the URL → each identity mode.
+
+**Full embedding web app:** [`examples/embedded-web-app`](https://github.com/TurboDocx/SDK/blob/main/examples/embedded-web-app) is a React SPA → backend-for-frontend (BFF) → SDK reference that embeds signing three ways (a hand-rolled `<iframe>` with an origin-checked `turbosign:completed` postMessage completion listener; a sequential kiosk that mints each signer's URL just-in-time when it's their turn; and a drop-in `<TurboSignForm>` widget). It ships as Vite + React with a Node `server.ts` BFF, but the pattern is language-agnostic — **the API key never reaches the browser; only the server talks to TurboDocx** — and applies identically with PHP holding the key and exposing `/api/*` endpoints that call these three methods.
+
 ## Deliverable
 
 Document generation: render a TurboDocx template with variable substitution into a deliverable (DOCX/PPTX), then download it or hand its ID to TurboSign as the source document.

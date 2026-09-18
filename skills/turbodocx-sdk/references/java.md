@@ -307,6 +307,128 @@ DocumentStatusResponse status = client.turboSign().getStatus(documentId);
 System.out.println(status.getExpiresAt()); // ISO timestamp, or null when expiration is off
 ```
 
+## Embedded Signing & Identity Verification
+
+Embedded signing takes a signer from your own app straight to a TurboSign signing page — no signing-link email. Your backend mints a signing URL for the recipient, then you open it (new tab, redirect, or iframe). A plain embedded recipient signs with **no extra step**; identity verification is an optional layer on top. Three methods on `client.turboSign()`: `createSigningUrl` mints one URL for a recipient, `getEmbeddedSigningSettings` reads the org gates, and `createEmbeddedSignature` does send + mint in one call.
+
+### createSigningUrl
+
+Mint a single-use embedded signing URL for one recipient — request it the moment the signer is ready, and never store it. Provide **exactly one** of `recipientId` / `externalId` (both, or neither, is a 400 `RecipientSelectorInvalid`).
+
+```java
+CreateSigningUrlResponse link = client.turboSign().createSigningUrl(
+    documentId,
+    new CreateSigningUrlRequest.Builder()
+        .externalId("your_customer_123")                 // XOR .recipientId("recipient-uuid")
+        .returnUrl("https://app.yourcompany.com/signed") // optional, https only
+        .build()
+);
+
+System.out.println(link.getUrl());                      // open / redirect / iframe
+System.out.println(link.getExpiresAt());                // ISO, or null (follows the doc window)
+System.out.println(link.getIdentityVerificationMode()); // "otp" | "external_idv" | "override" | null
+System.out.println(link.getPendingChecks());            // ["email_otp"] | ["sms_otp"] | []
+```
+
+For an `external_idv` recipient, pass the assertion from your own identity provider:
+
+```java
+CreateSigningUrlResponse link = client.turboSign().createSigningUrl(
+    documentId,
+    new CreateSigningUrlRequest.Builder()
+        .recipientId("recipient-uuid")
+        .identityAssertion(new IdentityAssertion.Builder()
+            .provider("CAPA")
+            .verificationId("capa_verif_8f2a91")
+            .verifiedAt("2025-01-01T00:00:00Z")
+            .subjectEmail("jane@example.com")
+            .build())
+        .build()
+);
+```
+
+Request it **at click time**. For the bypass modes (`external_idv` / `override`) the URL is **single-use** and short-lived (a `?sut=` link redeemed once when opened), so mint a fresh one each time. For no-verification and `otp` recipients the URL is the reusable signing link (`?token=`) that follows the document's own signing window and survives a refresh.
+
+### getEmbeddedSigningSettings
+
+Read-only org gates — check what your org allows before you request signing URLs. Change these in E-Signature settings (Identity & embedding tab) or via the organization preferences API, where the change is recorded in the settings audit trail.
+
+```java
+EmbeddedSigningSettings settings = client.turboSign().getEmbeddedSigningSettings();
+settings.isEnabled();                // embedded signing + OTP turned on for the org
+settings.isAllowExternalIdv();       // may assert identity via your own provider (external_idv)
+settings.isAllowIdentityOverride();  // may issue a link that skips verification (override)
+settings.getDefaultChannel();        // "none" | "email" | "sms" (interactive UI path only)
+settings.getAllowedFrameAncestors(); // origins allowed to iframe the signing page
+```
+
+### createEmbeddedSignature
+
+Send the document **and** mint a per-recipient embed URL in one call — a thin wrapper over `sendSignature` + `createSigningUrl`, no new endpoint. Each recipient carries an `auth` (identity shorthand) and a `fields` (anchor shorthand); results come back **in signing order**.
+
+```java
+CreateEmbeddedSignatureResponse embedded = client.turboSign().createEmbeddedSignature(
+    new CreateEmbeddedSignatureRequest.Builder()
+        .file(pdfFile)
+        .fileName("contract.pdf")
+        .documentName("Auto Policy")
+        .recipients(Arrays.asList(
+            new EmbeddedSignatureRecipient.Builder()
+                .name("John Doe")
+                .email("john@example.com")
+                .auth(EmbeddedRecipientAuth.emailOtp())  // optional identity step; omit for none
+                .fields(new EmbeddedRecipientFields.Builder()
+                    .signature("{signature1}")
+                    .date("{date1}")
+                    .build())
+                .build()
+        ))
+        .returnUrl("https://app.yourcompany.com/signed") // optional, passed to each embed URL
+        .build()
+);
+
+for (EmbeddedSignatureRecipientResult r : embedded.getRecipients()) {
+    // status: "ready" (embedUrl set — frame it now) | "pending" (not their turn yet)
+    //         | "completed" (already signed). embedUrl is null unless "ready".
+    System.out.println(r.getName() + ": " + r.getStatus() + " -> " + r.getEmbedUrl());
+}
+```
+
+The SDK sends `sendEmail: false` for this flow — you own the signing UX, so it **requests** email suppression (the backend may still send until it supports suppression). Pass a top-level `.fields(List<Field>)` to override every recipient's `fields` shorthand verbatim. It is **turn-aware**: with a real signing order the backend mints a URL only for the signer whose turn it is — a later signer comes back `pending` with a null `embedUrl`, so re-mint with `createSigningUrl` once earlier signers finish (e.g. an in-person kiosk handing the device to the next signer). A genuine error (any code other than not-in-turn / already-signed) still throws.
+
+### Identity verification modes
+
+Set per recipient via `IdentityVerification` (or the `auth` shorthand on `createEmbeddedSignature`). A recipient with **no** `identityVerification` signs with **no step-up** — `identityVerificationMode` comes back null and `pendingChecks` is empty.
+
+| Mode | Factory | What the signer does |
+|---|---|---|
+| **OTP (email)** | `IdentityVerification.otpEmail()` | Clears an emailed one-time passcode before the document opens |
+| **OTP (SMS)** | `IdentityVerification.otpSms()` | Clears a texted passcode — needs an E.164 phone on the recipient (see note) |
+| **external_idv** | `IdentityVerification.externalIdv("CAPA")` | Verified by your own provider; pass the `IdentityAssertion` to `createSigningUrl` |
+| **override** | `IdentityVerification.override("Sandbox testing")` | Skips verification (development/testing); recorded "not identity-verified" on the certificate |
+
+`external_idv` and `override` are org-gated — see `isAllowExternalIdv()` / `isAllowIdentityOverride()`. For SMS OTP the phone number's source depends on the path: on a `Recipient.Builder` you set `.phone("+13055551234")` yourself; with the `EmbeddedRecipientAuth.sms("+13055551234")` shorthand the number is carried in the `auth` block and `createEmbeddedSignature` resolves it onto the recipient. Either way, an SMS-OTP recipient with no resolved phone fails fast with `PhoneRequiredForSmsOtp`.
+
+On `sendSignature`, attach a mode with `.identityVerification(...)` on the `Recipient.Builder`:
+
+```java
+new Recipient.Builder()
+    .name("Jane Doe")
+    .email("jane@example.com")
+    .signingOrder(1)
+    .externalId("your_customer_123")                 // your key — select by it in createSigningUrl
+    .identityVerification(IdentityVerification.otpEmail())
+    .build()
+```
+
+### Allowed embedding domains
+
+**Embedding is DENY-by-default.** An embed URL (`/e-signature/embed/...`) is framed under a per-tenant `Content-Security-Policy: frame-ancestors`. An origin **not** on the org's allow-list is **hard-blocked** (a blank/refused frame — the clickjacking protection working, not a bug), never merely warned. Add your app's origin under **E-Signature settings → Identity & embedding → Allowed embedding domains**; production origins must be `https://` (`http://localhost` is accepted only as a flagged dev override). Read the current list from `settings.getAllowedFrameAncestors()`.
+
+### Full reference implementation
+
+For an end-to-end host app — a React SPA that calls a key-holding backend-for-frontend (`server.ts`), which uses the SDK to create documents and mint embed URLs so the API key **never reaches the browser** — see [`examples/embedded-web-app`](https://github.com/TurboDocx/SDK/tree/main/examples/embedded-web-app). It demonstrates three embedding paths side by side: **single signer** (hand-rolled `<iframe>` + origin-checked `postMessage` completion listener), **sequential kiosk** (two signers in order on one device, the next URL minted just-in-time when it's their turn), and **widget** (`<TurboSignForm>` from `@turbodocx/embed`, which owns the iframe, origin pinning, and completion event). The Java single-signer equivalent is [`packages/java-sdk/examples/TurboSignEmbeddedIdentity.java`](https://github.com/TurboDocx/SDK/blob/main/packages/java-sdk/examples/TurboSignEmbeddedIdentity.java).
+
 ## Deliverable
 
 Document generation: render a TurboDocx template with variable substitution into a deliverable (DOCX/PPTX), then download it or hand its ID to TurboSign as the source document.
@@ -1383,6 +1505,9 @@ All seven subtypes are **nested classes** on `com.turbodocx.TurboDocxException` 
 | `client.turboSign().voidDocument(id, reason)` | Cancel a signature request (`reason` required) |
 | `client.turboSign().resendEmail(id, recipientIds)` | Resend signature email to recipient UUIDs |
 | `client.turboSign().getAuditTrail(id)` | Get complete audit trail |
+| `client.turboSign().createSigningUrl(id, req)` | Mint a single-use embedded signing URL for one recipient (exactly one of `recipientId`/`externalId`) |
+| `client.turboSign().getEmbeddedSigningSettings()` | Read-only org embedded-signing gates (enabled, allowExternalIdv, allowIdentityOverride, defaultChannel, allowedFrameAncestors) |
+| `client.turboSign().createEmbeddedSignature(req)` | Send + mint a per-recipient embed URL in one call; results in signing order with `ready`/`pending`/`completed` status |
 | `builder.buildDeliverableClient()` | Build a Deliverable client (no senderEmail needed) |
 | `deliverable.generateDeliverable(req)` | Render a template with variables into a new deliverable |
 | `deliverable.listDeliverables(req)` | Paginated list with search and tag filters |
