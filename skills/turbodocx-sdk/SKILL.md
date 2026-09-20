@@ -213,6 +213,8 @@ Create working route handlers / endpoint code for the selected product(s). The l
 
 Once the basics are scaffolded, point the user at the language reference (`references/<language>.md`) for the full set of available operations — there are many more than the starter set (org/user/API-key management, audit logs, etc.) and the agent should mention which additional operations exist for the user's selected product so they know what to ask for next.
 
+For a user who'd rather explore the whole API surface directly, or generate a client in a language/tool this skill doesn't scaffold, also point them at the machine-readable **OpenAPI spec** at the root of the SDK repo (`openapi.yaml` in `TurboDocx/SDK`). It mirrors these SDK endpoints and loads into Swagger UI, Redoc, Postman, or `openapi-generator`. Auth is the same everywhere: `Authorization: Bearer <API key>` plus the `x-rapiddocx-org-id` header (TurboPartner endpoints use a partner Bearer key with no org header).
+
 **IMPORTANT:**
 - Match existing code patterns (file naming, import style, error handling, async patterns)
 - Place route files where existing routes live
@@ -262,6 +264,7 @@ Next Steps:
 3. Start your server and test the endpoints
 
 Documentation: https://docs.turbodocx.com/docs
+OpenAPI spec (all endpoints): https://github.com/TurboDocx/SDK/blob/main/openapi.yaml
 Support: https://discord.gg/NYKwz4BcpX
 ```
 
