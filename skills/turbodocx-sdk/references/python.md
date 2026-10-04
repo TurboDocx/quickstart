@@ -76,6 +76,26 @@ result = await TurboSign.send_signature(
 print(f"Document ID: {result['documentId']}")
 ```
 
+### Optional fields
+
+```python
+result = await TurboSign.send_signature(
+    file=pdf_file,
+    document_name="Service Agreement",
+    recipients=[
+        {"name": "John Doe", "email": "john@example.com", "signingOrder": 1},
+    ],
+    fields=[
+        # Required (the default): signature and initial fields are always required.
+        {"type": "signature", "page": 1, "x": 100, "y": 500, "width": 200, "height": 50, "recipientEmail": "john@example.com"},
+        # Optional: the signer can finish without filling this in.
+        {"type": "text", "page": 1, "x": 100, "y": 600, "width": 200, "height": 30, "recipientEmail": "john@example.com", "required": False},
+    ],
+)
+```
+
+Fields are required by default, so omit `"required"` to keep one required. Set `"required": False` on a field the signer may leave empty. Signature and initial fields can never be optional (the API returns 400), `"required"` must be a boolean, and each recipient still needs at least one required field they fill in (otherwise 400). `"defaultValue"` is a real prefilled value that is submitted as-is, not placeholder hint text.
+
 ### Conditional (IF/THEN) fields
 
 Any field can be made to depend on a **controlling checkbox** so it only appears — or only becomes editable — once the signer ticks that box. Give the checkbox a stable `metadata["fieldKey"]`, then reference that key from the dependent field's `metadata["conditional"]["controllingFieldKey"]`. Both live in an **optional** `metadata` dict on the field; fields without it behave exactly as before. Note the keys inside `metadata` stay camelCase (`fieldKey`, `controllingFieldKey`) — they are forwarded to the API verbatim.

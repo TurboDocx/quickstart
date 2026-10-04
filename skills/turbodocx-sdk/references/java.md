@@ -77,6 +77,40 @@ SendSignatureResponse result = client.turboSign().sendSignature(
 System.out.println("Document ID: " + result.getDocumentId());
 ```
 
+### Optional fields
+
+```java
+SendSignatureResponse result = client.turboSign().sendSignature(
+    new SendSignatureRequest.Builder()
+        .file(pdfFile)
+        .fileName("contract.pdf")
+        .documentName("Service Agreement")
+        .recipients(Arrays.asList(
+            new Recipient("John Doe", "john@example.com", 1)
+        ))
+        .fields(Arrays.asList(
+            // Required (the default): signature and initial fields are always required.
+            new Field.Builder()
+                .type("signature")
+                .recipientEmail("john@example.com")
+                .page(1)
+                .x(100).y(500).width(200).height(50)
+                .build(),
+            // Optional: the signer can finish without filling this in.
+            new Field.Builder()
+                .type("text")
+                .recipientEmail("john@example.com")
+                .page(1)
+                .x(100).y(600).width(200).height(30)
+                .required(false)
+                .build()
+        ))
+        .build()
+);
+```
+
+Fields are required by default, so omit `.required(...)` to keep one required. Set `.required(false)` on a field the signer may leave empty. Signature and initial fields can never be optional (the API returns 400), `.required(...)` must be a boolean, and each recipient still needs at least one required field they fill in (otherwise 400). `.defaultValue(...)` is a real prefilled value that is submitted as-is, not placeholder hint text. `required` is a nullable `Boolean`: leaving it unset omits the key.
+
 ### Conditional (IF/THEN) fields
 
 Any field can be made to depend on a **controlling checkbox** so it only appears — or only becomes editable — once the signer ticks that box. Give the checkbox a stable `FieldMetadata` with a `fieldKey`, then reference that key from the dependent field's `FieldMetadata` → `FieldConditional` → `controllingFieldKey`. `.metadata(...)` on the builder is **optional**; a field left without it behaves exactly as before.

@@ -102,6 +102,26 @@ console.log(result.recipients);   // ReviewRecipient[] with { id, name, email, m
 
 Fields support either coordinate-based (`page` + `x` / `y` / `width` / `height`) or anchor-based placement via `template: { anchor: '{TagName}', placement: 'replace', size: {...} }`.
 
+### Optional fields
+
+```typescript
+const result = await TurboSign.sendSignature({
+  file: pdfBuffer,
+  documentName: 'Service Agreement',
+  recipients: [
+    { name: 'John Doe', email: 'john@example.com', signingOrder: 1 },
+  ],
+  fields: [
+    // Required (the default): signature and initial fields are always required.
+    { type: 'signature', page: 1, x: 100, y: 500, width: 200, height: 50, recipientEmail: 'john@example.com' },
+    // Optional: the signer can finish without filling this in.
+    { type: 'text', page: 1, x: 100, y: 600, width: 200, height: 30, recipientEmail: 'john@example.com', required: false },
+  ],
+});
+```
+
+Fields are required by default, so omit `required` to keep one required. Set `required: false` on a field the signer may leave empty. Signature and initial fields can never be optional (the API returns 400), `required` must be a boolean, and each recipient still needs at least one required field they fill in (otherwise 400). `defaultValue` is a real prefilled value that is submitted as-is, not placeholder hint text.
+
 ### Conditional (IF/THEN) fields
 
 Any field can be made to depend on a **controlling checkbox** so it only appears — or only becomes editable — once the signer ticks that box. Give the checkbox a stable `metadata.fieldKey`, then reference that key from the dependent field's `metadata.conditional.controllingFieldKey`. Both live in an **optional** `metadata` object on the field; fields without it behave exactly as before.

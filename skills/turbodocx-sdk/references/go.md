@@ -76,6 +76,30 @@ if err != nil {
 fmt.Printf("Document ID: %s\n", result.DocumentID)
 ```
 
+### Optional fields
+
+```go
+result, err := client.TurboSign.SendSignature(ctx, &turbodocx.SendSignatureRequest{
+    File:         pdfFile,
+    FileName:     "contract.pdf",
+    DocumentName: "Service Agreement",
+    Recipients: []turbodocx.Recipient{
+        {Name: "John Doe", Email: "john@example.com", SigningOrder: 1},
+    },
+    Fields: []turbodocx.Field{
+        // Required (the default): leave Required nil. Signature and initial fields are always required.
+        {Type: "signature", RecipientEmail: "john@example.com", Page: 1, X: 100, Y: 500, Width: 200, Height: 50},
+        // Optional: the signer can finish without filling this in.
+        {Type: "text", RecipientEmail: "john@example.com", Page: 1, X: 100, Y: 600, Width: 200, Height: 30, Required: turbodocx.BoolPtr(false)},
+    },
+})
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+Fields are required by default, so omit `Required` to keep one required. Set `Required: turbodocx.BoolPtr(false)` on a field the signer may leave empty. Signature and initial fields can never be optional (the API returns 400), `Required` must be a boolean, and each recipient still needs at least one required field they fill in (otherwise 400). `DefaultValue` is a real prefilled value that is submitted as-is, not placeholder hint text. `Field.Required` is a `*bool`: nil sends nothing (required), and `turbodocx.BoolPtr(true)` / `turbodocx.BoolPtr(false)` send an explicit value. A plain `Required: true` or `Required: false` does not compile.
+
 ### Conditional (IF/THEN) fields
 
 Any field can be made to depend on a **controlling checkbox** so it only appears — or only becomes editable — once the signer ticks that box. Give the checkbox a stable `Metadata.FieldKey`, then reference that key from the dependent field's `Metadata.Conditional.ControllingFieldKey`. `Field.Metadata` is an **optional** `*turbodocx.FieldMetadata`; a nil `Metadata` (the default) behaves exactly as before.
