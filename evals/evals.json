@@ -2968,6 +2968,122 @@
           "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_SENDER_EMAIL"
         }
       ]
+    },
+    {
+      "id": 55,
+      "prompt": "In my Express app, embed TurboSign signing for a two-person agreement. Our org's default verification channel is none, but I want the second signer (the customer) to verify with an SMS one-time code to +13055551234 while the first signer (our account manager) gets no extra check. Set up the server endpoint and the iframe page.",
+      "expected_output": "A server endpoint calling createEmbeddedSignature with sendEmail false (commented), auth: { sms: { phoneNumber } } on the customer only and no auth on the account manager; reads getEmbeddedSigningSettings and checks allowChannelOverride null-safely; catches the 403 OtpOverrideNotAllowed by error code; the browser frames the embedUrl (or uses @turbodocx/embed) with the API key server-side only",
+      "files": [
+        "package.json",
+        "tsconfig.json",
+        "src/index.ts",
+        "package-lock.json"
+      ],
+      "assertions": [
+        {
+          "name": "uses-createEmbeddedSignature",
+          "type": "file_contains",
+          "description": "Server calls TurboSign.createEmbeddedSignature"
+        },
+        {
+          "name": "sms-auth-on-one-signer-only",
+          "type": "file_contains",
+          "description": "Exactly one recipient carries auth: { sms: { phoneNumber: '+13055551234' } }; the account manager recipient has no auth (takes the org default)"
+        },
+        {
+          "name": "send-email-false-explained",
+          "type": "file_contains",
+          "description": "sendEmail: false is passed (or the default is relied on) with a comment explaining no signing-link/reminder emails because the app shows the signing page"
+        },
+        {
+          "name": "reads-allowChannelOverride-null-safe",
+          "type": "file_contains",
+          "description": "Code reads getEmbeddedSigningSettings().allowChannelOverride and treats only an explicit false as locked (=== false / !== false), never !settings.allowChannelOverride"
+        },
+        {
+          "name": "handles-OtpOverrideNotAllowed-by-code",
+          "type": "file_contains",
+          "description": "A catch branch checks err.code === 'OtpOverrideNotAllowed' (AuthorizationError / 403), not only the message"
+        },
+        {
+          "name": "key-not-in-browser",
+          "type": "file_not_contains",
+          "description": "TURBODOCX_API_KEY does not appear in browser-facing code"
+        }
+      ]
+    },
+    {
+      "id": 56,
+      "prompt": "My FastAPI backend embeds TurboSign signing. Our TurboDocx org admin set the default verification channel to email and locked it. A support engineer asked me to skip the passcode for a low-risk internal signer by just leaving identity verification off the recipient. Write the endpoint that sends the document and mints that signer's signing URL, and tell me what the signer will actually see.",
+      "expected_output": "Uses send_signature with send_email=False and an externalId, then create_signing_url; reads get_embedded_signing_settings and explains that a recipient without identityVerification takes the org defaultChannel (email) on SDK sends, so the signer still gets an email passcode; does not claim omitting identity skips verification; notes that picking a different channel would fail with OtpOverrideNotAllowed while the channel is locked",
+      "files": [
+        "pyproject.toml",
+        "app/main.py",
+        "app/routers/__init__.py"
+      ],
+      "assertions": [
+        {
+          "name": "send-signature-send-email-false",
+          "type": "file_contains",
+          "description": "send_signature is called with send_email=False plus a comment explaining why"
+        },
+        {
+          "name": "mints-with-create-signing-url",
+          "type": "file_contains",
+          "description": "create_signing_url is called with exactly one selector (external_id or recipient_id)"
+        },
+        {
+          "name": "default-channel-applies-to-sdk",
+          "type": "output_contains",
+          "description": "The code comments or the reply state that the org's defaultChannel (email) still applies to this SDK-created recipient, so the signer gets an email passcode"
+        },
+        {
+          "name": "no-false-skip-claim",
+          "type": "output_not_contains",
+          "description": "Does not claim that omitting identityVerification skips verification or that defaultChannel only affects the UI / interactive path"
+        },
+        {
+          "name": "mentions-OtpOverrideNotAllowed",
+          "type": "output_contains",
+          "description": "Mentions that an explicit different channel is rejected with OtpOverrideNotAllowed when allowChannelOverride is False (checked with `is False`, not `not`)"
+        }
+      ]
+    },
+    {
+      "id": 57,
+      "prompt": "In my Go net/http service, add embedded signing where we already have our own customer IDs: prepare the document with SendSignature keyed by our customer ID, then mint the signing URL later when the customer clicks Sign. We don't want TurboDocx emailing the customer at all for this flow. Also show the expiry of the minted link.",
+      "expected_output": "SendSignature with SendEmail: &sendEmail (false) and a comment that signing-link, reminder and expiry-warning emails are suppressed while passcode and completed-copy emails still go out; Recipient.ExternalID set; CreateSigningURL by ExternalID; ExpiresAt handled as a *string that is the document's expiry or nil when the document does not expire",
+      "files": [
+        "go.mod",
+        "main.go"
+      ],
+      "assertions": [
+        {
+          "name": "send-email-pointer-false",
+          "type": "file_contains",
+          "description": "SendSignatureRequest sets SendEmail to a pointer to false (e.g. sendEmail := false; SendEmail: &sendEmail)"
+        },
+        {
+          "name": "send-email-explained",
+          "type": "file_contains",
+          "description": "A comment explains what sendEmail false suppresses (signing-link / reminder emails) and that passcode or completed-copy emails still go out"
+        },
+        {
+          "name": "uses-external-id",
+          "type": "file_contains",
+          "description": "Recipient sets ExternalID and CreateSigningURL selects by ExternalID"
+        },
+        {
+          "name": "expires-at-nil-safe",
+          "type": "file_contains",
+          "description": "link.ExpiresAt is nil-checked before dereferencing"
+        },
+        {
+          "name": "no-stale-expiry-claim",
+          "type": "file_not_contains",
+          "description": "No comment claims ExpiresAt is always nil for otp/no-verification links or that the link 'follows the document window'"
+        }
+      ]
     }
   ]
 }

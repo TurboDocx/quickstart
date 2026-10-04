@@ -302,7 +302,11 @@ Response: `{ document: { id, name }, auditTrail: AuditTrailEntry[] }`. Each entr
 
 ### Embedded signing & identity verification
 
-Embedded signing takes a signer from **your own app** straight to a TurboSign signing page, with no signing-link email. It is two steps: your server mints a signing URL for the recipient, then your app opens it (new tab, redirect, or iframe). A recipient with **no** identity verification configured signs with no extra step: the page opens straight to the document.
+Embedded signing takes a signer from **your own app** straight to a TurboSign signing page, with no signing-link email. It is two steps: your server mints a signing URL for the recipient, then your app opens it (new tab, redirect, or iframe). A recipient with **no** `identityVerification` takes the **org's default channel** (`getEmbeddedSigningSettings().defaultChannel`), and that default applies to API/SDK sends too: when it is `'none'` the page opens straight to the document; when it is `'email'` or `'sms'` the org verifies every request, so the signer clears that passcode first.
+
+**Send embedded documents with `sendEmail: false`.** Your app shows the signing page, so TurboSign should not email the signer a link. With `sendEmail: false` the signing-link emails, the initial CC notice, the next signer's "your turn" email, and the scheduled reminder and expiry-warning emails are all suppressed. Passcode emails and the completed-copy email still go out, and an explicit `resend` / `sendReminder` call still sends. `createEmbeddedSignature` already defaults to `false`; on `sendSignature` you must pass it yourself.
+
+**Choosing a channel when the org locked it.** `getEmbeddedSigningSettings().allowChannelOverride` says whether a request may give a recipient a channel other than `defaultChannel`. When it is `false`, an explicit different channel (for example `auth: { sms: ... }` while the default is `'email'`) is rejected by the send with HTTP 403, an `AuthorizationError` whose `code` is `'OtpOverrideNotAllowed'`. Omit the channel to take the default instead. It is always `true` for a `'none'` default, so per-recipient OTP always works there. Compare with `=== false`: an API that does not report the field leaves it `undefined`, which means unknown, not locked.
 
 Identity verification is an optional layer on top. Each signer runs in exactly one of three modes:
 
@@ -316,7 +320,7 @@ The `auth` shorthand on `createEmbeddedSignature` covers **OTP only** (`emailOtp
 
 The SDK fail-fast validates each recipient's identity block before the network call (the server still enforces everything): SMS OTP with no E.164 `phone` throws `ValidationError` with code `PhoneRequiredForSmsOtp`, `external_idv` with no `provider` throws `IdvProviderRequired`, and `override` requires **both** the literal boolean `overrideIdentityVerification: true` and a non-empty `reason` or it throws `OverrideNotAcknowledged`.
 
-**Allowed embedding domains are DENY-by-default.** The embeddable signing URL (`/e-signature/embed/...`) carries a per-tenant `Content-Security-Policy: frame-ancestors`. An origin that is not on the org's allow-list is hard-blocked from framing the page (a blank or refused frame, not a warning): that is the clickjacking protection working, not a bug. An org admin adds your app's origin under E-Signature settings, Identity & embedding, Allowed origins (production origins must be `https://`; `http://localhost` is accepted only as a flagged dev override). Read the current list from `getEmbeddedSigningSettings().allowedFrameAncestors`. The email-invite signing links (`/e-signature/sign/...`) deny all framing.
+**Allowed embedding domains are DENY-by-default.** The embeddable signing URL (`/e-signature/embed/...`) carries a per-tenant `Content-Security-Policy: frame-ancestors`. An origin that is not on the org's allow-list is hard-blocked from framing the page (a blank or refused frame, not a warning): that is the clickjacking protection working, not a bug. An org admin adds your app's origin under E-Signature settings, Identity & embedding, Allowed origins (production origins must be `https://`; `http://localhost` is accepted only as a flagged dev override). Read the current list from `getEmbeddedSigningSettings().allowedFrameAncestors`; an **empty** list means framing is denied everywhere, not "unrestricted". The email-invite signing links (`/e-signature/sign/...`) deny all framing.
 
 ### TurboSign.getEmbeddedSigningSettings
 
@@ -329,16 +333,40 @@ if (!settings.enabled) {
 }
 console.log(settings.allowExternalIdv);      // may you assert identity with your own provider?
 console.log(settings.allowIdentityOverride); // may a sender skip verification (dev/testing)?
-console.log(settings.allowedFrameAncestors); // origins allowed to iframe the signing page
+console.log(settings.allowedFrameAncestors); // origins allowed to iframe the signing page ([] = denied everywhere)
+console.log(settings.defaultChannel);        // 'none' | 'email' | 'sms': what a recipient with no identityVerification gets
+const channelLocked = settings.allowChannelOverride === false; // true: a different explicit channel → OtpOverrideNotAllowed
 ```
 
-Response: `{ enabled, allowExternalIdv, allowIdentityOverride, defaultChannel, allowedFrameAncestors }`. `defaultChannel` (`'none' | 'email' | 'sms'`) is the OTP channel applied to recipients that do not specify one on the **interactive (UI) create path only**; SDK/API sends must set identity per recipient, so it does not affect them. Everything here is read-only from the SDK; change these in settings, where the change is recorded in the settings audit trail.
+Response: `{ enabled, allowExternalIdv, allowIdentityOverride, defaultChannel, allowChannelOverride, allowedFrameAncestors }`.
+
+- **`defaultChannel`** (`'none' | 'email' | 'sms'`) is the org's default OTP channel. While embedded signing is enabled it applies to **every** recipient that does not set one, SDK/API sends included. `'none'` means verify only when a request asks for it.
+- **`allowChannelOverride`** says whether a request may pick a channel other than `defaultChannel`. `false` means the org locked the method: an explicit different channel fails with `OtpOverrideNotAllowed`, so omit it. Always `true` for a `'none'` default or when embedded signing is off. Treat a missing value as unknown, not locked.
+- **`allowedFrameAncestors`**: origins allowed to iframe the signing page. Empty means framing is denied everywhere.
+
+Everything here is read-only from the SDK; change these in settings, where the change is recorded in the settings audit trail.
 
 ### TurboSign.createSigningUrl
 
 Mint a single embedded signing URL for one recipient, requested the moment the signer is ready. Open the returned `url` in a new tab, a redirect, or an iframe. This is the counterpart of DocuSign's `createRecipientView`.
 
 ```typescript
+// Prepare the document with an embedded recipient keyed by YOUR id.
+const { documentId } = await TurboSign.sendSignature({
+  file: pdfBuffer,
+  documentName: 'Service Agreement',
+  // Embedded: your app shows the signing page, so don't email the signer a signing link
+  // (reminder and expiry-warning emails are suppressed too). Passcode and completed-copy emails still go out.
+  sendEmail: false,
+  recipients: [
+    { name: 'Jane Doe', email: 'jane@example.com', signingOrder: 1, externalId: 'your_customer_123' },
+    // no identityVerification → the org's defaultChannel applies
+  ],
+  fields: [
+    { type: 'signature', recipientEmail: 'jane@example.com', template: { anchor: '{signature1}', placement: 'replace', size: { width: 100, height: 30 } } },
+  ],
+});
+
 // Select the recipient by TurboDocx recipientId OR by your own externalId (exactly one).
 const link = await TurboSign.createSigningUrl(documentId, {
   externalId: 'your_customer_123',                  // XOR recipientId
@@ -358,6 +386,13 @@ const verified = await TurboSign.createSigningUrl(documentId, {
     verificationId: 'capa_verif_8f2a91',
     verifiedAt: new Date().toISOString(),    // rejected if in the future or too old
     subjectEmail: 'jane@example.com',        // must match the recipient's email
+    // Optional context recorded on the certificate / audit trail (omit any you don't have):
+    method: 'id_document_liveness',          // id_document | id_document_liveness | kba | database | sso | other
+    // methodDetail: 'Video call with a notary', // required when method is 'other'
+    assuranceLevel: 'ial2_aal2',             // e.g. ial2_aal2, eidas_substantial, eidas_high
+    verifiedName: 'Jane Doe',                // legal name as your provider verified it
+    evidenceUrl: 'https://idv.example.com/verifications/capa_verif_8f2a91', // https only
+    // overrideEmailMatching: true,          // skip the subjectEmail check; recorded on the audit trail
   },
 });
 ```
@@ -365,8 +400,8 @@ const verified = await TurboSign.createSigningUrl(documentId, {
 Response: `{ url, expiresAt, recipientId, externalId?, identityVerificationMode, pendingChecks }`.
 
 - **Provide exactly one selector.** `recipientId` or `externalId`, not both and not neither, or the SDK throws `ValidationError` with code `RecipientSelectorInvalid`. `externalId` is your own key for the signer (an Airtable row, a CRM id), set on the recipient at `sendSignature` time; it is not part of the one-call `createEmbeddedSignature` path.
-- **`identityAssertion` is only for `external_idv` recipients.** OTP, override, and no-verification recipients ignore it.
-- **Request at click time, never store the URL.** For the bypass modes (`external_idv` / `override`) the link is single-use and short-lived (a `?sut=` redeem-once URL, with `expiresAt` set), so mint a fresh one each time. For `otp` and no-verification recipients `url` is the reusable signing link (a `?token=` URL) that follows the document's own signing window and returns `expiresAt: null`.
+- **`identityAssertion` is only for `external_idv` recipients.** OTP, override, and no-verification recipients ignore it. The four keys `provider`, `verificationId`, `verifiedAt`, `subjectEmail` are required; `method`, `methodDetail` (required when `method` is `'other'`), `assuranceLevel`, `verifiedName`, `evidenceUrl` (https) and `overrideEmailMatching` are optional audit-trail context and are left off the wire when unset.
+- **Request at click time, never store the URL.** For the bypass modes (`external_idv` / `override`) the link is single-use and expires minutes after issue (a `?sut=` redeem-once URL), so mint a fresh one each time. For `otp` and no-verification recipients `url` is the reusable signing link (a `?token=` URL), so `expiresAt` is the **document's own expiry**, or `null` when the document doesn't expire.
 - **`returnUrl` must be https**, or the SDK throws `ValidationError` with code `InvalidReturnUrl`.
 
 ### TurboSign.createEmbeddedSignature
@@ -374,36 +409,78 @@ Response: `{ url, expiresAt, recipientId, externalId?, identityVerificationMode,
 Create the signature request **and** mint a per-recipient embed URL in one call. It is a thin wrapper over `sendSignature` + `createSigningUrl` (no new endpoint) with an ergonomic per-recipient `auth` and `fields` shorthand. Recipient emails are suppressed by default, since you own the signing UX.
 
 ```typescript
-const { documentId, recipients } = await TurboSign.createEmbeddedSignature({
-  file: pdfBuffer,
-  documentName: 'Auto Policy',
-  recipients: [
-    {
-      name: 'John Doe',
-      email: 'john@example.com',
-      auth: { emailOtp: true },                     // OTP shorthand: email, or sms: { phoneNumber: '+1...' }
-      fields: { signature: '{signature1}', date: '{date1}' },
-    },
-  ],
-  returnUrl: 'https://app.yourcompany.com/signed',  // optional, https, passed to each embed URL
-});
+import { TurboSign, AuthorizationError } from '@turbodocx/sdk';
 
-for (const r of recipients) {
-  // 'ready' → embedUrl is set, frame it now; 'pending' / 'completed' → embedUrl is null
-  console.log(r.name, r.status, r.embedUrl, r.identityVerificationMode);
+const settings = await TurboSign.getEmbeddedSigningSettings();
+// An explicit channel other than the org default is only safe when the org did not lock it.
+// `=== false` keeps an unreported value (undefined) as "unknown", not "locked".
+const canPickChannel = settings.allowChannelOverride !== false || settings.defaultChannel === 'sms';
+
+try {
+  const { documentId, recipients } = await TurboSign.createEmbeddedSignature({
+    file: pdfBuffer,
+    documentName: 'Auto Policy',
+    // Already the default for this method: no signing-link, reminder or expiry-warning emails,
+    // because your app shows the signing page. Passcode and completed-copy emails still go out.
+    sendEmail: false,
+    recipients: [
+      {
+        name: 'John Doe',
+        email: 'john@example.com',
+        // Per-recipient OTP shorthand: { emailOtp: true } or { sms: { phoneNumber: '+1...' } }.
+        // Omit `auth` to take the org's defaultChannel.
+        ...(canPickChannel ? { auth: { sms: { phoneNumber: '+13055551234' } } } : {}),
+        fields: { signature: '{signature1}', date: '{date1}' },
+      },
+    ],
+    returnUrl: 'https://app.yourcompany.com/signed',  // optional, https, passed to each embed URL
+  });
+
+  for (const r of recipients) {
+    // 'ready' → embedUrl is set, frame it now; 'pending' / 'completed' → embedUrl is null
+    console.log(r.name, r.status, r.embedUrl, r.identityVerificationMode);
+  }
+} catch (err) {
+  if (err instanceof AuthorizationError && err.code === 'OtpOverrideNotAllowed') {
+    // The org locked the verification method: drop `auth` (take defaultChannel) or ask an admin.
+  }
+  throw err;
 }
 ```
 
-Response: `{ documentId, recipients: EmbeddedSignatureRecipientResult[] }`, one result per signer **in signing order**, each `{ recipientId, name, email, embedUrl, status, identityVerificationMode }`.
+Response: `{ documentId, recipients: EmbeddedSignatureRecipientResult[] }`, one result per signer **in signing order**, each `{ recipientId, name, email, embedUrl, status, identityVerificationMode }`. For a `'ready'` signer `identityVerificationMode` is the mode the backend resolved for the URL. For `'pending'` / `'completed'` no URL was minted, so it is the mode you **requested** via `auth`: `null` when you set none, even if the org's default channel will apply. `createSigningUrl` reports the effective mode once you mint the URL.
 
 - **Turn-aware `status`.** `signingOrder` defaults to each recipient's array index + 1, so a two-signer call is sequential: only signer 1 comes back `'ready'` with an `embedUrl`, and the rest are `'pending'` with `embedUrl: null` (an earlier signer has not finished) or `'completed'` (already signed). Re-mint the next signer's URL with `createSigningUrl` once earlier signers finish (the just-in-time kiosk pattern). Give every recipient the same `signingOrder` if you want them all `'ready'` at once.
-- **`auth` is OTP-only.** `{ emailOtp: true }` maps to `{ mode: 'otp', channel: 'email' }`; `{ sms: { phoneNumber: '+13055551234' } }` maps to `{ mode: 'otp', channel: 'sms' }` and sets the recipient's `phone`. For `external_idv` / `override`, use `sendSignature` + `createSigningUrl` instead.
+- **`auth` is OTP-only.** `{ emailOtp: true }` maps to `{ mode: 'otp', channel: 'email' }`; `{ sms: { phoneNumber: '+13055551234' } }` maps to `{ mode: 'otp', channel: 'sms' }` and sets the recipient's `phone`. No `auth` means the org's `defaultChannel` applies. An `auth` channel that differs from a locked default (`allowChannelOverride === false`) makes the whole call fail with `AuthorizationError` code `OtpOverrideNotAllowed`. For `external_idv` / `override`, use `sendSignature` + `createSigningUrl` instead.
 - **The `fields` shorthand anchors by text.** Each key (`signature`, `date`, `initials`, `fullName`) takes the anchor text to replace, expanded to a full field with `placement: 'replace'` and a default size. Note `initials` emits the field type `'initial'` (there is no `'initials'` type). Pass a top-level `fields: Field[]` for full control; it **replaces** the per-recipient shorthand, it does not merge with it.
-- **`sendEmail` defaults to `false`** for this flow (the host owns the UX). Email suppression requires backend support; until that ships the backend may still send the invite email.
+- **`sendEmail` defaults to `false`** for this flow: the signing-link emails, the initial CC notice, the next signer's "your turn" email and the scheduled reminder and expiry-warning emails are suppressed. Passcode and completed-copy emails are still sent.
+
+### Browser side: `@turbodocx/embed`
+
+The browser only frames the `embedUrl` / `url` your server returns (an `/e-signature/embed/...` URL; use it exactly as returned). `@turbodocx/embed` (`npm install @turbodocx/embed`) owns the iframe, pins the message origin, and reports completion. Do not tell the signer a passcode was already sent: for OTP signers the code is sent only when they click **Send Code** on the signing page.
+
+```tsx
+import { TurboSignForm } from '@turbodocx/embed/react';
+
+<TurboSignForm
+  embedUrl={embedUrl}                    // from your server, never the API key
+  origin="https://app.turbodocx.com"     // only messages from this origin are trusted
+  height={720}
+  onCompleted={({ documentId, event, scope }) => {
+    // event: 'signing_complete' (just signed) | 'already_signed' (reopened a finished link):
+    // skip one-time "thanks for signing" side effects on 'already_signed'.
+    // scope: 'recipient' = THIS signer's step. Other signers may still be pending, so read the
+    // document status server-side (getStatus or the completed webhook) for the whole document.
+    if (event === 'signing_complete') showThankYou(documentId);
+  }}
+/>
+```
+
+Framework-agnostic web component: `<turbosign-form embed-url="..." origin="https://app.turbodocx.com">` dispatches a bubbling `turbosign:completed` event whose `event.detail` is the same `{ documentId, status, event, scope }`.
 
 ### Reference implementations
 
-- **Embedding web app:** [`examples/embedded-web-app`](https://github.com/TurboDocx/SDK/blob/main/examples/embedded-web-app) is a Vite + React + shadcn host app wired the production way. The React SPA never sees the API key: it calls a small backend-for-frontend (`server.ts`) that holds the key and uses `@turbodocx/sdk` to create documents and mint embed URLs. It shows three paths side by side: a **single signer** (the host hand-rolls the `<iframe>` and an origin-checked `message` completion listener), a **sequential kiosk** (two signers in order on one device, the next signer's URL minted just-in-time when it is their turn), and a **widget** (`<TurboSignForm>` from `@turbodocx/embed`, which owns the iframe, origin pinning, and completion event for you).
+- **Embedding web app:** [`examples/embedded-web-app`](https://github.com/TurboDocx/SDK/blob/main/examples/embedded-web-app) is a Vite + React + shadcn host app wired the production way. The React SPA never sees the API key: it calls a small backend-for-frontend (`server.ts`) that holds the key and uses `@turbodocx/sdk` to create documents and mint embed URLs. It shows four paths side by side: a **single signer** (the host hand-rolls the `<iframe>` and an origin-checked `message` completion listener), **external IdV** (a simulated identity provider verifies the signer and the server passes an `identityAssertion` when minting the URL, so no passcode step), a **sequential kiosk** (two signers in order on one device, the next signer's URL minted just-in-time when it is their turn), and a **widget** (`<TurboSignForm>` from `@turbodocx/embed`, which owns the iframe, origin pinning, and completion event for you).
 - **Minimal script:** [`packages/js-sdk/examples/turbosign-embedded-identity.ts`](https://github.com/TurboDocx/SDK/blob/main/packages/js-sdk/examples/turbosign-embedded-identity.ts) walks the baseline embedded flow plus each identity mode in one file.
 
 ---

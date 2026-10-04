@@ -338,7 +338,11 @@ echo $status->expiresAt;   // ISO timestamp, or null when expiration is off
 
 ## Embedded Signing & Identity Verification
 
-Embedded signing takes a signer from **your own app** straight to a TurboSign signing page, without sending a signing-link email. The shape is always the same: your backend asks TurboSign for a signing URL for one recipient, then opens it (a new tab, a redirect, or an iframe). A plain embedded recipient signs with no extra step; identity verification is an optional layer on top.
+Embedded signing takes a signer from **your own app** straight to a TurboSign signing page, without sending a signing-link email. The shape is always the same: your backend asks TurboSign for a signing URL for one recipient, then opens it (a new tab, a redirect, or an iframe). A recipient with no `identityVerification` takes the **org's default channel** (`$settings->defaultChannel`), and that default applies to API/SDK sends too: `'none'` opens straight to the document, while `'email'` / `'sms'` means the org verifies every request, so the signer clears that passcode first.
+
+**Send embedded documents with `sendEmail: false`.** Your app shows the signing page, so the signing-link emails, the initial CC notice, the next signer's "your turn" email, and the scheduled reminder and expiry-warning emails are all suppressed. Passcode emails and the completed-copy email still go out, and an explicit `resendEmail()` / `sendReminder()` still sends. `createEmbeddedSignature()` already defaults to `false`; on `sendSignature()` pass it yourself.
+
+**A locked channel.** When `$settings->allowChannelOverride === false`, the org locked the verification method: an explicit channel other than `defaultChannel` makes the send fail with HTTP 403, an `AuthorizationException` whose `$e->errorCode` is `'OtpOverrideNotAllowed'` (read `errorCode`, not `getCode()`, which is PHP's integer code and is always 0 here). Omit the channel to take the default. `null` means the API did not report it (unknown, not locked). It is always `true` for a `'none'` default.
 
 Three methods cover it: `getEmbeddedSigningSettings()` reads the org gates, `createSigningUrl()` mints a URL for an already-prepared recipient, and `createEmbeddedSignature()` does send + per-recipient mint in one call.
 
@@ -356,7 +360,9 @@ if (!$settings->enabled) {
 
 var_dump($settings->allowExternalIdv);        // may you assert identity with your own provider
 var_dump($settings->allowIdentityOverride);   // may a sender skip identity verification
-var_dump($settings->allowedFrameAncestors);   // string[] of origins allowed to iframe the signing page
+var_dump($settings->allowedFrameAncestors);   // string[] of origins allowed to iframe the signing page ([] = denied everywhere)
+var_dump($settings->defaultChannel);          // 'none' | 'email' | 'sms' | null: what a recipient with no identityVerification gets
+$channelLocked = $settings->allowChannelOverride === false;  // null = unknown, not locked
 ```
 
 | Field | Meaning |
@@ -364,9 +370,9 @@ var_dump($settings->allowedFrameAncestors);   // string[] of origins allowed to 
 | `enabled` | Embedded signing (and OTP identity verification) is turned on for the org |
 | `allowExternalIdv` | You may assert a signer's identity with your own provider |
 | `allowIdentityOverride` | A sender may issue a link that skips identity verification |
-| `allowedFrameAncestors` | Origins allowed to embed the signing page in an iframe (empty = none configured) |
-
-`$settings->defaultChannel` (`'none' | 'email' | 'sms' | null`) is also returned — the OTP channel applied to recipients that don't specify one, on the interactive (UI) create path only.
+| `allowedFrameAncestors` | Origins allowed to embed the signing page in an iframe. Empty means framing is denied everywhere |
+| `defaultChannel` | `'none' \| 'email' \| 'sms' \| null`. The org's default OTP channel: while embedded signing is enabled it applies to every recipient that doesn't set one, **SDK/API sends included**. `'none'` means verify only when a request asks for it |
+| `allowChannelOverride` | `?bool`. Whether a request may give a recipient a channel other than `defaultChannel`. `false` = locked: a different explicit channel is rejected with `OtpOverrideNotAllowed`. Always `true` for a `'none'` default or when embedded signing is off; `null` when the API did not report it |
 
 ### createSigningUrl
 
@@ -382,10 +388,14 @@ use TurboDocx\Types\FieldPlacement;
 use TurboDocx\Types\Requests\SendSignatureRequest;
 use TurboDocx\Types\Requests\CreateSigningUrlRequest;
 
-// 1) Prepare the document. No identityVerification here = a plain embedded recipient (no step-up).
+// 1) Prepare the document. No identityVerification here = the org's defaultChannel applies
+//    ('none' = no step-up).
 $sent = TurboSign::sendSignature(new SendSignatureRequest(
     file: file_get_contents('agreement.pdf'),
     documentName: 'Service Agreement',
+    // Embedded: your app shows the signing page, so don't email a signing link (reminder and
+    // expiry-warning emails are suppressed too). Passcode and completed-copy emails still go out.
+    sendEmail: false,
     recipients: [
         new Recipient(
             name: 'Jane Doe',
@@ -417,19 +427,19 @@ $link = TurboSign::createSigningUrl($sent->documentId, new CreateSigningUrlReque
 echo "Open for the signer: {$link->url}\n";
 echo "Mode: " . ($link->identityVerificationMode ?? '(none)') . "\n";  // 'otp' | 'external_idv' | 'override' | null
 echo "Pending checks: " . json_encode($link->pendingChecks) . "\n";   // ['email_otp'] | ['sms_otp'] | []
-echo "Expires: " . ($link->expiresAt ?? '(follows the document window)') . "\n";
+echo "Expires: " . ($link->expiresAt ?? '(none; the document does not expire)') . "\n";
 ```
 
 `CreateSigningUrlResponse` carries `url`, `expiresAt`, `recipientId`, `externalId`, `identityVerificationMode`, and `pendingChecks`. Semantics that matter:
 
 - **Exactly one selector** — pass `recipientId` **or** `externalId`, never both and never neither, or the SDK throws `ValidationException` (`RecipientSelectorInvalid`) before any HTTP call. `returnUrl`, when present, must be `https://`.
-- **Request at click time, never store.** For the **bypass modes** (`external_idv`, `override`) the URL is **single-use and short-lived** (a `?sut=` link the page redeems once, with a real `expiresAt`) — mint a fresh one each time. For `otp` / no-verification the `url` is a reusable `?token=` link that follows the document's own signing window, and `expiresAt` comes back **null**.
-- `pendingChecks` lists the passcode step the signer clears on the page (`['email_otp']` / `['sms_otp']`); it is non-empty **only for `otp`**. With no verification, external_idv, or override it is `[]`.
+- **Request at click time, never store.** For the **bypass modes** (`external_idv`, `override`) the URL is **single-use** and expires minutes after issue (a `?sut=` link the page redeems once); mint a fresh one each time. For `otp` / no-verification the `url` is the reusable `?token=` signing link, so `expiresAt` is the **document's own expiry**, or `null` when the document doesn't expire.
+- `pendingChecks` lists the passcode step the signer clears on the page (`['email_otp']` / `['sms_otp']`); it is non-empty **only for `otp`** (including an `otp` the org default applied). With no verification, external_idv, or override it is `[]`.
 - **`identityAssertion` is for external_idv only** — pass it here when the recipient's mode is `external_idv` (see below).
 
 ### Identity verification modes
 
-Identity verification is optional and set **per recipient** on the `Recipient` you send. A recipient with **no** `identityVerification` signs with **no step-up**. To require a check, pass exactly one mode, built with a named constructor:
+Identity verification is set **per recipient** on the `Recipient` you send. A recipient with **no** `identityVerification` takes the org's `defaultChannel` (no step-up only when that is `'none'`). To require a check, pass exactly one mode, built with a named constructor:
 
 ```php
 use TurboDocx\Types\IdentityVerification;
@@ -453,8 +463,16 @@ $link = TurboSign::createSigningUrl($documentId, new CreateSigningUrlRequest(
         verificationId: 'capa_verif_8f2a91', // your provider's unique id (replay detection)
         verifiedAt: date('c'),               // ISO 8601
         subjectEmail: 'jane@example.com',    // must match the recipient's email
+        // Optional context recorded on the certificate / audit trail (null values are omitted):
+        method: 'id_document_liveness',      // id_document | id_document_liveness | kba | database | sso | other
+        // methodDetail: 'Video call with a notary', // required when method is 'other'
+        assuranceLevel: 'ial2_aal2',         // e.g. ial2_aal2, eidas_substantial, eidas_high
+        verifiedName: 'Jane Doe',            // legal name as your provider verified it
+        evidenceUrl: 'https://idv.example.com/verifications/capa_verif_8f2a91', // https only
+        // overrideEmailMatching: true,      // skip the subjectEmail check; recorded on the audit trail
     ),
 ));
+// The array form takes the same camelCase keys: identityAssertion: ['provider' => 'CAPA', ..., 'method' => 'kba'].
 
 // override — skip verification (development/testing). Recorded as not identity-verified on the
 // certificate. `allowIdentityOverride` must be on for the org; `reason` is required.
@@ -467,7 +485,7 @@ new Recipient(name: 'Jane Doe', email: 'jane@example.com', signingOrder: 1,
 | `otp` | `IdentityVerification::otp('email' \| 'sms')` | A one-time passcode challenge (email or SMS) before the document |
 | `external_idv` | `IdentityVerification::externalIdv($provider)` | No TurboSign step — you assert their identity via `identityAssertion` at mint time |
 | `override` | `IdentityVerification::override($reason)` | No step — verification is skipped and marked not-verified on the certificate |
-| _(none)_ | omit `identityVerification` | The document opens straight away, no step-up |
+| _(none)_ | omit `identityVerification` | The org's `defaultChannel`: straight to the document when it is `'none'`, otherwise that passcode |
 
 ### createEmbeddedSignature
 
@@ -475,26 +493,39 @@ Create the signature request **and** mint a per-recipient embed URL in a single 
 
 ```php
 use TurboDocx\TurboSign;
+use TurboDocx\Exceptions\AuthorizationException;
 use TurboDocx\Types\Requests\CreateEmbeddedSignatureRequest;
 use TurboDocx\Types\Requests\EmbeddedSignatureRecipient;
 use TurboDocx\Types\Requests\EmbeddedRecipientAuth;
 use TurboDocx\Types\Requests\EmbeddedRecipientFields;
 
-$result = TurboSign::createEmbeddedSignature(new CreateEmbeddedSignatureRequest(
-    recipients: [
-        new EmbeddedSignatureRecipient(
-            name: 'Jane Doe',
-            email: 'jane@example.com',
-            signingOrder: 1,
-            auth: new EmbeddedRecipientAuth(emailOtp: true),          // email OTP; or smsPhoneNumber: '+1...'
-            fields: new EmbeddedRecipientFields(signature: '{signature1}'),
-        ),
-    ],
-    file: file_get_contents('agreement.pdf'),
-    fileName: 'agreement.pdf',
-    documentName: 'Service Agreement',
-    returnUrl: 'https://app.yourcompany.com/signed',
-));
+try {
+    $result = TurboSign::createEmbeddedSignature(new CreateEmbeddedSignatureRequest(
+        recipients: [
+            new EmbeddedSignatureRecipient(
+                name: 'Jane Doe',
+                email: 'jane@example.com',
+                signingOrder: 1,
+                // Per-recipient OTP: emailOtp: true, or smsPhoneNumber: '+1...'.
+                // Omit auth to take the org's defaultChannel.
+                auth: new EmbeddedRecipientAuth(emailOtp: true),
+                fields: new EmbeddedRecipientFields(signature: '{signature1}'),
+            ),
+        ],
+        file: file_get_contents('agreement.pdf'),
+        fileName: 'agreement.pdf',
+        documentName: 'Service Agreement',
+        // Already the default here: no signing-link, reminder or expiry-warning emails, because
+        // your app shows the signing page. Passcode and completed-copy emails still go out.
+        sendEmail: false,
+        returnUrl: 'https://app.yourcompany.com/signed',
+    ));
+} catch (AuthorizationException $e) {
+    if ($e->errorCode === 'OtpOverrideNotAllowed') {
+        // The org locked the verification method: drop auth (take defaultChannel) or ask an admin.
+    }
+    throw $e;
+}
 
 echo "Document {$result->documentId}\n";
 foreach ($result->recipients as $r) {   // one entry per signer, in signing order
@@ -507,19 +538,21 @@ foreach ($result->recipients as $r) {   // one entry per signer, in signing orde
 }
 ```
 
-`CreateEmbeddedSignatureResponse` carries `documentId` and a `recipients` array; each `EmbeddedSignatureRecipientResult` has `recipientId`, `name`, `email`, `status`, `identityVerificationMode`, and `embedUrl`. It is **turn-aware**: with a sequential signing order the backend only mints a URL for the signer whose turn it is — so a later signer comes back `status: 'pending'` with `embedUrl: null` (re-mint with `createSigningUrl()` once earlier signers finish), and an already-signed one comes back `completed`. Any genuine error still throws.
+`CreateEmbeddedSignatureResponse` carries `documentId` and a `recipients` array; each `EmbeddedSignatureRecipientResult` has `recipientId`, `name`, `email`, `status`, `identityVerificationMode`, and `embedUrl`. It is **turn-aware**: with a sequential signing order the backend only mints a URL for the signer whose turn it is, so a later signer comes back `status: 'pending'` with `embedUrl: null` (re-mint with `createSigningUrl()` once earlier signers finish), and an already-signed one comes back `completed`. Any genuine error still throws. For a `ready` signer `identityVerificationMode` is the mode the backend resolved for the URL; for `pending` / `completed` no URL was minted, so it is the mode you **requested** via `auth` (`null` when you set none, even if the org's default channel will apply). `createSigningUrl()` reports the effective mode.
 
-The `auth` shorthand expresses **OTP or no verification only** (`emailOtp` / `smsPhoneNumber`). For `external_idv` or `override`, use the `sendSignature()` + `createSigningUrl()` path above with `IdentityVerification::externalIdv()` / `::override()` on the `Recipient`.
+The `auth` shorthand expresses **OTP or no verification only** (`emailOtp` / `smsPhoneNumber`). No `auth` means the org's `defaultChannel` applies; an `auth` channel that differs from a locked default fails the whole call with `OtpOverrideNotAllowed`. For `external_idv` or `override`, use the `sendSignature()` + `createSigningUrl()` path above with `IdentityVerification::externalIdv()` / `::override()` on the `Recipient`.
 
 ### Allowed embedding domains are deny-by-default
 
-`link->url` is an embeddable signing URL (`/e-signature/embed/...`). When you frame it, the browser enforces a per-tenant `Content-Security-Policy: frame-ancestors` on the page: an origin **not** on the org's allow-list is **hard-blocked** from embedding (a blank/refused frame), not merely warned — that is the clickjacking protection working, not a bug. Ask your org admin to add your app's origin to the "Allowed embedding domains" list (E-Signature settings → Identity & embedding); read the current list from `settings->allowedFrameAncestors`. Production origins must be `https://`. The non-embedded email-invite links (`/e-signature/sign/...`) deny all framing.
+`link->url` is an embeddable signing URL (`/e-signature/embed/...`). When you frame it, the browser enforces a per-tenant `Content-Security-Policy: frame-ancestors` on the page: an origin **not** on the org's allow-list is **hard-blocked** from embedding (a blank/refused frame), not merely warned; that is the clickjacking protection working, not a bug. Ask your org admin to add your app's origin to the "Allowed embedding domains" list (E-Signature settings → Identity & embedding); read the current list from `settings->allowedFrameAncestors` (an empty list means framing is denied everywhere). Production origins must be `https://`. The non-embedded email-invite links (`/e-signature/sign/...`) deny all framing.
 
 ### Reference implementations
 
 **Canonical single-file PHP example:** [`packages/php-sdk/examples/turbosign-embedded-identity.php`](https://github.com/TurboDocx/SDK/blob/main/packages/php-sdk/examples/turbosign-embedded-identity.php) walks the full flow — read settings → prepare an embedded recipient → mint the URL → each identity mode.
 
-**Full embedding web app:** [`examples/embedded-web-app`](https://github.com/TurboDocx/SDK/blob/main/examples/embedded-web-app) is a React SPA → backend-for-frontend (BFF) → SDK reference that embeds signing three ways (a hand-rolled `<iframe>` with an origin-checked `turbosign:completed` postMessage completion listener; a sequential kiosk that mints each signer's URL just-in-time when it's their turn; and a drop-in `<TurboSignForm>` widget). It ships as Vite + React with a Node `server.ts` BFF, but the pattern is language-agnostic — **the API key never reaches the browser; only the server talks to TurboDocx** — and applies identically with PHP holding the key and exposing `/api/*` endpoints that call these three methods.
+**Browser side.** Your PHP backend returns only the `/e-signature/embed/...` URL; the browser frames it. The `@turbodocx/embed` npm package (`<TurboSignForm>` for React, `<turbosign-form>` web component) owns the iframe and origin pinning. Its `onCompleted` callback (or the `turbosign:completed` event `detail`) receives `{ documentId, status, event, scope }`: `event` is `"signing_complete"` or `"already_signed"` (a reopened, finished link, so skip one-time side effects), and `scope` is `"recipient"` (this signer's step only; read the whole document's status server-side with `getStatus()` or the completed webhook). For OTP signers the code is sent only when they click **Send Code** on the signing page, so don't tell them it was already emailed.
+
+**Full embedding web app:** [`examples/embedded-web-app`](https://github.com/TurboDocx/SDK/blob/main/examples/embedded-web-app) is a React SPA → backend-for-frontend (BFF) → SDK reference that embeds signing four ways (a hand-rolled `<iframe>` with an origin-checked `turbosign:completed` postMessage completion listener; an external IdV path where the server passes an `identityAssertion` from a simulated identity provider; a sequential kiosk that mints each signer's URL just-in-time when it's their turn; and a drop-in `<TurboSignForm>` widget). It ships as Vite + React with a Node `server.ts` BFF, but the pattern is language-agnostic (**the API key never reaches the browser; only the server talks to TurboDocx**) and applies identically with PHP holding the key and exposing `/api/*` endpoints that call these three methods.
 
 ## Deliverable
 
