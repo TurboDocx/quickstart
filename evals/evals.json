@@ -2823,6 +2823,91 @@
     },
     {
       "id": 52,
+      "prompt": "Add TurboSign to my Express TypeScript app. I need a route that sends a PDF for signature to one person: a required signature box at the bottom of page 1, plus a 'Comments' text box above it that the signer can leave empty if they have nothing to add.",
+      "expected_output": "Generates a sendSignature route with a signature field (required by default) and a text field marked required: false so the signer may skip it",
+      "files": [
+        "package.json",
+        "tsconfig.json",
+        "src/index.ts"
+      ],
+      "assertions": [
+        {
+          "name": "text-field-optional",
+          "type": "file_contains",
+          "description": "The comments text field sets required: false (a boolean, not a string)"
+        },
+        {
+          "name": "signature-stays-required",
+          "type": "file_contains",
+          "description": "The signature field does NOT set required to false (signature and initial fields can never be optional; the API rejects that with a 400)"
+        },
+        {
+          "name": "no-defaultvalue-placeholder",
+          "type": "file_contains",
+          "description": "Does not misuse defaultValue as placeholder or hint text for the optional field (defaultValue is a real prefilled value)"
+        }
+      ]
+    },
+    {
+      "id": 53,
+      "prompt": "In my FastAPI app, add an endpoint that sends a contract out for signature with TurboSign. The signer must sign, and there's an optional 'Purchase order number' text field they can leave blank.",
+      "expected_output": "Generates a send_signature endpoint whose fields include a signature field (required by default) and a text field with \"required\": False",
+      "files": [
+        "pyproject.toml",
+        "app/main.py",
+        "app/routers/__init__.py"
+      ],
+      "assertions": [
+        {
+          "name": "text-field-optional-python",
+          "type": "file_contains",
+          "description": "The purchase order text field dict contains \"required\": False (Python boolean False, camelCase key 'required', not a string)"
+        },
+        {
+          "name": "signature-stays-required",
+          "type": "file_contains",
+          "description": "The signature field does NOT set required to false (signature and initial fields can never be optional; the API rejects that with a 400)"
+        },
+        {
+          "name": "no-defaultvalue-placeholder",
+          "type": "file_contains",
+          "description": "Does not misuse defaultValue as placeholder or hint text for the optional field (defaultValue is a real prefilled value)"
+        }
+      ]
+    },
+    {
+      "id": 54,
+      "prompt": "Add a handler to my Go service (net/http) that sends a PDF for signature with TurboSign: one required signature field and one optional 'Notes' text field the signer doesn't have to fill in.",
+      "expected_output": "Generates a SendSignature handler where the Notes text field sets Required: turbodocx.BoolPtr(false); Field.Required is a *bool, so a plain bool literal does not compile",
+      "files": [
+        "go.mod",
+        "main.go"
+      ],
+      "assertions": [
+        {
+          "name": "text-field-optional-go",
+          "type": "file_contains",
+          "description": "The Notes text field sets Required: turbodocx.BoolPtr(false) (or an equivalent *bool pointing at false)"
+        },
+        {
+          "name": "no-plain-bool-required",
+          "type": "file_contains",
+          "description": "No field sets Required to a plain bool literal (Required: true / Required: false), which does not compile against the *bool field"
+        },
+        {
+          "name": "signature-stays-required",
+          "type": "file_contains",
+          "description": "The signature field does NOT set required to false (signature and initial fields can never be optional; the API rejects that with a 400)"
+        },
+        {
+          "name": "no-defaultvalue-placeholder",
+          "type": "file_contains",
+          "description": "Does not misuse defaultValue as placeholder or hint text for the optional field (defaultValue is a real prefilled value)"
+        }
+      ]
+    },
+    {
+      "id": 55,
       "prompt": "Add embedded signing with an email OTP to my Node/Express app. I want to create a document and get back a signing URL I can drop into an iframe in my own UI, and the signer should verify a 6-digit email code before they can sign.",
       "expected_output": "Creates a TurboSign config file and an endpoint calling TurboSign.createEmbeddedSignature with a recipient whose auth requests an email OTP, returns the recipient's embedUrl for the app to iframe, wires routes into the main app, adds .env with TurboSign vars",
       "files": [
@@ -2870,7 +2955,7 @@
       ]
     },
     {
-      "id": 53,
+      "id": 56,
       "prompt": "In my Python FastAPI app, mint a single-use signing URL for a specific recipient identified by our own externalId (the id we already store for the customer) so I can redirect them straight to the TurboDocx signing page.",
       "expected_output": "Creates a TurboSign Python config and a FastAPI endpoint calling TurboSign.create_signing_url(document_id, external_id=...) to look the recipient up by external id and return the url; does not also pass recipient_id in the same call (exactly one selector is allowed)",
       "files": [
@@ -2922,7 +3007,7 @@
       ]
     },
     {
-      "id": 54,
+      "id": 57,
       "prompt": "I want to embed the TurboSign signing page inside an iframe in my Express app, with identity verification so the signer proves who they are before signing. Set it up end to end, including the page that shows the iframe.",
       "expected_output": "Creates a TurboSign config and a server endpoint calling createEmbeddedSignature with per-recipient OTP identity verification, returns the recipient embedUrl to the browser which frames it in an <iframe>; the API key stays on the server and never reaches the browser code",
       "files": [
@@ -2970,7 +3055,7 @@
       ]
     },
     {
-      "id": 55,
+      "id": 58,
       "prompt": "In my Express app, embed TurboSign signing for a two-person agreement. Our org's default verification channel is none, but I want the second signer (the customer) to verify with an SMS one-time code to +13055551234 while the first signer (our account manager) gets no extra check. Set up the server endpoint and the iframe page.",
       "expected_output": "A server endpoint calling createEmbeddedSignature with sendEmail false (commented), auth: { sms: { phoneNumber } } on the customer only and no auth on the account manager; reads getEmbeddedSigningSettings and checks allowChannelOverride null-safely; catches the 403 OtpOverrideNotAllowed by error code; the browser frames the embedUrl (or uses @turbodocx/embed) with the API key server-side only",
       "files": [
@@ -3013,7 +3098,7 @@
       ]
     },
     {
-      "id": 56,
+      "id": 59,
       "prompt": "My FastAPI backend embeds TurboSign signing. Our TurboDocx org admin set the default verification channel to email and locked it. A support engineer asked me to skip the passcode for a low-risk internal signer by just leaving identity verification off the recipient. Write the endpoint that sends the document and mints that signer's signing URL, and tell me what the signer will actually see.",
       "expected_output": "Uses send_signature with send_email=False and an externalId, then create_signing_url; reads get_embedded_signing_settings and explains that a recipient without identityVerification takes the org defaultChannel (email) on SDK sends, so the signer still gets an email passcode; does not claim omitting identity skips verification; notes that picking a different channel would fail with OtpOverrideNotAllowed while the channel is locked",
       "files": [
@@ -3050,7 +3135,7 @@
       ]
     },
     {
-      "id": 57,
+      "id": 60,
       "prompt": "In my Go net/http service, add embedded signing where we already have our own customer IDs: prepare the document with SendSignature keyed by our customer ID, then mint the signing URL later when the customer clicks Sign. We don't want TurboDocx emailing the customer at all for this flow. Also show the expiry of the minted link.",
       "expected_output": "SendSignature with SendEmail: &sendEmail (false) and a comment that signing-link, reminder and expiry-warning emails are suppressed while passcode and completed-copy emails still go out; Recipient.ExternalID set; CreateSigningURL by ExternalID; ExpiresAt handled as a *string that is the document's expiry or nil when the document does not expire",
       "files": [

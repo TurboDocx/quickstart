@@ -106,6 +106,26 @@ result["recipients"].each { |r| puts "#{r['name']} <#{r['email']}> #{r['id']}" }
 
 Fields support either coordinate-based placement (`page` + `x`/`y`/`width`/`height`) or anchor-based placement via `template: { anchor: "{signature1}", placement: "replace", size: { width: 100, height: 30 } }`. The anchor text must literally exist in the document.
 
+### Optional fields
+
+```ruby
+result = TurboDocxSdk::TurboSign.send_signature(
+  fileLink: "https://example.com/contract.pdf",
+  documentName: "Service Agreement",
+  recipients: [
+    { name: "Alice", email: "alice@example.com", signingOrder: 1 }
+  ],
+  fields: [
+    # Required (the default): signature and initial fields are always required.
+    { type: "signature", page: 1, x: 100, y: 500, width: 200, height: 50, recipientEmail: "alice@example.com" },
+    # Optional: the signer can finish without filling this in.
+    { type: "text", page: 1, x: 100, y: 600, width: 200, height: 30, recipientEmail: "alice@example.com", required: false }
+  ]
+)
+```
+
+Fields are required by default, so omit `required` to keep one required. Set `required: false` on a field the signer may leave empty. Signature and initial fields can never be optional (the API returns 400), `required` must be a boolean, and each recipient still needs at least one required field they fill in (otherwise 400). `defaultValue` is a real prefilled value that is submitted as-is, not placeholder hint text.
+
 ### Conditional (IF/THEN) fields
 
 Any field can be made to depend on a **controlling checkbox** so it only appears — or only becomes editable — once the signer ticks that box. Give the checkbox a stable `metadata` with a `fieldKey`, then reference that key from the dependent field's `metadata[:conditional][:controllingFieldKey]`. The `metadata:` hash is **optional**; a field without it behaves exactly as before. As everywhere in this SDK, the keys **inside** `metadata` stay camelCase (`fieldKey`, `controllingFieldKey`) — they are forwarded to the API verbatim, so a snake_case key silently drops the value.

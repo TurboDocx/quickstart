@@ -183,6 +183,7 @@ Create working route handlers / endpoint code for the selected product(s). The l
 
 **For TurboSign, generate:**
 - `sendSignature()` endpoint — accepts file (or `fileLink` / `deliverableId` / `templateId`), recipients, fields
+- If the user wants a field the signer **may leave blank** (optional field): set `required: false` on that field (Python `"required": False`, Java `.required(false)`, Go `Required: turbodocx.BoolPtr(false)` since `Field.Required` is a `*bool`). Omitting `required` keeps a field required. Signature and initial fields can never be optional (400), and each recipient needs at least one required field they fill in (400). Don't use `defaultValue` as hint text: it is a real prefilled value. See the language reference's "Optional fields" section.
 - If the user wants **conditional (IF/THEN) fields** — a field that shows or unlocks only when the signer ticks a box: add a controlling `checkbox` field carrying `metadata.fieldKey`, and a dependent field carrying `metadata.conditional` (`{ controllingFieldKey, operator: "is_checked" | "is_not_checked", action: "show" | "unlock" }`) whose `controllingFieldKey` matches the checkbox's `fieldKey`. `action: "show"` keeps the dependent field hidden until the condition is met; `action: "unlock"` shows it but read-only until met. `metadata` is optional and both live on the normal `sendSignature()` field array — see the language reference for the exact per-language shape.
 - `getStatus()` endpoint — check the document-level status by ID
 - `getRecipients()` endpoint — every recipient with their signing status, email history, and who sent the document. Generate this whenever the user wants to know **who has signed / who is still pending**; `getStatus()` alone cannot answer that. Note each recipient carries both `status` (raw: `pending`/`viewed`/`completed`) and `effectiveStatus` (adds `voided`/`expired`) — generated code should branch on `effectiveStatus`, since an unsigned signer on a voided document still reads `pending` in the raw field.
@@ -220,6 +221,8 @@ Create working route handlers / endpoint code for the selected product(s). The l
 - If the user is building a catalog, also scaffold `createProduct()` / `createBundle()` / `createPriceBook()` + `applyPriceBook()`. TurboQuote configures with `apiKey` + `orgId` only — no `senderEmail`, because the quote sender comes from the org's quote template (Quote Settings), not from the client config. Sending a quote still emails the recipient; a template with no sender email makes `sendQuote()` fail with `400 SenderEmailRequired`.
 
 Once the basics are scaffolded, point the user at the language reference (`references/<language>.md`) for the full set of available operations — there are many more than the starter set (org/user/API-key management, audit logs, etc.) and the agent should mention which additional operations exist for the user's selected product so they know what to ask for next.
+
+For a user who'd rather explore the whole API surface directly, or generate a client in a language/tool this skill doesn't scaffold, also point them at the machine-readable **OpenAPI spec** at the root of the SDK repo (`openapi.yaml` in `TurboDocx/SDK`). It mirrors these SDK endpoints and loads into Swagger UI, Redoc, Postman, or `openapi-generator`. Auth is the same everywhere: `Authorization: Bearer <API key>` plus the `x-rapiddocx-org-id` header (TurboPartner endpoints use a partner Bearer key with no org header).
 
 **IMPORTANT:**
 - Match existing code patterns (file naming, import style, error handling, async patterns)
@@ -270,6 +273,7 @@ Next Steps:
 3. Start your server and test the endpoints
 
 Documentation: https://docs.turbodocx.com/docs
+OpenAPI spec (all endpoints): https://github.com/TurboDocx/SDK/blob/main/openapi.yaml
 Support: https://discord.gg/NYKwz4BcpX
 ```
 
