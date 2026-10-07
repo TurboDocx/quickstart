@@ -322,7 +322,7 @@ Embedded signing takes a signer from **your own app** straight to a TurboSign si
 
 **Send embedded documents with `sendEmail: false`.** Your app shows the signing page, so the signing-link emails, the initial CC notice, the next signer's "your turn" email, and the scheduled reminder and expiry-warning emails are all suppressed. Passcode emails and the completed-copy email still go out, and an explicit `resend_email` / `send_reminder` still sends. `create_embedded_signature` already defaults to `false`; on `send_signature` pass it yourself.
 
-**A locked channel.** When `settings["allowChannelOverride"] == false`, the org locked the verification method: an explicit channel other than `defaultChannel` makes the send fail with HTTP 403, a `TurboDocxSdk::AuthorizationError` whose `e.code` is `"OtpOverrideNotAllowed"`. Omit the channel to take the default. Compare with `== false`: a missing value (`nil`) means unknown, not locked. It is always `true` for a `"none"` default.
+**A locked channel.** When `settings["allowChannelOverride"] == false`, the org locked the verification method: an explicit channel other than `defaultChannel` makes the send fail with HTTP 403, a `TurboDocxSdk::AuthorizationError` whose `e.code` is `"OtpOverrideNotAllowed"`. Omit the channel to take the default. Compare with `== false`: a missing value (`nil`) means unknown, not locked. Read it before forcing a per-recipient channel even when the default is `"none"` today: an admin can change the default and lock it at any time, so checking `defaultChannel` alone is not enough.
 
 Three methods cover the flow: `get_embedded_signing_settings` reads the org's gates, `create_signing_url` mints one recipient's URL **at click time**, and `create_embedded_signature` does the prepare-and-mint in a single call.
 
@@ -362,7 +362,7 @@ channel_locked = settings["allowChannelOverride"] == false
 ```
 
 - **`defaultChannel`** is the org's default OTP channel. While embedded signing is enabled it applies to **every** recipient that doesn't set one, **SDK/API sends included**. `"none"` means verify only when a request asks for it.
-- **`allowChannelOverride`**: whether a request may give a recipient a channel other than `defaultChannel`. `false` = locked, and a different explicit channel is rejected with `OtpOverrideNotAllowed`. Always `true` for a `"none"` default or when embedded signing is off.
+- **`allowChannelOverride`**: whether a request may give a recipient a channel other than `defaultChannel`. `false` = locked, and a different explicit channel is rejected with `OtpOverrideNotAllowed`. The server reports `true` while the default is `"none"` or embedded signing is off, but an admin can change that at any time, so read this field (not just `defaultChannel`) before forcing a channel.
 - **`allowedFrameAncestors`**: an empty list means framing is denied everywhere.
 
 ### TurboSign.create_signing_url

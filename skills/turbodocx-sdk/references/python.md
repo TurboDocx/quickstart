@@ -318,7 +318,7 @@ Embedded signing takes a signer straight from your own app to a TurboSign signin
 
 **Send embedded documents with `send_email=False`.** Your app shows the signing page, so the signing-link emails, the initial CC notice, the next signer's "your turn" email, and the scheduled reminder and expiry-warning emails are all suppressed. Passcode emails and the completed-copy email still go out, and an explicit `resend_email` / `send_reminder` still sends. `create_embedded_signature` already defaults to `False`; on `send_signature` pass it yourself.
 
-**A locked channel.** When `settings.get("allowChannelOverride") is False`, the org locked the verification method: an explicit channel other than `defaultChannel` makes the send fail with HTTP 403, an `AuthorizationError` whose `e.code` is `"OtpOverrideNotAllowed"`. Omit the channel to take the default. Use `is False`, not `not ...`: a missing value (`None`) means unknown, not locked. It is always `True` for a `'none'` default.
+**A locked channel.** When `settings.get("allowChannelOverride") is False`, the org locked the verification method: an explicit channel other than `defaultChannel` makes the send fail with HTTP 403, an `AuthorizationError` whose `e.code` is `"OtpOverrideNotAllowed"`. Omit the channel to take the default. Use `is False`, not `not ...`: a missing value (`None`) means unknown, not locked. Read it before forcing a per-recipient channel even when the default is `'none'` today: an admin can change the default and lock it at any time, so checking `defaultChannel` alone is not enough.
 
 ### create_signing_url
 
@@ -401,7 +401,7 @@ channel_locked = settings.get("allowChannelOverride") is False  # None = unknown
 ```
 
 - **`defaultChannel`** is the org's default OTP channel. While embedded signing is enabled it applies to **every** recipient that doesn't set one, **SDK/API sends included**. `'none'` means verify only when a request asks for it.
-- **`allowChannelOverride`**: whether a request may give a recipient a channel other than `defaultChannel`. `False` means the org locked the method: an explicit different channel is rejected with `OtpOverrideNotAllowed`, so omit it. Always `True` for a `'none'` default or when embedded signing is off.
+- **`allowChannelOverride`**: whether a request may give a recipient a channel other than `defaultChannel`. `False` means the org locked the method: an explicit different channel is rejected with `OtpOverrideNotAllowed`, so omit it. The server reports `True` while the default is `'none'` or embedded signing is off, but an admin can change that at any time, so read this field (not just `defaultChannel`) before forcing a channel.
 - **`allowedFrameAncestors`**: an empty list means framing is denied everywhere.
 
 ### create_embedded_signature

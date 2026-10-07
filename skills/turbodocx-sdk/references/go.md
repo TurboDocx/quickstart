@@ -377,7 +377,7 @@ Embedded signing takes a signer from **your own app** straight to a TurboSign si
 
 **Send embedded documents with `SendEmail` false.** Your app shows the signing page, so the signing-link emails, the initial CC notice, the next signer's "your turn" email, and the scheduled reminder and expiry-warning emails are all suppressed. Passcode emails and the completed-copy email still go out, and an explicit `ResendEmail` / `SendReminder` still sends. `CreateEmbeddedSignature` already defaults to false; on `SendSignature` set the `*bool` yourself (`sendEmail := false` then `SendEmail: &sendEmail`).
 
-**A locked channel.** `AllowChannelOverride` is a `*bool`. When it is non-nil and false, the org locked the verification method: an explicit channel other than `DefaultChannel` makes the send fail with HTTP 403, a `*turbodocx.AuthorizationError` whose `Code` is `"OtpOverrideNotAllowed"`. Omit the channel to take the default. Nil means the API did not report it (unknown, not locked). It is always true for a `"none"` default.
+**A locked channel.** `AllowChannelOverride` is a `*bool`. When it is non-nil and false, the org locked the verification method: an explicit channel other than `DefaultChannel` makes the send fail with HTTP 403, a `*turbodocx.AuthorizationError` whose `Code` is `"OtpOverrideNotAllowed"`. Omit the channel to take the default. Nil means the API did not report it (unknown, not locked). Read it before forcing a per-recipient channel even when the default is `"none"` today: an admin can change the default and lock it at any time, so checking `DefaultChannel` alone is not enough.
 
 Identity verification is an optional layer on top. Each signer runs in exactly one of three modes:
 
@@ -415,7 +415,7 @@ if settings.AllowChannelOverride != nil && !*settings.AllowChannelOverride { // 
 Returns `*turbodocx.EmbeddedSigningSettings`: `Enabled`, `AllowExternalIDV`, `AllowIdentityOverride`, `DefaultChannel`, `AllowChannelOverride` (`*bool`), `AllowedFrameAncestors`.
 
 - **`DefaultChannel`** is the org's default OTP channel. While embedded signing is enabled it applies to **every** recipient that doesn't set one, **SDK/API sends included**. `"none"` means verify only when a request asks for it.
-- **`AllowChannelOverride`**: whether a request may give a recipient a channel other than `DefaultChannel`. False means the org locked the method and a different explicit channel is rejected with `OtpOverrideNotAllowed`. Always true for a `"none"` default or when embedded signing is off; nil when the API did not report it.
+- **`AllowChannelOverride`**: whether a request may give a recipient a channel other than `DefaultChannel`. False means the org locked the method and a different explicit channel is rejected with `OtpOverrideNotAllowed`. The server reports true while the default is `"none"` or embedded signing is off, but an admin can change that at any time, so read this field (not just `DefaultChannel`) before forcing a channel; nil when the API did not report it.
 - **`AllowedFrameAncestors`**: empty means framing is denied everywhere.
 
 Everything here is read-only from the SDK.
@@ -743,6 +743,8 @@ if err != nil {
     log.Fatal(err)
 }
 ```
+
+`NewPartnerClient` returns `(*turbodocx.PartnerClient, error)`. When the project also uses TurboSign, build both clients in the same config/client file (`NewClientWithConfig` for `*turbodocx.Client`, `NewPartnerClient` for `*turbodocx.PartnerClient`) and pass them to the handlers.
 
 ### Organization management
 
@@ -1106,16 +1108,29 @@ Recipient signs
 
 `NewWebhooksClientWithConfig` does NOT require `SenderEmail` — webhook routes don't send signature emails.
 
+Put this constructor in the project's config/client package (for example `internal/turbodocx/`, or an existing `internal/config/`), next to where the TurboSign and partner clients are built, and import it from both the receiver handler and the CLI/admin registration command instead of building the client inline in `main.go`.
+
 ```go
-wh, err := turbodocx.NewWebhooksClientWithConfig(turbodocx.ClientConfig{
-    APIKey:  os.Getenv("TURBODOCX_API_KEY"),   // must be an admin TDX- key
-    OrgID:   os.Getenv("TURBODOCX_ORG_ID"),
-    BaseURL: os.Getenv("TURBODOCX_BASE_URL"),  // optional, defaults to api.turbodocx.com
-})
-if err != nil {
-    log.Fatal(err)
+// internal/turbodocx/webhooks.go (your project's config/client package)
+package turbodocx
+
+import (
+    "os"
+
+    turbodocx "github.com/TurboDocx/SDK/packages/go-sdk"
+)
+
+// NewWebhooksClient returns an admin-scoped *turbodocx.WebhooksClient.
+func NewWebhooksClient() (*turbodocx.WebhooksClient, error) {
+    return turbodocx.NewWebhooksClientWithConfig(turbodocx.ClientConfig{
+        APIKey:  os.Getenv("TURBODOCX_API_KEY"),  // must be an admin TDX- key
+        OrgID:   os.Getenv("TURBODOCX_ORG_ID"),
+        BaseURL: os.Getenv("TURBODOCX_BASE_URL"), // optional, defaults to api.turbodocx.com
+    })
 }
 ```
+
+Callers then do `wh, err := tdx.NewWebhooksClient()` (importing your package as, say, `tdx "github.com/you/app/internal/turbodocx"`) and use `wh` as in the examples below.
 
 ### CreateWebhook
 

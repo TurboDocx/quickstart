@@ -373,7 +373,7 @@ Embedded signing takes a signer from **your own app** straight to a TurboSign si
 
 **Send embedded documents with `sendEmail: false`.** Your app shows the signing page, so the signing-link emails, the initial CC notice, the next signer's "your turn" email, and the scheduled reminder and expiry-warning emails are all suppressed. Passcode emails and the completed-copy email still go out, and an explicit `resendEmail()` / `sendReminder()` still sends. `createEmbeddedSignature()` already defaults to `false`; on `sendSignature()` pass it yourself.
 
-**A locked channel.** When `$settings->allowChannelOverride === false`, the org locked the verification method: an explicit channel other than `defaultChannel` makes the send fail with HTTP 403, an `AuthorizationException` whose `$e->errorCode` is `'OtpOverrideNotAllowed'` (read `errorCode`, not `getCode()`, which is PHP's integer code and is always 0 here). Omit the channel to take the default. `null` means the API did not report it (unknown, not locked). It is always `true` for a `'none'` default.
+**A locked channel.** When `$settings->allowChannelOverride === false`, the org locked the verification method: an explicit channel other than `defaultChannel` makes the send fail with HTTP 403, an `AuthorizationException` whose `$e->errorCode` is `'OtpOverrideNotAllowed'` (read `errorCode`, not `getCode()`, which is PHP's integer code and is always 0 here). Omit the channel to take the default. `null` means the API did not report it (unknown, not locked). Read it before forcing a per-recipient channel even when the default is `'none'` today: an admin can change the default and lock it at any time, so checking `defaultChannel` alone is not enough.
 
 Three methods cover it: `getEmbeddedSigningSettings()` reads the org gates, `createSigningUrl()` mints a URL for an already-prepared recipient, and `createEmbeddedSignature()` does send + per-recipient mint in one call.
 
@@ -403,7 +403,7 @@ $channelLocked = $settings->allowChannelOverride === false;  // null = unknown, 
 | `allowIdentityOverride` | A sender may issue a link that skips identity verification |
 | `allowedFrameAncestors` | Origins allowed to embed the signing page in an iframe. Empty means framing is denied everywhere |
 | `defaultChannel` | `'none' \| 'email' \| 'sms' \| null`. The org's default OTP channel: while embedded signing is enabled it applies to every recipient that doesn't set one, **SDK/API sends included**. `'none'` means verify only when a request asks for it |
-| `allowChannelOverride` | `?bool`. Whether a request may give a recipient a channel other than `defaultChannel`. `false` = locked: a different explicit channel is rejected with `OtpOverrideNotAllowed`. Always `true` for a `'none'` default or when embedded signing is off; `null` when the API did not report it |
+| `allowChannelOverride` | `?bool`. Whether a request may give a recipient a channel other than `defaultChannel`. `false` = locked: a different explicit channel is rejected with `OtpOverrideNotAllowed`. The server reports `true` while the default is `'none'` or embedded signing is off, but an admin can change that at any time, so read this field (not just `defaultChannel`) before forcing a channel; `null` when the API did not report it |
 
 ### createSigningUrl
 
@@ -1525,6 +1525,22 @@ foreach ($result->adjusted as $issue) {
 ```
 
 Response: a `BulkImportResult` with `int $imported`, `BulkImportRowIssue[] $failed`, and `BulkImportRowIssue[] $adjusted`; each `BulkImportRowIssue` exposes `int $row` (1-indexed) and `string $reason`.
+
+**Company rows.** `bulkCreateCompanies` takes `CreateCompanyRequest` objects (`TurboDocx\Types\Requests\Quote\CreateCompanyRequest`), not plain arrays. Constructor fields: `string $name` and `array $contacts` (required, at least one contact), then optional `?string $phone`, `$city`, `$state`, `$country`, `$industryId`. Each contact is a plain array with `name` and `email` (required) and optional `phone` and `title`:
+
+```php
+use TurboDocx\Types\Requests\Quote\CreateCompanyRequest;
+
+$result = TurboQuote::bulkCreateCompanies(array_map(
+    fn (array $r) => new CreateCompanyRequest(
+        name: $r['name'],
+        contacts: [['name' => $r['contactName'], 'email' => $r['contactEmail']]],
+        city: $r['city'] ?? null,
+        country: $r['country'] ?? null,
+    ),
+    $rows,
+));
+```
 
 Bulk-create semantics:
 
