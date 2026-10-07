@@ -2905,6 +2905,270 @@
           "description": "Does not misuse defaultValue as placeholder or hint text for the optional field (defaultValue is a real prefilled value)"
         }
       ]
+    },
+    {
+      "id": 55,
+      "prompt": "Add embedded signing with an email OTP to my Node/Express app. I want to create a document and get back a signing URL I can drop into an iframe in my own UI, and the signer should verify a 6-digit email code before they can sign.",
+      "expected_output": "Creates a TurboSign config file and an endpoint calling TurboSign.createEmbeddedSignature with a recipient whose auth requests an email OTP, returns the recipient's embedUrl for the app to iframe, wires routes into the main app, adds .env with TurboSign vars",
+      "files": [
+        "package.json",
+        "tsconfig.json",
+        "src/index.ts",
+        "package-lock.json"
+      ],
+      "assertions": [
+        {
+          "name": "config-file-created",
+          "type": "file_exists",
+          "description": "A TurboSign config/client file was created"
+        },
+        {
+          "name": "uses-createEmbeddedSignature",
+          "type": "file_contains",
+          "description": "Route handler calls TurboSign.createEmbeddedSignature (the one-call create-plus-embed method), NOT sendSignature followed by a manual link step"
+        },
+        {
+          "name": "requests-email-otp",
+          "type": "file_contains",
+          "description": "A recipient sets auth: { emailOtp: true } to require an email OTP identity check before signing"
+        },
+        {
+          "name": "surfaces-embed-url",
+          "type": "file_contains",
+          "description": "Response returns or surfaces the recipient's embedUrl (recipients[].embedUrl) that the app frames, not just a document id"
+        },
+        {
+          "name": "routes-wired",
+          "type": "file_contains",
+          "description": "Main app file (src/index.ts) was modified to import and register the signature routes"
+        },
+        {
+          "name": "env-has-sign-vars",
+          "type": "file_contains",
+          "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_SENDER_EMAIL (embedded signing still configures TurboSign, which needs the sender email)"
+        },
+        {
+          "name": "no-partner-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY"
+        }
+      ]
+    },
+    {
+      "id": 56,
+      "prompt": "In my Python FastAPI app, mint a single-use signing URL for a specific recipient identified by our own externalId (the id we already store for the customer) so I can redirect them straight to the TurboDocx signing page.",
+      "expected_output": "Creates a TurboSign Python config and a FastAPI endpoint calling TurboSign.create_signing_url(document_id, external_id=...) to look the recipient up by external id and return the url; does not also pass recipient_id in the same call (exactly one selector is allowed)",
+      "files": [
+        "pyproject.toml",
+        "app/main.py",
+        "app/routers/__init__.py"
+      ],
+      "assertions": [
+        {
+          "name": "config-file-created",
+          "type": "file_exists",
+          "description": "A TurboSign config file was created"
+        },
+        {
+          "name": "uses-create-signing-url",
+          "type": "file_contains",
+          "description": "Endpoint calls create_signing_url with a document id (snake_case Python method name, NOT createSigningUrl)"
+        },
+        {
+          "name": "uses-external-id-selector",
+          "type": "file_contains",
+          "description": "The call passes external_id to identify the recipient (Python keyword stays external_id)"
+        },
+        {
+          "name": "single-selector-only",
+          "type": "file_not_contains",
+          "description": "The create_signing_url call does NOT also pass recipient_id alongside external_id — exactly one selector is allowed and passing both is rejected"
+        },
+        {
+          "name": "surfaces-url",
+          "type": "file_contains",
+          "description": "Response returns the url field from the create_signing_url response so the app can redirect the recipient"
+        },
+        {
+          "name": "router-wired",
+          "type": "file_contains",
+          "description": "app/main.py was modified to include the new router"
+        },
+        {
+          "name": "env-has-shared-vars",
+          "type": "file_contains",
+          "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_ORG_ID"
+        },
+        {
+          "name": "uses-async",
+          "type": "file_contains",
+          "description": "Generated route handlers use async/await (FastAPI convention)"
+        }
+      ]
+    },
+    {
+      "id": 57,
+      "prompt": "I want to embed the TurboSign signing page inside an iframe in my Express app, with identity verification so the signer proves who they are before signing. Set it up end to end, including the page that shows the iframe.",
+      "expected_output": "Creates a TurboSign config and a server endpoint calling createEmbeddedSignature with per-recipient OTP identity verification, returns the recipient embedUrl to the browser which frames it in an <iframe>; the API key stays on the server and never reaches the browser code",
+      "files": [
+        "package.json",
+        "tsconfig.json",
+        "src/index.ts",
+        "package-lock.json"
+      ],
+      "assertions": [
+        {
+          "name": "config-file-created",
+          "type": "file_exists",
+          "description": "A TurboSign config/client file was created"
+        },
+        {
+          "name": "uses-createEmbeddedSignature",
+          "type": "file_contains",
+          "description": "Server calls TurboSign.createEmbeddedSignature (one call that creates the document and returns an embeddable URL)"
+        },
+        {
+          "name": "requests-identity-verification",
+          "type": "file_contains",
+          "description": "The recipient auth requests an OTP identity check (auth: { emailOtp: true } or auth: { sms: { phoneNumber } }) so the signer verifies identity before signing"
+        },
+        {
+          "name": "frames-embed-url",
+          "type": "file_contains",
+          "description": "The returned embedUrl / url is rendered in an <iframe> (the iframe src is set to the minted signing URL)"
+        },
+        {
+          "name": "key-not-in-browser",
+          "type": "file_not_contains",
+          "description": "The raw API key / TURBODOCX_API_KEY does NOT appear in the client-side / browser-facing code — only the minted URL reaches the browser, the key stays server-side"
+        },
+        {
+          "name": "routes-wired",
+          "type": "file_contains",
+          "description": "Main app file (src/index.ts) was modified to import and register the routes"
+        },
+        {
+          "name": "env-has-sign-vars",
+          "type": "file_contains",
+          "description": ".env contains TURBODOCX_API_KEY and TURBODOCX_SENDER_EMAIL"
+        }
+      ]
+    },
+    {
+      "id": 58,
+      "prompt": "In my Express app, embed TurboSign signing for a two-person agreement. Our org's default verification channel is none, but I want the second signer (the customer) to verify with an SMS one-time code to +13055551234 while the first signer (our account manager) gets no extra check. Set up the server endpoint and the iframe page.",
+      "expected_output": "A server endpoint calling createEmbeddedSignature with sendEmail false (commented), auth: { sms: { phoneNumber } } on the customer only and no auth on the account manager; reads getEmbeddedSigningSettings and checks allowChannelOverride null-safely; catches the 403 OtpOverrideNotAllowed by error code; the browser frames the embedUrl (or uses @turbodocx/embed) with the API key server-side only",
+      "files": [
+        "package.json",
+        "tsconfig.json",
+        "src/index.ts",
+        "package-lock.json"
+      ],
+      "assertions": [
+        {
+          "name": "uses-createEmbeddedSignature",
+          "type": "file_contains",
+          "description": "Server calls TurboSign.createEmbeddedSignature"
+        },
+        {
+          "name": "sms-auth-on-one-signer-only",
+          "type": "file_contains",
+          "description": "Exactly one recipient carries auth: { sms: { phoneNumber: '+13055551234' } }; the account manager recipient has no auth (takes the org default)"
+        },
+        {
+          "name": "send-email-false-explained",
+          "type": "file_contains",
+          "description": "sendEmail: false is passed (or the default is relied on) with a comment explaining no signing-link/reminder emails because the app shows the signing page"
+        },
+        {
+          "name": "reads-allowChannelOverride-null-safe",
+          "type": "file_contains",
+          "description": "Code reads getEmbeddedSigningSettings().allowChannelOverride and treats only an explicit false as locked (=== false / !== false), never !settings.allowChannelOverride"
+        },
+        {
+          "name": "handles-OtpOverrideNotAllowed-by-code",
+          "type": "file_contains",
+          "description": "A catch branch checks err.code === 'OtpOverrideNotAllowed' (AuthorizationError / 403), not only the message"
+        },
+        {
+          "name": "key-not-in-browser",
+          "type": "file_not_contains",
+          "description": "TURBODOCX_API_KEY does not appear in browser-facing code"
+        }
+      ]
+    },
+    {
+      "id": 59,
+      "prompt": "My FastAPI backend embeds TurboSign signing. Our TurboDocx org admin set the default verification channel to email and locked it. A support engineer asked me to skip the passcode for a low-risk internal signer by just leaving identity verification off the recipient. Write the endpoint that sends the document and mints that signer's signing URL, and tell me what the signer will actually see.",
+      "expected_output": "Uses send_signature with send_email=False and an externalId, then create_signing_url; reads get_embedded_signing_settings and explains that a recipient without identityVerification takes the org defaultChannel (email) on SDK sends, so the signer still gets an email passcode; does not claim omitting identity skips verification; notes that picking a different channel would fail with OtpOverrideNotAllowed while the channel is locked",
+      "files": [
+        "pyproject.toml",
+        "app/main.py",
+        "app/routers/__init__.py"
+      ],
+      "assertions": [
+        {
+          "name": "send-signature-send-email-false",
+          "type": "file_contains",
+          "description": "send_signature is called with send_email=False plus a comment explaining why"
+        },
+        {
+          "name": "mints-with-create-signing-url",
+          "type": "file_contains",
+          "description": "create_signing_url is called with exactly one selector (external_id or recipient_id)"
+        },
+        {
+          "name": "default-channel-applies-to-sdk",
+          "type": "output_contains",
+          "description": "The code comments or the reply state that the org's defaultChannel (email) still applies to this SDK-created recipient, so the signer gets an email passcode"
+        },
+        {
+          "name": "no-false-skip-claim",
+          "type": "output_not_contains",
+          "description": "Does not claim that omitting identityVerification skips verification or that defaultChannel only affects the UI / interactive path"
+        },
+        {
+          "name": "mentions-OtpOverrideNotAllowed",
+          "type": "output_contains",
+          "description": "Mentions that an explicit different channel is rejected with OtpOverrideNotAllowed when allowChannelOverride is False (checked with `is False`, not `not`)"
+        }
+      ]
+    },
+    {
+      "id": 60,
+      "prompt": "In my Go net/http service, add embedded signing where we already have our own customer IDs: prepare the document with SendSignature keyed by our customer ID, then mint the signing URL later when the customer clicks Sign. We don't want TurboDocx emailing the customer at all for this flow. Also show the expiry of the minted link.",
+      "expected_output": "SendSignature with SendEmail: &sendEmail (false) and a comment that signing-link, reminder and expiry-warning emails are suppressed while passcode and completed-copy emails still go out; Recipient.ExternalID set; CreateSigningURL by ExternalID; ExpiresAt handled as a *string that is the document's expiry or nil when the document does not expire",
+      "files": [
+        "go.mod",
+        "main.go"
+      ],
+      "assertions": [
+        {
+          "name": "send-email-pointer-false",
+          "type": "file_contains",
+          "description": "SendSignatureRequest sets SendEmail to a pointer to false (e.g. sendEmail := false; SendEmail: &sendEmail)"
+        },
+        {
+          "name": "send-email-explained",
+          "type": "file_contains",
+          "description": "A comment explains what sendEmail false suppresses (signing-link / reminder emails) and that passcode or completed-copy emails still go out"
+        },
+        {
+          "name": "uses-external-id",
+          "type": "file_contains",
+          "description": "Recipient sets ExternalID and CreateSigningURL selects by ExternalID"
+        },
+        {
+          "name": "expires-at-nil-safe",
+          "type": "file_contains",
+          "description": "link.ExpiresAt is nil-checked before dereferencing"
+        },
+        {
+          "name": "no-stale-expiry-claim",
+          "type": "file_not_contains",
+          "description": "No comment claims ExpiresAt is always nil for otp/no-verification links or that the link 'follows the document window'"
+        }
+      ]
     }
   ]
 }

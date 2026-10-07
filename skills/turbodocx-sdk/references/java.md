@@ -341,6 +341,194 @@ DocumentStatusResponse status = client.turboSign().getStatus(documentId);
 System.out.println(status.getExpiresAt()); // ISO timestamp, or null when expiration is off
 ```
 
+## Embedded Signing & Identity Verification
+
+Embedded signing takes a signer from your own app straight to a TurboSign signing page, with no signing-link email. Your backend mints a signing URL for the recipient, then you open it (new tab, redirect, or iframe). A recipient with no `identityVerification` takes the **org's default channel** (`getEmbeddedSigningSettings().getDefaultChannel()`), and that default applies to API/SDK sends too: `"none"` opens straight to the document, while `"email"` / `"sms"` means the org verifies every request, so the signer clears that passcode first. Three methods on `client.turboSign()`: `createSigningUrl` mints one URL for a recipient, `getEmbeddedSigningSettings` reads the org gates, and `createEmbeddedSignature` does send + mint in one call.
+
+**Send embedded documents with `.sendEmail(false)`.** Your app shows the signing page, so the signing-link emails, the initial CC notice, the next signer's "your turn" email, and the scheduled reminder and expiry-warning emails are all suppressed. Passcode emails and the completed-copy email still go out, and an explicit `resendEmail` / `sendReminder` still sends. `createEmbeddedSignature` already defaults to `false`; on `sendSignature` set it yourself.
+
+**A locked channel.** `getAllowChannelOverride()` returns a `Boolean`. When it is `Boolean.FALSE`, the org locked the verification method: an explicit channel other than `defaultChannel` makes the send fail with HTTP 403, a `TurboDocxException.AuthorizationException` whose `getCode()` is `"OtpOverrideNotAllowed"`. Omit the channel to take the default. `null` means the API did not report it (unknown, not locked). It is always `true` for a `"none"` default.
+
+### createSigningUrl
+
+Mint an embedded signing URL for one recipient; request it the moment the signer is ready, and never store it. Provide **exactly one** of `recipientId` / `externalId` (both, or neither, is a 400 `RecipientSelectorInvalid`).
+
+```java
+// Prepare the document with an embedded recipient keyed by YOUR id.
+SendSignatureResponse sent = client.turboSign().sendSignature(
+    new SendSignatureRequest.Builder()
+        .file(pdfFile)
+        .fileName("agreement.pdf")
+        .documentName("Service Agreement")
+        // Embedded: your app shows the signing page, so don't email a signing link (reminder and
+        // expiry-warning emails are suppressed too). Passcode and completed-copy emails still go out.
+        .sendEmail(false)
+        .recipients(Arrays.asList(
+            new Recipient.Builder()
+                .name("Jane Doe")
+                .email("jane@example.com")
+                .signingOrder(1)
+                .externalId("your_customer_123")   // no identityVerification → org defaultChannel
+                .build()
+        ))
+        .fields(Arrays.asList(
+            new Field.Builder()
+                .type("signature")
+                .recipientEmail("jane@example.com")
+                .template(new Field.TemplateAnchor.Builder()
+                    .anchor("{signature1}")
+                    .placement("replace")
+                    .size(new Field.Size(100, 30))
+                    .build())
+                .build()
+        ))
+        .build()
+);
+String documentId = sent.getDocumentId();
+
+CreateSigningUrlResponse link = client.turboSign().createSigningUrl(
+    documentId,
+    new CreateSigningUrlRequest.Builder()
+        .externalId("your_customer_123")                 // XOR .recipientId("recipient-uuid")
+        .returnUrl("https://app.yourcompany.com/signed") // optional, https only
+        .build()
+);
+
+System.out.println(link.getUrl());                      // open / redirect / iframe
+System.out.println(link.getExpiresAt());                // ISO, or null when the document doesn't expire
+System.out.println(link.getIdentityVerificationMode()); // "otp" | "external_idv" | "override" | null
+System.out.println(link.getPendingChecks());            // ["email_otp"] | ["sms_otp"] | []
+```
+
+For an `external_idv` recipient, pass the assertion from your own identity provider:
+
+```java
+CreateSigningUrlResponse link = client.turboSign().createSigningUrl(
+    documentId,
+    new CreateSigningUrlRequest.Builder()
+        .recipientId("recipient-uuid")
+        .identityAssertion(new IdentityAssertion.Builder()
+            .provider("CAPA")
+            .verificationId("capa_verif_8f2a91")
+            .verifiedAt("2025-01-01T00:00:00Z")
+            .subjectEmail("jane@example.com")
+            // Optional context recorded on the certificate / audit trail (null values are omitted):
+            .method("id_document_liveness")      // id_document | id_document_liveness | kba | database | sso | other
+            // .methodDetail("Video call with a notary") // required when method is "other"
+            .assuranceLevel("ial2_aal2")         // e.g. ial2_aal2, eidas_substantial, eidas_high
+            .verifiedName("Jane Doe")            // legal name as your provider verified it
+            .evidenceUrl("https://idv.example.com/verifications/capa_verif_8f2a91") // https only
+            // .overrideEmailMatching(true)      // skip the subjectEmail check; recorded on the audit trail
+            .build())
+        .build()
+);
+```
+
+Request it **at click time**. For the bypass modes (`external_idv` / `override`) the URL is **single-use** and expires minutes after issue (a `?sut=` link redeemed once when opened), so mint a fresh one each time. For no-verification and `otp` recipients the URL is the reusable signing link (`?token=`) that survives a refresh, and `getExpiresAt()` is the **document's own expiry**, or `null` when the document doesn't expire.
+
+### getEmbeddedSigningSettings
+
+Read-only org gates — check what your org allows before you request signing URLs. Change these in E-Signature settings (Identity & embedding tab) or via the organization preferences API, where the change is recorded in the settings audit trail.
+
+```java
+EmbeddedSigningSettings settings = client.turboSign().getEmbeddedSigningSettings();
+settings.isEnabled();                // embedded signing + OTP turned on for the org
+settings.isAllowExternalIdv();       // may assert identity via your own provider (external_idv)
+settings.isAllowIdentityOverride();  // may issue a link that skips verification (override)
+settings.getDefaultChannel();        // "none" | "email" | "sms": what a recipient with no identityVerification gets
+settings.getAllowChannelOverride();  // Boolean: FALSE = locked, null = unknown (not locked)
+settings.getAllowedFrameAncestors(); // origins allowed to iframe the signing page (empty = denied everywhere)
+
+boolean channelLocked = Boolean.FALSE.equals(settings.getAllowChannelOverride());
+```
+
+- **`defaultChannel`** is the org's default OTP channel. While embedded signing is enabled it applies to **every** recipient that doesn't set one, **SDK/API sends included**. `"none"` means verify only when a request asks for it.
+- **`allowChannelOverride`**: whether a request may give a recipient a channel other than `defaultChannel`. `false` = locked, and a different explicit channel is rejected with `OtpOverrideNotAllowed`. Always `true` for a `"none"` default or when embedded signing is off. Note the getter is `getAllowChannelOverride()` (boxed), not `is...`.
+- **`allowedFrameAncestors`**: empty means framing is denied everywhere.
+
+### createEmbeddedSignature
+
+Send the document **and** mint a per-recipient embed URL in one call — a thin wrapper over `sendSignature` + `createSigningUrl`, no new endpoint. Each recipient carries an `auth` (identity shorthand) and a `fields` (anchor shorthand); results come back **in signing order**.
+
+```java
+import com.turbodocx.TurboDocxException;
+
+CreateEmbeddedSignatureResponse embedded;
+try {
+    embedded = client.turboSign().createEmbeddedSignature(
+        new CreateEmbeddedSignatureRequest.Builder()
+            .file(pdfFile)
+            .fileName("contract.pdf")
+            .documentName("Auto Policy")
+            // Already the default here: no signing-link, reminder or expiry-warning emails, because
+            // your app shows the signing page. Passcode and completed-copy emails still go out.
+            .sendEmail(false)
+            .recipients(Arrays.asList(
+                new EmbeddedSignatureRecipient.Builder()
+                    .name("John Doe")
+                    .email("john@example.com")
+                    // Per-recipient OTP: emailOtp() or sms("+1..."). Omit auth to take the org's defaultChannel.
+                    .auth(EmbeddedRecipientAuth.emailOtp())
+                    .fields(new EmbeddedRecipientFields.Builder()
+                        .signature("{signature1}")
+                        .date("{date1}")
+                        .build())
+                    .build()
+            ))
+            .returnUrl("https://app.yourcompany.com/signed") // optional, passed to each embed URL
+            .build()
+    );
+} catch (TurboDocxException.AuthorizationException e) {
+    if ("OtpOverrideNotAllowed".equals(e.getCode())) {
+        // The org locked the verification method: drop auth (take defaultChannel) or ask an admin.
+    }
+    throw e;
+}
+
+for (EmbeddedSignatureRecipientResult r : embedded.getRecipients()) {
+    // status: "ready" (embedUrl set — frame it now) | "pending" (not their turn yet)
+    //         | "completed" (already signed). embedUrl is null unless "ready".
+    System.out.println(r.getName() + ": " + r.getStatus() + " -> " + r.getEmbedUrl());
+}
+```
+
+`sendEmail` defaults to `false` for this flow: the signing-link emails, the initial CC notice, the next signer's "your turn" email and the scheduled reminder and expiry-warning emails are suppressed, while passcode and completed-copy emails are still sent. No `auth` means the org's `defaultChannel` applies; an `auth` channel that differs from a locked default fails the whole call with `OtpOverrideNotAllowed`. For a `ready` signer `getIdentityVerificationMode()` is the mode the backend resolved; for `pending` / `completed` no URL was minted, so it is the mode you **requested** via `auth` (`null` when you set none, even if the org's default channel will apply). Pass a top-level `.fields(List<Field>)` to override every recipient's `fields` shorthand verbatim. It is **turn-aware**: with a real signing order the backend mints a URL only for the signer whose turn it is: a later signer comes back `pending` with a null `embedUrl`, so re-mint with `createSigningUrl` once earlier signers finish (e.g. an in-person kiosk handing the device to the next signer). A genuine error (any code other than not-in-turn / already-signed) still throws.
+
+### Identity verification modes
+
+Set per recipient via `IdentityVerification` (or the `auth` shorthand on `createEmbeddedSignature`). A recipient with **no** `identityVerification` takes the org's `defaultChannel`: with a `"none"` default it signs with no step-up (`identityVerificationMode` comes back null and `pendingChecks` is empty); with `"email"` / `"sms"` it gets that passcode.
+
+| Mode | Factory | What the signer does |
+|---|---|---|
+| **OTP (email)** | `IdentityVerification.otpEmail()` | Clears an emailed one-time passcode before the document opens |
+| **OTP (SMS)** | `IdentityVerification.otpSms()` | Clears a texted passcode — needs an E.164 phone on the recipient (see note) |
+| **external_idv** | `IdentityVerification.externalIdv("CAPA")` | Verified by your own provider; pass the `IdentityAssertion` to `createSigningUrl` |
+| **override** | `IdentityVerification.override("Sandbox testing")` | Skips verification (development/testing); recorded "not identity-verified" on the certificate |
+
+`external_idv` and `override` are org-gated — see `isAllowExternalIdv()` / `isAllowIdentityOverride()`. For SMS OTP the phone number's source depends on the path: on a `Recipient.Builder` you set `.phone("+13055551234")` yourself; with the `EmbeddedRecipientAuth.sms("+13055551234")` shorthand the number is carried in the `auth` block and `createEmbeddedSignature` resolves it onto the recipient. Either way, an SMS-OTP recipient with no resolved phone fails fast with `PhoneRequiredForSmsOtp`.
+
+On `sendSignature`, attach a mode with `.identityVerification(...)` on the `Recipient.Builder`:
+
+```java
+new Recipient.Builder()
+    .name("Jane Doe")
+    .email("jane@example.com")
+    .signingOrder(1)
+    .externalId("your_customer_123")                 // your key — select by it in createSigningUrl
+    .identityVerification(IdentityVerification.otpEmail())
+    .build()
+```
+
+### Allowed embedding domains
+
+**Embedding is DENY-by-default.** An embed URL (`/e-signature/embed/...`) is framed under a per-tenant `Content-Security-Policy: frame-ancestors`. An origin **not** on the org's allow-list is **hard-blocked** (a blank/refused frame: the clickjacking protection working, not a bug), never merely warned. Add your app's origin under **E-Signature settings → Identity & embedding → Allowed embedding domains**; production origins must be `https://` (`http://localhost` is accepted only as a flagged dev override). Read the current list from `settings.getAllowedFrameAncestors()`; an empty list means framing is denied everywhere.
+
+**Browser side.** Your Java backend returns only the `/e-signature/embed/...` URL; the browser frames it. The `@turbodocx/embed` npm package (`<TurboSignForm>` for React, `<turbosign-form>` web component) owns the iframe and origin pinning. Its `onCompleted` callback (or the `turbosign:completed` event `detail`) receives `{ documentId, status, event, scope }`: `event` is `"signing_complete"` or `"already_signed"` (a reopened, finished link, so skip one-time side effects), and `scope` is `"recipient"` (this signer's step only; read the whole document's status server-side with `getStatus` or the completed webhook). For OTP signers the code is sent only when they click **Send Code** on the signing page, so don't tell them it was already emailed.
+
+### Full reference implementation
+
+For an end-to-end host app (a React SPA that calls a key-holding backend-for-frontend (`server.ts`), which uses the SDK to create documents and mint embed URLs so the API key **never reaches the browser**), see [`examples/embedded-web-app`](https://github.com/TurboDocx/SDK/tree/main/examples/embedded-web-app). It demonstrates four embedding paths side by side: **single signer** (hand-rolled `<iframe>` + origin-checked `postMessage` completion listener), **external IdV** (a simulated identity provider, with the server passing an `identityAssertion` when it mints the URL), **sequential kiosk** (two signers in order on one device, the next URL minted just-in-time when it's their turn), and **widget** (`<TurboSignForm>` from `@turbodocx/embed`, which owns the iframe, origin pinning, and completion event). The Java single-signer equivalent is [`packages/java-sdk/examples/TurboSignEmbeddedIdentity.java`](https://github.com/TurboDocx/SDK/blob/main/packages/java-sdk/examples/TurboSignEmbeddedIdentity.java).
+
 ## Deliverable
 
 Document generation: render a TurboDocx template with variable substitution into a deliverable (DOCX/PPTX), then download it or hand its ID to TurboSign as the source document.
@@ -1417,6 +1605,9 @@ All seven subtypes are **nested classes** on `com.turbodocx.TurboDocxException` 
 | `client.turboSign().voidDocument(id, reason)` | Cancel a signature request (`reason` required) |
 | `client.turboSign().resendEmail(id, recipientIds)` | Resend signature email to recipient UUIDs |
 | `client.turboSign().getAuditTrail(id)` | Get complete audit trail |
+| `client.turboSign().createSigningUrl(id, req)` | Mint an embedded signing URL for one recipient (exactly one of `recipientId`/`externalId`) |
+| `client.turboSign().getEmbeddedSigningSettings()` | Read-only org embedded-signing gates (enabled, allowExternalIdv, allowIdentityOverride, defaultChannel, allowChannelOverride, allowedFrameAncestors) |
+| `client.turboSign().createEmbeddedSignature(req)` | Send + mint a per-recipient embed URL in one call; results in signing order with `ready`/`pending`/`completed` status |
 | `builder.buildDeliverableClient()` | Build a Deliverable client (no senderEmail needed) |
 | `deliverable.generateDeliverable(req)` | Render a template with variables into a new deliverable |
 | `deliverable.listDeliverables(req)` | Paginated list with search and tag filters |

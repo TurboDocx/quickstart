@@ -312,6 +312,168 @@ status = await TurboSign.get_status(document_id)
 print(status["expiresAt"])  # ISO timestamp, or None when expiration is off
 ```
 
+## Embedded Signing & Identity Verification
+
+Embedded signing takes a signer straight from your own app to a TurboSign signing page, with no signing-link email. Your backend mints a signing URL for the recipient and you open it: a new tab, a redirect, or an `<iframe>`. A recipient with no `identityVerification` takes the **org's default channel** (`defaultChannel` from `get_embedded_signing_settings`), and that default applies to API/SDK sends too: `'none'` opens straight to the document, while `'email'` / `'sms'` means the org verifies every request, so the signer clears a passcode first. These three methods sit alongside the rest of TurboSign and use the same `TurboSign.configure(...)`.
+
+**Send embedded documents with `send_email=False`.** Your app shows the signing page, so the signing-link emails, the initial CC notice, the next signer's "your turn" email, and the scheduled reminder and expiry-warning emails are all suppressed. Passcode emails and the completed-copy email still go out, and an explicit `resend_email` / `send_reminder` still sends. `create_embedded_signature` already defaults to `False`; on `send_signature` pass it yourself.
+
+**A locked channel.** When `settings.get("allowChannelOverride") is False`, the org locked the verification method: an explicit channel other than `defaultChannel` makes the send fail with HTTP 403, an `AuthorizationError` whose `e.code` is `"OtpOverrideNotAllowed"`. Omit the channel to take the default. Use `is False`, not `not ...`: a missing value (`None`) means unknown, not locked. It is always `True` for a `'none'` default.
+
+### create_signing_url
+
+Mint an embedded signing URL for one recipient, **at the moment they click "Sign" in your app**; request it at click time and never store it. Prepare the recipient first with `send_signature`, keyed by your own `externalId`:
+
+```python
+sent = await TurboSign.send_signature(
+    file=pdf_bytes,
+    document_name="Service Agreement",
+    # Embedded: your app shows the signing page, so don't email a signing link (reminder and
+    # expiry-warning emails are suppressed too). Passcode and completed-copy emails still go out.
+    send_email=False,
+    recipients=[
+        {"name": "Jane Doe", "email": "jane@example.com", "signingOrder": 1,
+         "externalId": "your_customer_123"},   # no identityVerification -> org defaultChannel
+    ],
+    fields=[
+        {"type": "signature", "recipientEmail": "jane@example.com",
+         "template": {"anchor": "{signature1}", "placement": "replace", "size": {"width": 100, "height": 30}}},
+    ],
+)
+document_id = sent["documentId"]
+
+link = await TurboSign.create_signing_url(
+    document_id,
+    external_id="your_customer_123",   # select the recipient by YOUR key...
+    # recipient_id="rec-uuid",         # ...OR by TurboDocx's recipient id — pass EXACTLY ONE
+    return_url="https://app.yourcompany.com/signed",  # optional; https only
+)
+
+print(link["url"])                       # open / redirect / iframe this
+print(link["identityVerificationMode"])  # 'otp' | 'external_idv' | 'override' | None
+print(link["pendingChecks"])             # e.g. ['email_otp'] — non-empty only for OTP
+print(link["expiresAt"])                 # see below; None when the document doesn't expire
+```
+
+The response also carries `recipientId` and (when set) `externalId`. Select the recipient with **exactly one** of `external_id` / `recipient_id` — zero or both raises `ValidationError(code="RecipientSelectorInvalid")` before any HTTP call; a non-`https` `return_url` raises `InvalidReturnUrl`.
+
+**The URL's lifetime depends on the recipient's mode:**
+
+- **No verification or `otp`**: the reusable signing link, which survives a refresh. `expiresAt` is the **document's own expiry**, or `None` when the document doesn't expire.
+- **`external_idv` or `override`**: a **single-use** link redeemed the moment it opens, expiring minutes after issue (`expiresAt` is that ISO timestamp). Mint a fresh one each time; do not reuse or store it.
+
+For an `external_idv` recipient, pass the assertion from your own provider. The first four keys are **required**; the rest are optional audit-trail context. All keys stay camelCase verbatim:
+
+```python
+link = await TurboSign.create_signing_url(
+    document_id,
+    recipient_id="rec-uuid",
+    identity_assertion={
+        "provider": "CAPA",                     # must match the recipient's configured provider
+        "verificationId": "capa_verif_8f2a91",  # your provider's id for this verification
+        "verifiedAt": "2026-01-01T00:00:00Z",   # ISO 8601; rejected if in the future or too old
+        "subjectEmail": "jane@example.com",     # must match the recipient's email
+        # Optional context recorded on the certificate / audit trail:
+        "method": "id_document_liveness",       # id_document | id_document_liveness | kba | database | sso | other
+        # "methodDetail": "Video call with a notary",  # required when method is "other"
+        "assuranceLevel": "ial2_aal2",          # e.g. ial2_aal2, eidas_substantial, eidas_high
+        "verifiedName": "Jane Doe",             # legal name as your provider verified it
+        "evidenceUrl": "https://idv.example.com/verifications/capa_verif_8f2a91",  # https only
+        # "overrideEmailMatching": True,        # skip the subjectEmail check; recorded on the audit trail
+    },
+)
+```
+
+### get_embedded_signing_settings
+
+Read the org's set-once, org-wide embedded-signing gates (read-only from the SDK — an admin sets them in E-Signature settings). Check them before you start minting URLs. The per-recipient identity *mode* is chosen when you create each recipient, not here.
+
+```python
+settings = await TurboSign.get_embedded_signing_settings()
+if not settings["enabled"]:
+    raise RuntimeError("Embedded signing is not enabled for this organization.")
+
+print(settings["allowExternalIdv"])       # may you assert identity with your own provider
+print(settings["allowIdentityOverride"])  # may a sender skip verification (override)
+print(settings["allowedFrameAncestors"])  # origins allowed to iframe the signing page ([] = denied everywhere)
+print(settings["defaultChannel"])         # 'none' | 'email' | 'sms': what a recipient with no identityVerification gets
+channel_locked = settings.get("allowChannelOverride") is False  # None = unknown, not locked
+```
+
+- **`defaultChannel`** is the org's default OTP channel. While embedded signing is enabled it applies to **every** recipient that doesn't set one, **SDK/API sends included**. `'none'` means verify only when a request asks for it.
+- **`allowChannelOverride`**: whether a request may give a recipient a channel other than `defaultChannel`. `False` means the org locked the method: an explicit different channel is rejected with `OtpOverrideNotAllowed`, so omit it. Always `True` for a `'none'` default or when embedded signing is off.
+- **`allowedFrameAncestors`**: an empty list means framing is denied everywhere.
+
+### create_embedded_signature
+
+Create the signature request **and** mint a per-recipient embed URL in one call — a thin wrapper over `send_signature` + `create_signing_url`, no new endpoint. `send_email` defaults to **False** (you own the signing UX). This method's request uses an ergonomic shorthand and, unusually for this SDK, **accepts snake_case** on the recipient keys (`signing_order`, `email_otp`, `phone_number`, `full_name`) — whereas `send_signature`'s own recipient dicts stay camelCase verbatim (`signingOrder`, `externalId`, `identityVerification`).
+
+```python
+from turbodocx_sdk import TurboSign, AuthorizationError
+
+try:
+    result = await TurboSign.create_embedded_signature(
+        file=pdf_bytes,
+        document_name="Auto Policy",
+        # Already the default here: no signing-link, reminder or expiry-warning emails, because
+        # your app shows the signing page. Passcode and completed-copy emails still go out.
+        send_email=False,
+        recipients=[
+            {
+                "name": "John Doe",
+                "email": "john@example.com",
+                # Per-recipient OTP: {"email_otp": True} or {"sms": {"phone_number": "+1..."}}.
+                # Omit "auth" to take the org's defaultChannel.
+                "auth": {"sms": {"phone_number": "+13055551234"}},
+                "fields": {"signature": "{signature1}", "date": "{date1}"},
+            },
+        ],
+        # return_url="https://app.yourcompany.com/signed",  # optional; passed to each embed URL
+    )
+except AuthorizationError as e:
+    if e.code == "OtpOverrideNotAllowed":
+        # The org locked the verification method: drop "auth" (take defaultChannel) or ask an admin.
+        ...
+    raise
+
+for r in result["recipients"]:   # one entry per signer, IN SIGNING ORDER
+    print(r["name"], r["status"], r["embedUrl"], r["identityVerificationMode"])
+```
+
+Returns `documentId` plus `recipients`; each entry has `recipientId`, `name`, `email`, `embedUrl`, `status`, and `identityVerificationMode`. For a `'ready'` signer that mode is what the backend resolved for the URL; for `'pending'` / `'completed'` no URL was minted, so it is the mode you **requested** via `auth` (`None` when you set none, even if the org's default channel will apply). `create_signing_url` reports the effective mode. The `fields` shorthand keys are `signature`, `date`, `initials`, and `fullName` (each becomes an anchored `replace` field at a default size); note `initials` emits the field **type** `initial`; there is no `initials` type. Pass a full top-level `fields=[...]` to override the shorthand with full field control.
+
+**`status` is turn-aware** — with a sequential signing order the backend only mints a URL for the signer whose turn it is:
+
+- `'ready'` — it's their turn; `embedUrl` is set, frame it now.
+- `'pending'` — an earlier signer hasn't finished; `embedUrl` is `None`. Re-mint with `create_signing_url` once earlier signers complete.
+- `'completed'` — they already signed; `embedUrl` is `None`.
+
+This is one underlying condition seen from both methods: `create_signing_url` **throws** `RecipientNotInTurn` / `NotSignersTurn` / `RecipientAlreadySigned`, while `create_embedded_signature` **catches exactly those codes** and degrades them to `pending` / `completed`. Any other error propagates. An SMS-OTP recipient with no `phone` (E.164) raises `PhoneRequiredForSmsOtp` before the send.
+
+### The three identity modes
+
+Identity verification is set **per recipient**. A recipient with none takes the org's `defaultChannel`: with a `'none'` default it signs with no step-up (`identityVerificationMode` comes back `None` and `pendingChecks` is empty); with an `'email'` / `'sms'` default it gets that passcode step.
+
+| Mode | How you request it | What happens |
+|------|--------------------|--------------|
+| `otp` | On `create_embedded_signature`, the recipient `auth`: `{"email_otp": True}` or `{"sms": {"phone_number": "+13055551234"}}`. On `send_signature`, the recipient's `identityVerification`: `{"mode": "otp", "channel": "email"}` (or `"sms"`). | TurboSign challenges a one-time passcode (email or SMS) before the document opens. |
+| `external_idv` | The recipient's `identityVerification` on `send_signature`: `{"mode": "external_idv", "provider": "CAPA"}`, then pass `identity_assertion` to `create_signing_url`. Requires `allowExternalIdv`. | Your own provider verified the signer; TurboSign trusts the asserted verification. |
+| `override` | The recipient's `identityVerification` on `send_signature`: `{"mode": "override", "overrideIdentityVerification": True, "reason": "..."}`. Requires `allowIdentityOverride`. | Verification is skipped (development/testing); the certificate records the signature as **not** identity-verified. |
+
+**The `auth` shorthand on `create_embedded_signature` only reaches OTP** (`email` or `sms`). For `external_idv` or `override`, build the recipient with `send_signature` (carrying `identityVerification`) and mint the URL with `create_signing_url` — there is no `auth: {"external_idv": ...}` key.
+
+### Allowed embedding domains are deny-by-default
+
+Framing the signing page is **default-deny**. The page ships a per-tenant `Content-Security-Policy: frame-ancestors`, so an origin that is **not** on the org's allow-list is **hard-blocked** from embedding (a blank/refused frame, not a warning). Add your app's origin under **TurboDocx → E-Signature settings → Identity & embedding → Allowed origins** (production origins must be `https://`); read the current list from `settings["allowedFrameAncestors"]` (an empty list means framing is denied everywhere). The email-invite signing links deny all framing.
+
+### Browser side
+
+Your Python backend returns only the `/e-signature/embed/...` URL; the browser frames it. The `@turbodocx/embed` npm package (`<TurboSignForm>` for React, `<turbosign-form>` web component) owns the iframe and origin pinning. Its `onCompleted` callback (or the `turbosign:completed` event `detail`) receives `{ documentId, status, event, scope }`: `event` is `"signing_complete"` or `"already_signed"` (a reopened, finished link, so skip one-time side effects), and `scope` is `"recipient"` (this signer's step only; read the whole document's status server-side with `get_status` or the completed webhook). For OTP signers the code is sent only when they click **Send Code** on the signing page, so don't tell them it was already emailed.
+
+### Full reference implementation
+
+`examples/embedded-web-app` in the SDK repo is a complete, runnable embedding app: a Vite + React + shadcn SPA calling a tiny backend-for-frontend (`server.ts`) that holds the API key and uses the SDK; **the key never reaches the browser**. It demonstrates four paths side by side: **single signer** (hand-rolled `<iframe>` plus an origin-checked `postMessage` completion listener), **external IdV** (a simulated identity provider, with the server passing an `identityAssertion` when it mints the URL), **sequential kiosk** (two signers in order on one device, the next URL minted just-in-time when it's their turn), and **widget** (the `@turbodocx/embed` `<TurboSignForm>` component owning the iframe, origin pinning, and completion event). Its README also walks through the origin allow-listing prerequisite.
+
 ## Deliverable
 
 Document generation: render a TurboDocx template with variable substitution into a deliverable (DOCX/PPTX), then download it or hand its ID to TurboSign as the source document.
@@ -1294,6 +1456,9 @@ The exception attributes are `e.status_code` (int or `None`) and `e.code` (str) 
 | `TurboSign.void_document(document_id, reason)` | Cancel a signature request (reason required) |
 | `TurboSign.resend_email(document_id, recipient_ids)` | Resend signature email to recipient UUIDs |
 | `TurboSign.get_audit_trail(document_id)` | Get complete audit trail |
+| `TurboSign.create_signing_url(document_id, recipient_id=/external_id=, identity_assertion=, return_url=)` | Mint an embedded signing URL for one recipient (exactly one selector) |
+| `TurboSign.get_embedded_signing_settings()` | Read the org's read-only embedded-signing gates (`enabled`, `allowExternalIdv`, `allowIdentityOverride`, `defaultChannel`, `allowChannelOverride`, `allowedFrameAncestors`) |
+| `TurboSign.create_embedded_signature(recipients, ...)` | One call: send + mint a per-recipient embed URL; recipients carry `status` (`ready`/`pending`/`completed`) + `embedUrl` |
 | `Deliverable.configure(api_key, org_id, base_url=...)` | Configure the deliverable client (no sender_email needed) |
 | `Deliverable.generate_deliverable(name, template_id, variables, ...)` | Render a template with variables into a new deliverable |
 | `Deliverable.list_deliverables(limit=, offset=, query=, show_tags=)` | Paginated list with search and tag filters |
