@@ -208,6 +208,12 @@ once the document is terminal. Each recipient's `delivery` block — `firstSentO
 `totalSent`, `reminderCount`, `lastRemindedAt`, `warningCount`, `lastWarningAt` — is that
 signer's email history; CC notifications are excluded, since a CC address is not a signer.
 
+In Java, `r.getDelivery()` returns a `DocumentRecipientsResponse.RecipientDelivery` (all in `com.turbodocx.models`) with
+`getTotalSent()`, `getReminderCount()`, `getWarningCount()` (`int`) and `getFirstSentOn()`, `getLastSentOn()`,
+`getLastRemindedAt()`, `getLastWarningAt()` (ISO-8601 `String`, null when never set). The roll-up is
+`progress.getSummary()` (`RecipientStatusSummary`: `getTotal()`, `getPending()`, `getViewed()`,
+`getCompleted()`, `getVoided()`, `getExpired()`, `getWaitingOn()`). `getRecipients` throws `IOException`.
+
 `reminderCount` and `lastRemindedAt` do NOT mean what their names suggest. `reminderCount`
 counts **automatic (scheduled) reminders only** — the counter `maxReminders` caps; a manual
 "remind now" must not consume the cap budget, so it does not increment this even though its
@@ -347,7 +353,7 @@ Embedded signing takes a signer from your own app straight to a TurboSign signin
 
 **Send embedded documents with `.sendEmail(false)`.** Your app shows the signing page, so the signing-link emails, the initial CC notice, the next signer's "your turn" email, and the scheduled reminder and expiry-warning emails are all suppressed. Passcode emails and the completed-copy email still go out, and an explicit `resendEmail` / `sendReminder` still sends. `createEmbeddedSignature` already defaults to `false`; on `sendSignature` set it yourself.
 
-**A locked channel.** `getAllowChannelOverride()` returns a `Boolean`. When it is `Boolean.FALSE`, the org locked the verification method: an explicit channel other than `defaultChannel` makes the send fail with HTTP 403, a `TurboDocxException.AuthorizationException` whose `getCode()` is `"OtpOverrideNotAllowed"`. Omit the channel to take the default. `null` means the API did not report it (unknown, not locked). It is always `true` for a `"none"` default.
+**A locked channel.** `getAllowChannelOverride()` returns a `Boolean`. When it is `Boolean.FALSE`, the org locked the verification method: an explicit channel other than `defaultChannel` makes the send fail with HTTP 403, a `TurboDocxException.AuthorizationException` whose `getCode()` is `"OtpOverrideNotAllowed"`. Omit the channel to take the default. `null` means the API did not report it (unknown, not locked). Read it before forcing a per-recipient channel even when the default is `"none"` today: an admin can change the default and lock it at any time, so checking `defaultChannel` alone is not enough.
 
 ### createSigningUrl
 
@@ -443,7 +449,7 @@ boolean channelLocked = Boolean.FALSE.equals(settings.getAllowChannelOverride())
 ```
 
 - **`defaultChannel`** is the org's default OTP channel. While embedded signing is enabled it applies to **every** recipient that doesn't set one, **SDK/API sends included**. `"none"` means verify only when a request asks for it.
-- **`allowChannelOverride`**: whether a request may give a recipient a channel other than `defaultChannel`. `false` = locked, and a different explicit channel is rejected with `OtpOverrideNotAllowed`. Always `true` for a `"none"` default or when embedded signing is off. Note the getter is `getAllowChannelOverride()` (boxed), not `is...`.
+- **`allowChannelOverride`**: whether a request may give a recipient a channel other than `defaultChannel`. `false` = locked, and a different explicit channel is rejected with `OtpOverrideNotAllowed`. The server reports `true` while the default is `"none"` or embedded signing is off, but an admin can change that at any time, so read this field (not just `defaultChannel`) before forcing a channel. Note the getter is `getAllowChannelOverride()` (boxed), not `is...`.
 - **`allowedFrameAncestors`**: empty means framing is denied everywhere.
 
 ### createEmbeddedSignature
@@ -1235,6 +1241,9 @@ TurboQuote provides end-to-end CPQ (configure-price-quote) operations: create an
 ```java
 import com.turbodocx.TurboQuoteClient;
 import com.turbodocx.TurboQuote;
+// Every quote model (CreateQuoteRequest, AddLineItemRequest, SendQuoteRequest, Quote, LineItem,
+// Currency, BulkImportResult, ...) lives in com.turbodocx.models.quote, not com.turbodocx.models.
+import com.turbodocx.models.quote.*;
 
 TurboQuote tq = new TurboQuoteClient.Builder()
     .apiKey(System.getenv("TURBODOCX_API_KEY"))

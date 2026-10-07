@@ -624,7 +624,7 @@
     },
     {
       "id": 16,
-      "prompt": "Add the ability to my Express app to cancel a signature request with a reason (e.g. counterparty wanted revisions) and to resend reminder emails to specific recipients who haven't signed yet.",
+      "prompt": "Add the ability to my Express app to cancel a signature request with a reason (e.g. counterparty wanted revisions) and to re-send the original signing invitation email to specific recipients who haven't signed yet.",
       "expected_output": "Creates endpoints calling TurboSign.void(documentId, reason) and TurboSign.resend(documentId, recipientIds) with the correct names and parameter types",
       "files": [
         "package.json",
