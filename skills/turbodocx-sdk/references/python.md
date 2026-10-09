@@ -448,7 +448,7 @@ Returns `documentId` plus `recipients`; each entry has `recipientId`, `name`, `e
 - `'pending'` — an earlier signer hasn't finished; `embedUrl` is `None`. Re-mint with `create_signing_url` once earlier signers complete.
 - `'completed'` — they already signed; `embedUrl` is `None`.
 
-This is one underlying condition seen from both methods: `create_signing_url` **throws** `RecipientNotInTurn` / `NotSignersTurn` / `RecipientAlreadySigned`, while `create_embedded_signature` **catches exactly those codes** and degrades them to `pending` / `completed`. Any other error propagates. An SMS-OTP recipient with no `phone` (E.164) raises `PhoneRequiredForSmsOtp` before the send.
+This is one underlying condition seen from both methods: `create_signing_url` **throws** `RecipientNotInTurn` / `RecipientAlreadySigned`, while `create_embedded_signature` **catches exactly those codes** and degrades them to `pending` / `completed` (it also accepts `NotSignersTurn`, a reserved code the current API never returns). Any other error propagates. An SMS-OTP recipient with no `phone` (E.164) raises `PhoneRequiredForSmsOtp` before the send.
 
 ### The three identity modes
 
