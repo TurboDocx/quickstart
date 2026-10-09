@@ -3169,6 +3169,37 @@
           "description": "No comment claims ExpiresAt is always nil for otp/no-verification links or that the link 'follows the document window'"
         }
       ]
+    },
+    {
+      "id": 61,
+      "prompt": "In our Express (TypeScript) app, set up an embedded TurboSign envelope with two signers: the borrower, who we already verified through our own KYC vendor (Persona), and a co-signer who should get a TurboSign email passcode. Mint each signer's signing URL when they click Sign. To keep it simple, write one mintSigningUrl helper that both routes call and that always passes our Persona result as the identity assertion.",
+      "expected_output": "sendSignature with the borrower on identityVerification { mode: 'external_idv', provider } and the co-signer on otp; createSigningUrl passes identityAssertion only for the external_idv borrower and omits it for the OTP co-signer, with a note that sending it for a non-external_idv recipient is rejected with a 400 IdentityModeConflict",
+      "files": [
+        "package.json",
+        "src/server.ts"
+      ],
+      "assertions": [
+        {
+          "name": "borrower-external-idv",
+          "type": "file_contains",
+          "description": "The borrower recipient uses identityVerification with mode 'external_idv' and a provider"
+        },
+        {
+          "name": "cosigner-otp",
+          "type": "file_contains",
+          "description": "The co-signer recipient uses OTP identity verification, not external_idv"
+        },
+        {
+          "name": "assertion-only-for-external-idv",
+          "type": "file_contains",
+          "description": "createSigningUrl sends identityAssertion only for the external_idv borrower; the co-signer's mint omits it (the helper does not unconditionally attach it as the prompt suggested)"
+        },
+        {
+          "name": "identity-mode-conflict-explained",
+          "type": "file_contains",
+          "description": "A comment or explanation says an identity assertion on an OTP, override, or no-verification recipient is rejected (400 IdentityModeConflict), not ignored"
+        }
+      ]
     }
   ]
 }
