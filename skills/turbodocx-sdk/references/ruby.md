@@ -457,7 +457,7 @@ puts link["pendingChecks"]             # e.g. ["email_otp"]; [] when there is no
 puts link["expiresAt"]                 # see below; nil when the document doesn't expire
 ```
 
-For an `external_idv` recipient, pass the assertion from your own provider (camelCase keys):
+For an `external_idv` recipient, pass the assertion from your own provider (camelCase keys). Pass it **only** for `external_idv`: sending it for an OTP, override, or no-verification recipient is rejected with a 400 `IdentityModeConflict` error, not ignored.
 
 ```ruby
 link = TurboDocxSdk::TurboSign.create_signing_url(

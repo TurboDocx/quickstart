@@ -423,7 +423,7 @@ The response also carries `recipientId` and (when set) `externalId`. Select the 
 - **No verification or `otp`**: the reusable signing link, which survives a refresh. `expiresAt` is the **document's own expiry**, or `None` when the document doesn't expire.
 - **`external_idv` or `override`**: a **single-use** link redeemed the moment it opens, expiring 5 minutes after issue (`expiresAt` is that ISO timestamp). Mint a fresh one each time; do not reuse or store it.
 
-For an `external_idv` recipient, pass the assertion from your own provider. The first four keys are **required**; the rest are optional audit-trail context. All keys stay camelCase verbatim:
+For an `external_idv` recipient, pass the assertion from your own provider. Pass it **only** for `external_idv`: sending it for an OTP, override, or no-verification recipient is rejected with a 400 `IdentityModeConflict` error, not ignored. The first four keys are **required**; the rest are optional audit-trail context. All keys stay camelCase verbatim:
 
 ```python
 link = await TurboSign.create_signing_url(
