@@ -76,6 +76,45 @@ result = await TurboSign.send_signature(
 print(f"Document ID: {result['documentId']}")
 ```
 
+### Send a template with signer roles
+
+Use this when the same document goes out again and again with different signers (an NDA, a contract, an onboarding form). The user sets the template up **once** in TurboDocx: upload the PDF as a template, add each signer as a role on its Signatures tab (e.g. "Client", "Countersigner"), drag each role's fields onto the page, and save the signature setup. A role that is always the same person (e.g. your countersigner) can be given a saved signer there. The code then names each recipient's `role` and passes **no field coordinates or anchors**: the fields saved for that role come with it.
+
+```python
+from turbodocx_sdk import TurboSign, ValidationError
+
+# Role keys are shown under "Use via API" on the template's page in TurboDocx, or read them here.
+setup = await TurboSign.get_template_signature_setup(template_id)
+# setup["roles"] (in signing order):
+#   [{"key": "client", "label": "Client", "order": 1, "hasSavedSigner": False, "fieldCount": 3},
+#    {"key": "countersigner", "label": "Countersigner", "order": 2, "hasSavedSigner": True,
+#     "defaultName": "Sam Lee", "defaultEmail": "sam@yourco.com", "fieldCount": 2}]
+
+try:
+    result = await TurboSign.send_signature(
+        template_id=template_id,
+        document_name="Services Agreement - Acme",
+        recipients=[
+            {"role": "client", "name": "Jane Doe", "email": "jane@client.com"},  # no signingOrder needed
+            # "countersigner" left out: the signer saved on the template is used
+        ],
+        # no fields=: each role's saved fields are used
+    )
+    print(result["documentId"])
+except ValidationError as e:
+    if e.code == "UnknownSignerRole":
+        ...  # str(e) names the bad role and lists the template's roles
+    raise
+```
+
+`get_template_signature_setup(template_id)` returns a dict `{"templateId", "roles"}`; each role has `key`, `label`, `order`, `hasSavedSigner`, `fieldCount`, plus `defaultName`/`defaultEmail` when `hasSavedSigner` is true. `key` is the value for a recipient's `"role"`. The keys stay camelCase.
+
+- Roles sign in the order saved on the template, so a recipient with a `role` needs no `signingOrder`; recipients without a `role` sign after them.
+- A role left out uses the template's saved signer. If it has none, the API returns a 400 naming the role. Pass a role that has a saved signer to send to someone else this time.
+- An unknown role raises `ValidationError` (400, `e.code == "UnknownSignerRole"`) whose message lists the template's roles.
+- `fields` is optional here (sent as `[]` when omitted); any fields you pass are **added** to the template's (for example an extra witness signature).
+- `role` works the same way on `create_signature_review_link()` and on `create_embedded_signature()` recipients. For embedded signing pass every role: a role left out falls back to its saved signer, who gets no embed URL from that call.
+
 ### Optional fields
 
 ```python

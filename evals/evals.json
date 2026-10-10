@@ -3169,6 +3169,91 @@
           "description": "No comment claims ExpiresAt is always nil for otp/no-verification links or that the link 'follows the document window'"
         }
       ]
+    },
+    {
+      "id": 61,
+      "prompt": "I set up a contract template in TurboDocx with Client and Countersigner roles and dragged all the signature fields onto it there. Our countersigner is always the same person and is saved on the template. Add an endpoint to my Express app that sends that template to a new client (name and email from the request body).",
+      "expected_output": "Endpoint calls TurboSign.sendSignature with templateId and recipients[] carrying role: 'client' plus name/email, omits fields and signingOrder, leaves the countersigner out (its saved signer is used) or explains that; also uses or mentions TurboSign.getTemplateSignatureSetup to find the role keys; surfaces the 400 message (UnknownSignerRole) when a role is wrong",
+      "files": [
+        "package.json",
+        "tsconfig.json",
+        "src/index.ts",
+        "package-lock.json"
+      ],
+      "assertions": [
+        {
+          "name": "sends-by-template-id",
+          "type": "file_contains",
+          "description": "TurboSign.sendSignature is called with templateId (not file / fileLink / deliverableId)"
+        },
+        {
+          "name": "recipient-has-role",
+          "type": "file_contains",
+          "description": "A recipient object passed to sendSignature carries role: 'client' (or the role key from the request) together with name and email"
+        },
+        {
+          "name": "no-field-coordinates",
+          "type": "file_not_contains",
+          "description": "The send has no fields array with page/x/y/width/height coordinates or template anchors for the template-role send (fields omitted or empty)"
+        },
+        {
+          "name": "no-signing-order-on-role-recipient",
+          "type": "file_not_contains",
+          "description": "The role recipient is not given a signingOrder"
+        },
+        {
+          "name": "mentions-role-discovery",
+          "type": "output_contains",
+          "description": "Code or reply uses TurboSign.getTemplateSignatureSetup or points the user to the role keys under 'Use via API' on the template page"
+        },
+        {
+          "name": "countersigner-saved-signer",
+          "type": "output_contains",
+          "description": "Code comment or reply explains that the countersigner role is left out and its saved signer on the template is used"
+        },
+        {
+          "name": "routes-wired",
+          "type": "file_contains",
+          "description": "Main app file (src/index.ts) was modified to register the new route"
+        }
+      ]
+    },
+    {
+      "id": 62,
+      "prompt": "We send the same NDA over and over from our FastAPI service. It's already a TurboDocx template with a 'Recipient' signer role and its fields placed. Write the endpoint to send it to whoever we pass in, and a helper that lists the template's role keys so I can check them.",
+      "expected_output": "Uses await TurboSign.send_signature(template_id=..., recipients=[{'role': <key>, 'name': ..., 'email': ...}]) with no fields and no signingOrder; adds a helper calling await TurboSign.get_template_signature_setup(template_id) and reads setup['roles'][i]['key']; catches ValidationError (code UnknownSignerRole) and surfaces its message",
+      "files": [
+        "pyproject.toml",
+        "app/main.py",
+        "app/routers/__init__.py"
+      ],
+      "assertions": [
+        {
+          "name": "send-signature-template-id",
+          "type": "file_contains",
+          "description": "TurboSign.send_signature is awaited with template_id="
+        },
+        {
+          "name": "recipient-role-key",
+          "type": "file_contains",
+          "description": "A recipient dict passed to send_signature has a \"role\" key alongside \"name\" and \"email\""
+        },
+        {
+          "name": "no-field-coordinates",
+          "type": "file_not_contains",
+          "description": "No fields list with page/x/y coordinates or template anchors is built for this send"
+        },
+        {
+          "name": "lists-roles-helper",
+          "type": "file_contains",
+          "description": "A helper or endpoint awaits TurboSign.get_template_signature_setup and reads the roles' \"key\" values (camelCase keys like hasSavedSigner kept as-is)"
+        },
+        {
+          "name": "handles-unknown-role",
+          "type": "file_contains",
+          "description": "ValidationError is caught (optionally checking code == 'UnknownSignerRole') and its message is returned to the caller"
+        }
+      ]
     }
   ]
 }

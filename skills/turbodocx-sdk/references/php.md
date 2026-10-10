@@ -83,6 +83,53 @@ $result = TurboSign::sendSignature(
 echo "Document ID: {$result->documentId}\n";
 ```
 
+### Send a template with signer roles
+
+Use this when the same document goes out again and again with different signers (an NDA, a contract, an onboarding form). The user sets the template up **once** in TurboDocx: upload the PDF as a template, add each signer as a role on its Signatures tab (e.g. "Client", "Countersigner"), drag each role's fields onto the page, and save the signature setup. A role that is always the same person (e.g. your countersigner) can be given a saved signer there. The code then names each recipient's `role` and passes **no field coordinates or anchors**: the fields saved for that role come with it.
+
+```php
+use TurboDocx\TurboSign;
+use TurboDocx\Types\Recipient;
+use TurboDocx\Types\Requests\SendSignatureRequest;
+use TurboDocx\Exceptions\ValidationException;
+
+// Role keys are shown under "Use via API" on the template's page in TurboDocx, or read them here.
+$setup = TurboSign::getTemplateSignatureSetup($templateId);
+foreach ($setup->roles as $role) { // in signing order
+    echo "{$role->key} ({$role->label}) order {$role->order}, saved signer: "
+        . ($role->hasSavedSigner ? $role->defaultEmail : 'none') . ", {$role->fieldCount} field(s)\n";
+}
+
+try {
+    $result = TurboSign::sendSignature(
+        new SendSignatureRequest(
+            templateId: $templateId,
+            documentName: 'Services Agreement - Acme',
+            recipients: [
+                // named args: signingOrder is not needed for a recipient with a role
+                new Recipient(name: 'Jane Doe', email: 'jane@client.com', role: 'client'),
+                // 'countersigner' left out: the signer saved on the template is used
+            ],
+            // no fields: each role's saved fields are used
+        )
+    );
+    echo $result->documentId;
+} catch (ValidationException $e) {
+    if ($e->errorCode === 'UnknownSignerRole') {
+        // $e->getMessage() names the bad role and lists the template's roles
+    }
+    throw $e;
+}
+```
+
+`TurboSign::getTemplateSignatureSetup($templateId)` returns a `TemplateSignatureSetup` with `templateId` and `roles` (`TemplateSignatureRole[]`: `key`, `label`, `order`, `hasSavedSigner`, `fieldCount`, `defaultName`/`defaultEmail` set only when `hasSavedSigner`). `key` is the value for `Recipient` `role`.
+
+- Roles sign in the order saved on the template, so a `Recipient` with a `role` needs no `signingOrder`; recipients without a `role` sign after them and still need a `signingOrder` (the constructor throws `ValidationException` when neither is given).
+- A role left out uses the template's saved signer. If it has none, the API returns a 400 naming the role. Pass a role that has a saved signer to send to someone else this time.
+- An unknown role throws a `ValidationException` (400, `$e->errorCode === 'UnknownSignerRole'`) whose message lists the template's roles.
+- `fields` defaults to `[]` here; any fields you pass are **added** to the template's (for example an extra witness signature).
+- `role` works the same way on `createSignatureReviewLink()` (`Recipient`) and `createEmbeddedSignature()` (`EmbeddedSignatureRecipient`). For embedded signing pass every role: a role left out falls back to its saved signer, who gets no embed URL from that call.
+
 ### Optional fields
 
 ```php

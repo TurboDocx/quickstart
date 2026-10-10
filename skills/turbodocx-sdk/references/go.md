@@ -76,6 +76,48 @@ if err != nil {
 fmt.Printf("Document ID: %s\n", result.DocumentID)
 ```
 
+### Send a template with signer roles
+
+Use this when the same document goes out again and again with different signers (an NDA, a contract, an onboarding form). The user sets the template up **once** in TurboDocx: upload the PDF as a template, add each signer as a role on its Signatures tab (e.g. "Client", "Countersigner"), drag each role's fields onto the page, and save the signature setup. A role that is always the same person (e.g. your countersigner) can be given a saved signer there. The code then sets each recipient's `Role` and passes **no field coordinates or anchors**: the fields saved for that role come with it.
+
+```go
+// Role keys are shown under "Use via API" on the template's page in TurboDocx, or read them here.
+setup, err := client.TurboSign.GetTemplateSignatureSetup(ctx, templateID)
+if err != nil {
+    return err
+}
+for _, role := range setup.Roles { // in signing order
+    fmt.Printf("%s (%s) order %d, saved signer: %t, %d field(s)\n",
+        role.Key, role.Label, role.Order, role.HasSavedSigner, role.FieldCount)
+}
+
+result, err := client.TurboSign.SendSignature(ctx, &turbodocx.SendSignatureRequest{
+    TemplateID:   templateID,
+    DocumentName: "Services Agreement - Acme",
+    Recipients: []turbodocx.Recipient{
+        {Role: "client", Name: "Jane Doe", Email: "jane@client.com"}, // no SigningOrder needed
+        // "countersigner" left out: the signer saved on the template is used
+    },
+    // no Fields: each role's saved fields are used
+})
+if err != nil {
+    var vErr *turbodocx.ValidationError
+    if errors.As(err, &vErr) && vErr.Code == "UnknownSignerRole" {
+        // vErr.Message names the bad role and lists the template's roles
+    }
+    return err
+}
+fmt.Println(result.DocumentID)
+```
+
+`GetTemplateSignatureSetup(ctx, templateID)` returns `*turbodocx.TemplateSignatureSetup{TemplateID, Roles []TemplateSignatureRole}`; each role has `Key`, `Label`, `Order`, `HasSavedSigner`, `DefaultName`, `DefaultEmail` (set only when `HasSavedSigner`), and `FieldCount`. `Key` is the value for `Recipient.Role`.
+
+- Roles sign in the order saved on the template, so a recipient with a `Role` needs no `SigningOrder` (it is `omitempty`, 0 is left off the wire); recipients without a `Role` sign after them.
+- A role left out uses the template's saved signer. If it has none, the API returns a 400 naming the role. Pass a role that has a saved signer to send to someone else this time.
+- An unknown role returns a 400 (`*turbodocx.ValidationError` with `Code` `"UnknownSignerRole"`) whose message lists the template's roles.
+- `Fields` is optional here (sent as `[]` when nil); any fields you pass are **added** to the template's (for example an extra witness signature).
+- `Role` works the same way on `CreateSignatureReviewLink` and on `EmbeddedSignatureRecipient` for `CreateEmbeddedSignature`. For embedded signing pass every role: a role left out falls back to its saved signer, who gets no embed URL from that call.
+
 ### Optional fields
 
 ```go
