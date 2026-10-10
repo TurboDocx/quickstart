@@ -102,6 +102,46 @@ console.log(result.recipients);   // ReviewRecipient[] with { id, name, email, m
 
 Fields support either coordinate-based (`page` + `x` / `y` / `width` / `height`) or anchor-based placement via `template: { anchor: '{TagName}', placement: 'replace', size: {...} }`.
 
+### Send a template with signer roles
+
+Use this when the same document goes out again and again with different signers (an NDA, a contract, an onboarding form). The user sets the template up **once** in TurboDocx: upload the PDF as a template, add each signer as a role on its Signatures tab (e.g. "Client", "Countersigner"), drag each role's fields onto the page, and save the signature setup. A role that is always the same person (e.g. your countersigner) can be given a saved signer there. The code then names each recipient's `role` and passes **no field coordinates or anchors**: the fields saved for that role come with it.
+
+```typescript
+import { TurboSign, ValidationError } from '@turbodocx/sdk';
+
+// Role keys are shown under "Use via API" on the template's page in TurboDocx, or read them here.
+const { roles } = await TurboSign.getTemplateSignatureSetup(templateId);
+// roles (in signing order): [{ key: 'client', label: 'Client', order: 1, hasSavedSigner: false, fieldCount: 3 },
+//   { key: 'countersigner', label: 'Countersigner', order: 2, hasSavedSigner: true,
+//     defaultName: 'Sam Lee', defaultEmail: 'sam@yourco.com', fieldCount: 2 }]
+
+try {
+  const result = await TurboSign.sendSignature({
+    templateId,
+    documentName: 'Services Agreement - Acme',
+    recipients: [
+      { role: 'client', name: 'Jane Doe', email: 'jane@client.com' }, // no signingOrder needed
+      // 'countersigner' left out: the signer saved on the template is used
+    ],
+    // no `fields`: each role's saved fields are used
+  });
+  console.log(result.documentId);
+} catch (err) {
+  if (err instanceof ValidationError && err.code === 'UnknownSignerRole') {
+    // err.message names the bad role and lists the template's roles
+  }
+  throw err;
+}
+```
+
+`getTemplateSignatureSetup(templateId)` returns `{ templateId, roles: TemplateSignatureRole[] }`; each role is `{ key, label, order, hasSavedSigner, defaultName?, defaultEmail?, fieldCount }`, and `key` is the value for `recipients[].role`.
+
+- Roles sign in the order saved on the template, so a recipient with a `role` needs no `signingOrder`; recipients without a `role` sign after them.
+- A role left out uses the template's saved signer. If it has none, the API returns a 400 naming the role. Pass a role that has a saved signer to send to someone else this time.
+- An unknown role returns a 400 (`ValidationError`, `code === 'UnknownSignerRole'`) whose message lists the template's roles.
+- `fields` is optional here; any fields you pass are **added** to the template's (for example an extra witness signature).
+- `role` works the same way on `createSignatureReviewLink` and on `createEmbeddedSignature` recipients. For embedded signing pass every role: a role left out falls back to its saved signer, who gets no embed URL from that call.
+
 ### Optional fields
 
 ```typescript
@@ -1559,6 +1599,7 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode`, `code`, and
 | `TurboSign.configure(config)` | Set apiKey, orgId, senderEmail, senderName |
 | `TurboSign.createSignatureReviewLink(request)` | Prepare a document and get a preview URL (no emails sent) |
 | `TurboSign.sendSignature(request)` | Prepare a document and immediately email recipients |
+| `TurboSign.getTemplateSignatureSetup(templateId)` | List a template's signer roles (`key`, `order`, `hasSavedSigner`, `fieldCount`) to send it with `recipients[].role` |
 | `TurboSign.getStatus(documentId)` | Get current document status + expiresAt |
 | `TurboSign.download(documentId)` | Download signed PDF as `Blob` |
 | `TurboSign.void(documentId, reason)` | Cancel a signature request (reason is required) |
