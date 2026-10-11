@@ -146,7 +146,7 @@ try {
 - A role left out uses the template's saved signer. If it has none, the API returns a 400 naming the role. Pass a role that has a saved signer to send to someone else this time.
 - An unknown role returns a 400 (`ValidationError`, `code === 'UnknownSignerRole'`) whose message lists the template's roles.
 - `fields` is optional here; any fields you pass are **added** to the template's (for example an extra witness signature).
-- `role` works the same way on `createSignatureReviewLink` and on `createEmbeddedSignature` recipients. For embedded signing pass every role: a role left out falls back to its saved signer, who gets no embed URL from that call.
+- `role` works the same way on `createSignatureReviewLink` and on `createEmbeddedSignature` recipients. A role left out falls back to its saved signer, who also gets an embed URL in the result, so match result entries to signers by email or role rather than by position.
 
 ### Optional fields
 

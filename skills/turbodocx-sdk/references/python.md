@@ -119,7 +119,7 @@ except ValidationError as e:
 - A role left out uses the template's saved signer. If it has none, the API returns a 400 naming the role. Pass a role that has a saved signer to send to someone else this time.
 - An unknown role raises `ValidationError` (400, `e.code == "UnknownSignerRole"`) whose message lists the template's roles.
 - `fields` is optional here (sent as `[]` when omitted); any fields you pass are **added** to the template's (for example an extra witness signature).
-- `role` works the same way on `create_signature_review_link()` and on `create_embedded_signature()` recipients. For embedded signing pass every role: a role left out falls back to its saved signer, who gets no embed URL from that call.
+- `role` works the same way on `create_signature_review_link()` and on `create_embedded_signature()` recipients. A role left out falls back to its saved signer, who also gets an embed URL in the result, so match result entries to signers by email or role rather than by position.
 
 ### Optional fields
 
@@ -1496,6 +1496,7 @@ The exception attributes are `e.status_code` (int or `None`) and `e.code` (str) 
 |--------|-------------|
 | `TurboSign.send_signature(...)` | Send document for e-signature |
 | `TurboSign.create_signature_review_link(...)` | Preview without sending emails |
+| `TurboSign.get_template_signature_setup(template_id)` | List a template's signer roles (`key`, `order`, `hasSavedSigner`, `fieldCount`) to send it with a recipient's `"role"` |
 | `TurboSign.get_status(document_id)` | Get document-level status + expiresAt (no recipients) |
 | `TurboSign.download(document_id)` | Download signed PDF as bytes |
 | `TurboSign.void_document(document_id, reason)` | Cancel a signature request (reason required) |

@@ -122,7 +122,7 @@ fmt.Println(result.DocumentID)
 - A role left out uses the template's saved signer. If it has none, the API returns a 400 naming the role. Pass a role that has a saved signer to send to someone else this time.
 - An unknown role returns a 400 (`*turbodocx.ValidationError` with `Code` `"UnknownSignerRole"`) whose message lists the template's roles.
 - `Fields` is optional here (sent as `[]` when nil); any fields you pass are **added** to the template's (for example an extra witness signature).
-- `Role` works the same way on `CreateSignatureReviewLink` and on `EmbeddedSignatureRecipient` for `CreateEmbeddedSignature`. For embedded signing pass every role: a role left out falls back to its saved signer, who gets no embed URL from that call.
+- `Role` works the same way on `CreateSignatureReviewLink` and on `EmbeddedSignatureRecipient` for `CreateEmbeddedSignature`. A role left out falls back to its saved signer, who also gets an embed URL in the result, so match result entries to signers by email or role rather than by position.
 
 ### Optional fields
 
@@ -1752,6 +1752,7 @@ Every typed error embeds `turbodocx.TurboDocxError`, so `Code` (string), `Messag
 |--------|-------------|
 | `client.TurboSign.SendSignature(ctx, req)` | Send document for e-signature |
 | `client.TurboSign.CreateSignatureReviewLink(ctx, req)` | Preview without emails |
+| `client.TurboSign.GetTemplateSignatureSetup(ctx, templateID)` | List a template's signer roles (`Key`, `Order`, `HasSavedSigner`, `FieldCount`) to send it with `Recipient.Role` |
 | `client.TurboSign.GetStatus(ctx, id)` | Get document-level status + expiresAt (no recipients) |
 | `client.TurboSign.Download(ctx, id)` | Download signed PDF as []byte |
 | `client.TurboSign.VoidDocument(ctx, id, reason)` | Cancel a signature request (reason required) |
