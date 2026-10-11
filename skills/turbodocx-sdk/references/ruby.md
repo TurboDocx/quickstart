@@ -106,11 +106,11 @@ result["recipients"].each { |r| puts "#{r['name']} <#{r['email']}> #{r['id']}" }
 
 Fields support either coordinate-based placement (`page` + `x`/`y`/`width`/`height`) or anchor-based placement via `template: { anchor: "{signature1}", placement: "replace", size: { width: 100, height: 30 } }`. The anchor text must literally exist in the document.
 
-### Choosing field placement (in this order)
+### Choosing field placement
 
 1. **A template set up in TurboDocx, sent by signer role** (recommended for any document sent more than once). Set it up once in the TurboDocx UI: upload the PDF as a template, add each signer as a role, drag their fields onto the page, save the signature setup. Code then sends by `role` with no field positions at all (next section).
 2. **Text anchors** when your code generates or controls the document text: put a tag such as `{ClientSignature}` where the field goes (its own text, one distinct tag per signer and field) and place the field with `template: { anchor: "{ClientSignature}", placement: "replace" }`.
-3. **Coordinates** (`page` + `x`/`y`/`width`/`height`) only as a last resort, for a fixed third-party PDF you can neither tag nor set up as a template. They break silently when the layout moves; check placement with a review link before sending.
+3. **Coordinates** (`page` + `x`/`y`/`width`/`height`). Fully supported: if you already know the positions, use them directly. When you don't, options 1 and 2 are easier than measuring. Coordinates need re-measuring if the layout moves; a review link lets you check placement before sending.
 
 ### Send a template with signer roles
 

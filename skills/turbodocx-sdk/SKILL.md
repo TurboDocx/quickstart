@@ -181,10 +181,10 @@ The config file should:
 
 Create working route handlers / endpoint code for the selected product(s). The language reference contains exact method signatures, request shapes, and response shapes — follow those, don't guess.
 
-**Field placement for TurboSign: always nudge in this order.** Pick the first that fits; if the request doesn't make it clear, ask once with AskUserQuestion listing these three options in this order (option 1 marked recommended for a document sent more than once):
+**Field placement for TurboSign.** Coordinates are fully supported. If the user gives field positions (page plus x/y) or says they know them, use them as given: no pushback, no "last resort" framing, no question about switching methods. Only when the user hasn't given positions or doesn't know them, steer toward the options that are easier to build and maintain, in this order. Pick the first that fits; if the request doesn't make it clear, ask once with AskUserQuestion listing these three options in this order (option 1 marked recommended for a document sent more than once):
 1. **Template set up in TurboDocx, sent by signer role** (recommended). For any document that goes out more than once, tell the user to set it up once in the TurboDocx UI (upload the PDF as a template, add each signer as a role such as "Client", drag each role's fields onto the page, save the signature setup) and generate code that sends it by `role` with no field positions. Do this even when the user only described a recurring document and hasn't set anything up yet: say what to click in the UI, then use the role path.
 2. **Text anchors** (e.g. `{ClientSignature}`) when the user's own code generates or controls the document text (their DOCX/HTML, a TurboDocx deliverable): place the tag in the document and the field with `template: { anchor, placement: 'replace' }`.
-3. **Coordinates** only as a last resort: a fixed third-party PDF the user can neither tag nor set up as a template. Say why it is last (it breaks silently when the layout moves) and pair it with `createSignatureReviewLink()` so placement is checked before anything is sent.
+3. **Coordinates** the user measures on the page (`page` + `x`/`y`/`width`/`height`). Fully supported; they just take more work to get right and need re-measuring if the layout moves. Offer `createSignatureReviewLink()` so placement can be checked before anything is sent.
 
 **For TurboSign, generate:**
 - `sendSignature()` endpoint — accepts file (or `fileLink` / `deliverableId` / `templateId`), recipients, fields

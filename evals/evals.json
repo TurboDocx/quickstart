@@ -2791,7 +2791,7 @@
     {
       "id": 50,
       "prompt": "I'm a TurboDocx partner. I want to turn off the signature verification hash for one of my customer organizations without logging into their account.",
-      "expected_output": "Generates TurboPartner preferences endpoints — getOrganizationPreferences to read the tenant's current display settings and updateOrganizationPreferences sending only hideSignatureHash, wired with partner credentials",
+      "expected_output": "Generates TurboPartner preferences endpoints \u2014 getOrganizationPreferences to read the tenant's current display settings and updateOrganizationPreferences sending only hideSignatureHash, wired with partner credentials",
       "files": [
         "package.json",
         "tsconfig.json",
@@ -2807,7 +2807,7 @@
         {
           "name": "sends-only-requested-key",
           "type": "file_contains",
-          "description": "The update sends only hideSignatureHash — it does NOT also send hideSignatureOutline, lockedFieldsBackground, or allowDownloadBeforeSigning, which would overwrite the tenant's settings"
+          "description": "The update sends only hideSignatureHash \u2014 it does NOT also send hideSignatureOutline, lockedFieldsBackground, or allowDownloadBeforeSigning, which would overwrite the tenant's settings"
         },
         {
           "name": "camelcase-keys",
@@ -2982,7 +2982,7 @@
         {
           "name": "single-selector-only",
           "type": "file_not_contains",
-          "description": "The create_signing_url call does NOT also pass recipient_id alongside external_id — exactly one selector is allowed and passing both is rejected"
+          "description": "The create_signing_url call does NOT also pass recipient_id alongside external_id \u2014 exactly one selector is allowed and passing both is rejected"
         },
         {
           "name": "surfaces-url",
@@ -3040,7 +3040,7 @@
         {
           "name": "key-not-in-browser",
           "type": "file_not_contains",
-          "description": "The raw API key / TURBODOCX_API_KEY does NOT appear in the client-side / browser-facing code — only the minted URL reaches the browser, the key stays server-side"
+          "description": "The raw API key / TURBODOCX_API_KEY does NOT appear in the client-side / browser-facing code \u2014 only the minted URL reaches the browser, the key stays server-side"
         },
         {
           "name": "routes-wired",
@@ -3258,7 +3258,7 @@
     {
       "id": 63,
       "prompt": "Add e-signature to our Express app for our consulting agreement PDF. The client signature line is on page 3 at about x=100, y=650 (letter size). Just send it to the client email we pass in.",
-      "expected_output": "Before using the given coordinates, recommends the better options in order: set the PDF up once as a template in TurboDocx with a Client role and send by role (no positions in code), or put an anchor tag in the document. If it still generates the coordinate send, it frames coordinates as the last resort and pairs them with createSignatureReviewLink so placement is checked before sending",
+      "expected_output": "Uses the given coordinates (page 3, x=100, y=650) for the client signature field without pushing back or calling coordinates a last resort. May add a short optional tip about templates with roles for recurring sends, but does not block on it or ask the user to switch methods",
       "files": [
         "package.json",
         "src/app.js",
@@ -3266,19 +3266,14 @@
       ],
       "assertions": [
         {
-          "name": "recommends-template-setup",
-          "type": "output_contains",
-          "description": "The response tells the user to set the PDF up once as a template in TurboDocx (add signer roles, drag the fields, save the signature setup)"
-        },
-        {
-          "name": "offers-ladder-before-coordinates",
-          "type": "output_contains",
-          "description": "The reply presents the template-with-roles option (and anchors) as preferred over the given coordinates, explaining why coordinates are the last resort"
-        },
-        {
-          "name": "coordinates-checked-with-review-link",
+          "name": "uses-given-coordinates",
           "type": "file_contains",
-          "description": "If coordinates are used in code, a createSignatureReviewLink endpoint or call is generated so placement is checked before sending (a role-based send instead also satisfies this)"
+          "description": "The signature field is placed on page 3 at x=100, y=650 as the user specified"
+        },
+        {
+          "name": "no-pushback-on-coordinates",
+          "type": "output_not_contains",
+          "description": "The reply does not call coordinates a last resort, does not argue against using them, and does not ask the user to choose a different placement method before generating the code"
         }
       ]
     },
@@ -3305,6 +3300,33 @@
           "name": "no-coordinates",
           "type": "file_not_contains",
           "description": "No page/x/y coordinates are hardcoded for the signature field"
+        }
+      ]
+    },
+    {
+      "id": 65,
+      "prompt": "Add e-signature to our Express app for our standard consulting agreement PDF. We send it to every new client and they sign on the last page. Just send it to the client email we pass in.",
+      "expected_output": "Since no field positions were given, steers toward setting the PDF up once as a template in TurboDocx with a Client role (upload, add the role, drag the signature field, save the signature setup) and generates a send by role with no field positions; mentions anchors as the alternative if they control the document text. Does not invent page/x/y coordinates",
+      "files": [
+        "package.json",
+        "src/app.js",
+        "src/routes/index.js"
+      ],
+      "assertions": [
+        {
+          "name": "recommends-template-setup",
+          "type": "output_contains",
+          "description": "The response tells the user to set the PDF up once as a template in TurboDocx (add a Client role, drag the fields, save the signature setup)"
+        },
+        {
+          "name": "sends-by-role",
+          "type": "file_contains",
+          "description": "The generated send passes templateId and a recipient with role (e.g. client) and no fields"
+        },
+        {
+          "name": "no-invented-coordinates",
+          "type": "file_not_contains",
+          "description": "No guessed page/x/y coordinates are hardcoded for the signature field"
         }
       ]
     }
