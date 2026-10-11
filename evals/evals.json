@@ -3254,6 +3254,59 @@
           "description": "ValidationError is caught (optionally checking code == 'UnknownSignerRole') and its message is returned to the caller"
         }
       ]
+    },
+    {
+      "id": 63,
+      "prompt": "Add e-signature to our Express app for our consulting agreement PDF. The client signature line is on page 3 at about x=100, y=650 (letter size). Just send it to the client email we pass in.",
+      "expected_output": "Before using the given coordinates, recommends the better options in order: set the PDF up once as a template in TurboDocx with a Client role and send by role (no positions in code), or put an anchor tag in the document. If it still generates the coordinate send, it frames coordinates as the last resort and pairs them with createSignatureReviewLink so placement is checked before sending",
+      "files": [
+        "package.json",
+        "src/app.js",
+        "src/routes/index.js"
+      ],
+      "assertions": [
+        {
+          "name": "recommends-template-setup",
+          "type": "output_contains",
+          "description": "The response tells the user to set the PDF up once as a template in TurboDocx (add signer roles, drag the fields, save the signature setup)"
+        },
+        {
+          "name": "offers-ladder-before-coordinates",
+          "type": "output_contains",
+          "description": "The reply presents the template-with-roles option (and anchors) as preferred over the given coordinates, explaining why coordinates are the last resort"
+        },
+        {
+          "name": "coordinates-checked-with-review-link",
+          "type": "file_contains",
+          "description": "If coordinates are used in code, a createSignatureReviewLink endpoint or call is generated so placement is checked before sending (a role-based send instead also satisfies this)"
+        }
+      ]
+    },
+    {
+      "id": 64,
+      "prompt": "We generate offer letters as DOCX from our own HTML in Python (FastAPI) and need the candidate to sign at the bottom. Add e-signature.",
+      "expected_output": "Uses a text anchor such as {CandidateSignature} written into the generated document and a signature field placed by that anchor (placement replace); does not hardcode page/x/y coordinates",
+      "files": [
+        "pyproject.toml",
+        "app/main.py"
+      ],
+      "assertions": [
+        {
+          "name": "anchor-in-document",
+          "type": "file_contains",
+          "description": "The generated document HTML/DOCX includes a distinct anchor tag such as {CandidateSignature}"
+        },
+        {
+          "name": "anchor-field",
+          "type": "file_contains",
+          "description": "send_signature fields place the signature by that anchor with placement \"replace\""
+        },
+        {
+          "name": "no-coordinates",
+          "type": "file_not_contains",
+          "description": "No page/x/y coordinates are hardcoded for the signature field"
+        }
+      ]
     }
   ]
 }

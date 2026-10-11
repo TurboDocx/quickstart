@@ -181,6 +181,11 @@ The config file should:
 
 Create working route handlers / endpoint code for the selected product(s). The language reference contains exact method signatures, request shapes, and response shapes — follow those, don't guess.
 
+**Field placement for TurboSign: always nudge in this order.** Pick the first that fits; if the request doesn't make it clear, ask once with AskUserQuestion listing these three options in this order (option 1 marked recommended for a document sent more than once):
+1. **Template set up in TurboDocx, sent by signer role** (recommended). For any document that goes out more than once, tell the user to set it up once in the TurboDocx UI (upload the PDF as a template, add each signer as a role such as "Client", drag each role's fields onto the page, save the signature setup) and generate code that sends it by `role` with no field positions. Do this even when the user only described a recurring document and hasn't set anything up yet: say what to click in the UI, then use the role path.
+2. **Text anchors** (e.g. `{ClientSignature}`) when the user's own code generates or controls the document text (their DOCX/HTML, a TurboDocx deliverable): place the tag in the document and the field with `template: { anchor, placement: 'replace' }`.
+3. **Coordinates** only as a last resort: a fixed third-party PDF the user can neither tag nor set up as a template. Say why it is last (it breaks silently when the layout moves) and pair it with `createSignatureReviewLink()` so placement is checked before anything is sent.
+
 **For TurboSign, generate:**
 - `sendSignature()` endpoint — accepts file (or `fileLink` / `deliverableId` / `templateId`), recipients, fields
 - If the user sends **the same document repeatedly with different signers**, or says the template, its signers (roles such as "Client" / "Countersigner") or its fields are already set up in TurboDocx: send the template by **signer role**. Pass `templateId` plus `recipients` that each carry a `role` (the role key) with a name and email, and **omit `fields` and `signingOrder`**: each role's saved fields and the template's signing order come with it, so never invent coordinates or anchors for this case. Generate a `getTemplateSignatureSetup(templateId)` helper or endpoint too (it lists each role's `key`, `order`, `hasSavedSigner`, `fieldCount`); role keys are also shown under "Use via API" on the template page. A role left out uses the template's saved signer; a role with no saved signer that is left out, or a role the template doesn't have, is a 400 (`UnknownSignerRole` for the latter) whose message names the role, so surface that message. Any `fields` passed are added to the template's. The language reference's "Send a template with signer roles" section has the exact per-language shape (Java `Recipient.withRole(...)`, PHP named arg `role:`, Go `Role:`).
@@ -272,6 +277,11 @@ Next Steps:
 1. Get your API credentials at https://app.turbodocx.com
 2. Update .env with your credentials
 3. Start your server and test the endpoints
+
+[If the code places fields by coordinates or anchors and the document is sent more than once:]
+Tip: set this document up once as a template in TurboDocx (add signer roles, drag the fields
+on, save the signature setup), then send it by role. No field positions in code, and anyone on
+your team can adjust the fields without a deploy.
 
 Documentation: https://docs.turbodocx.com/docs
 OpenAPI spec (all endpoints): https://github.com/TurboDocx/SDK/blob/main/openapi.yaml
