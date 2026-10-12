@@ -63,7 +63,7 @@ The SDK resolves configuration in this order (first found wins):
 ## Common Gotchas
 
 - **`senderEmail` is required** for all TurboSign operations. Without it, `sendSignature()` will throw a `ValidationError`.
-- **PowerPoint (PPTX) files, templates and deliverables cannot be sent for signature.** TurboSign refuses them with a 400 `SignatureNotSupportedForPresentation`; use a Word or PDF version.
+- **PowerPoint (PPTX) templates and deliverables cannot be sent for signature.** TurboSign refuses them with a 400 `SignatureNotSupportedForPresentation`; use a Word or PDF version. An uploaded .pptx file is still converted and sent.
 - **Partner keys are distinct from regular API keys.** Using a regular API key with TurboPartner methods will return `AuthenticationError`.
 - **Don't commit `.env`** — always add it to `.gitignore`. Use `.env.example` with placeholder values for documentation.
 - **Org ID vs Partner ID** — these are different UUIDs. The org ID identifies your organization; the partner ID identifies your partner account. Don't mix them up.
