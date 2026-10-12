@@ -121,7 +121,8 @@ fmt.Println(result.DocumentID)
 - Roles sign in the order saved on the template, so a recipient with a `Role` needs no `SigningOrder` (it is `omitempty`, 0 is left off the wire); recipients without a `Role` sign after them.
 - A role left out uses the template's saved signer. If it has none, the API returns a 400 naming the role. Pass a role that has a saved signer to send to someone else this time.
 - An unknown role returns a 400 (`*turbodocx.ValidationError` with `Code` `"UnknownSignerRole"`) whose message lists the template's roles.
-- `Fields` is optional here (sent as `[]` when nil); any fields you pass are **added** to the template's (for example an extra witness signature).
+- `Fields` is optional only when a recipient names a `role` (it is left out of the request when empty); any fields you pass are **added** to the template's (for example an extra witness signature). Without roles `Fields` is required and must not be empty (400 `FieldsRequired`).
+- Roles only work for a PDF signature template. A Word template needs a deliverable generated first and sent with `deliverableId`; a PowerPoint template cannot be sent for signature at all (400 `SignatureNotSupportedForPresentation`).
 - `Role` works the same way on `CreateSignatureReviewLink` and on `EmbeddedSignatureRecipient` for `CreateEmbeddedSignature`. A role left out falls back to its saved signer, who also gets an embed URL in the result, so match result entries to signers by email or role rather than by position.
 
 ### Optional fields
@@ -1878,6 +1879,8 @@ Every typed error embeds `turbodocx.TurboDocxError`, so `Code` (string), `Messag
 
 ## Gotchas
 
+- **PowerPoint cannot be sent for signature.** A PPTX template or deliverable is refused with a 400 `SignatureNotSupportedForPresentation` on every send path (send, review link, from template, from deliverable, bulk). If the user asks to sign a PowerPoint, say it is not supported and suggest a Word or PDF version; do not generate code that tries to work around it. A PPTX deliverable is still fine for download.
+- **TurboSign send 400 codes** (read with `vErr.Code` (a `*turbodocx.ValidationError`); the message names the problem): `FieldsRequired` (no `Fields` and no recipient `role`), `FieldPageOutOfRange` (a field's `page` is past the last page), `UnknownSignerRole`, `DuplicateSignerRole` (two recipients for one role), `SignerRoleUnfilled` (a role has no recipient and no saved signer), `TemplateHasNoSignerRoles` (`role` used on a template with no saved setup), `RoleRequiresTemplate` (`role` without `templateId`), `TemplateRolesNeedPdfTemplate` (roles on a non-PDF template), `SignatureNotSupportedForPresentation`. Surface the message to the user.
 - **Go SDK uses instance methods**, not static methods — create a client first with `NewClientWithConfig`
 - **`SenderEmail` is required** in `ClientConfig` for TurboSign operations — `NewClientWithConfig` returns a `*turbodocx.ValidationError` without it. **`SenderName` is optional**; when omitted the sender name resolves to **the name of your API key**.
 - **Context is required** for all API calls — pass `context.Background()` or request context

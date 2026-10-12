@@ -145,7 +145,8 @@ try {
 - Roles sign in the order saved on the template, so a recipient with a `role` needs no `signingOrder`; recipients without a `role` sign after them.
 - A role left out uses the template's saved signer. If it has none, the API returns a 400 naming the role. Pass a role that has a saved signer to send to someone else this time.
 - An unknown role returns a 400 (`ValidationError`, `code === 'UnknownSignerRole'`) whose message lists the template's roles.
-- `fields` is optional here; any fields you pass are **added** to the template's (for example an extra witness signature).
+- `fields` is optional only when a recipient names a `role` (it is left out of the request when empty); any fields you pass are **added** to the template's (for example an extra witness signature). Without roles `fields` is required and must not be empty (400 `FieldsRequired`).
+- Roles only work for a PDF signature template. A Word template needs a deliverable generated first and sent with `deliverableId`; a PowerPoint template cannot be sent for signature at all (400 `SignatureNotSupportedForPresentation`).
 - `role` works the same way on `createSignatureReviewLink` and on `createEmbeddedSignature` recipients. A role left out falls back to its saved signer, who also gets an embed URL in the result, so match result entries to signers by email or role rather than by position.
 
 ### Optional fields
@@ -1808,8 +1809,10 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode`, `code`, and
 
 ## Gotchas
 
+- **PowerPoint cannot be sent for signature.** A PPTX template or deliverable is refused with a 400 `SignatureNotSupportedForPresentation` on every send path (send, review link, from template, from deliverable, bulk). If the user asks to sign a PowerPoint, say it is not supported and suggest a Word or PDF version; do not generate code that tries to work around it. A PPTX deliverable is still fine for download.
+- **TurboSign send 400 codes** (read with `err.code`; the message names the problem): `FieldsRequired` (no `fields` and no recipient `role`), `FieldPageOutOfRange` (a field's `page` is past the last page), `UnknownSignerRole`, `DuplicateSignerRole` (two recipients for one role), `SignerRoleUnfilled` (a role has no recipient and no saved signer), `TemplateHasNoSignerRoles` (`role` used on a template with no saved setup), `RoleRequiresTemplate` (`role` without `templateId`), `TemplateRolesNeedPdfTemplate` (roles on a non-PDF template), `SignatureNotSupportedForPresentation`. Surface the message to the user.
 - **`senderEmail` is required** for `TurboSign.configure()` — without it `ValidationError` is thrown. `senderName` is optional; when omitted it resolves to **your API key's name** (name your keys accordingly). An API-key send with no resolvable sender email is rejected with `400 SenderEmailRequired`.
-- **File input** to TurboSign accepts: `Buffer`, file-path `string`, browser `File`, remote URL (`fileLink`), `deliverableId`, or `templateId`. Magic-byte detection identifies PDF / DOCX / PPTX automatically.
+- **File input** to TurboSign accepts: `Buffer`, file-path `string`, browser `File`, remote URL (`fileLink`), `deliverableId`, or `templateId`. Magic-byte detection identifies PDF and DOCX automatically (a PPTX is detected too but is refused for signing, see below).
 - **Template anchors** like `{signature1}` must literally exist in the document text for `template.anchor` field placement to work.
 - **Pagination uses `offset`, not `page`**, across all `list*` methods. Defaults vary (Deliverable defaults to 6, partner list endpoints to ~25).
 - **`updateOrganizationEntitlements` takes `{ features?, tracking? }`** — not a bare features object. `features` holds capability/limit columns (`maxUsers`, `maxStorage`, `maxSignatures`, `hasTDAI`, …); `tracking` holds usage counters and uses the `num*` key names: `numUsers`, `numProjectspaces`, `numTemplates`, `storageUsed`, `numGeneratedDeliverables`, `numSignaturesUsed`, `numQuotesSent`, `currentAICredits`. The two key sets are not interchangeable — a `maxUsers` key inside `tracking` is rejected. `currentAICredits` accepts `-1` (unlimited); every other counter floors at 0.

@@ -448,7 +448,8 @@
       "expected_output": "Creates config with both clients, Gin handlers using *gin.Context, routes with r.POST/r.GET, .env with all 6 vars",
       "files": [
         "go.mod",
-        "main.go",
+        "cmd/server/main.go",
+        "internal/handlers/.gitkeep",
         "internal/handlers/.gitkeep",
         "internal/config/.gitkeep"
       ],
@@ -1908,7 +1909,8 @@
       "expected_output": "Configures the TurboDocx Go SDK quote client (api key + org id, no sender email), a handler that calls quoteClient.GetQuoteNumberConfig(ctx) and quoteClient.UpdateQuoteNumberConfig(ctx, &turbodocx.QuoteNumberFormat{...}) using the typed struct + typed enum constants (QuoteNumberYearTokenNone, QuoteNumberResetCadenceNever), wires the GET+PATCH handlers, and reads env TURBODOCX_API_KEY + TURBODOCX_ORG_ID. PascalCase method names; no invented methods.",
       "files": [
         "go.mod",
-        "main.go"
+        "cmd/server/main.go",
+        "internal/handlers/.gitkeep"
       ],
       "assertions": [
         {
@@ -2277,7 +2279,8 @@
       "expected_output": "Creates a TurboQuote config (apiKey + orgId, NO senderEmail), a handler that calls qc.BulkCreateProducts(ctx, rows) once with a slice of CreateProductRequest rows, and reports partial-success results by reading result.Imported, result.Failed (each BulkImportRowIssue { Row, Reason }, Row 1-indexed), and result.Adjusted \u2014 NOT assuming all-or-nothing and NOT looping CreateProduct per row. Adds .env with TURBODOCX_API_KEY + TURBODOCX_ORG_ID. PascalCase method names; no invented methods.",
       "files": [
         "go.mod",
-        "main.go"
+        "cmd/server/main.go",
+        "internal/handlers/.gitkeep"
       ],
       "assertions": [
         {
@@ -2482,7 +2485,8 @@
       "expected_output": "Creates a Deliverable config built with turbodocx.NewDeliverableClientOnly (apiKey + orgId, NO SenderEmail), a handler that calls dc.GenerateDeliverable(ctx, &turbodocx.CreateDeliverableRequest{TemplateID: ..., Variables: ...}) then dc.DownloadPDF(ctx, deliverableID), wires the handler into main.go, and adds .env with TURBODOCX_API_KEY + TURBODOCX_ORG_ID (no sender vars, no partner vars). PascalCase method names with camelCase-serialized payload keys (templateId).",
       "files": [
         "go.mod",
-        "main.go"
+        "cmd/server/main.go",
+        "internal/handlers/.gitkeep"
       ],
       "assertions": [
         {
@@ -2881,7 +2885,8 @@
       "expected_output": "Generates a SendSignature handler where the Notes text field sets Required: turbodocx.BoolPtr(false); Field.Required is a *bool, so a plain bool literal does not compile",
       "files": [
         "go.mod",
-        "main.go"
+        "cmd/server/main.go",
+        "internal/handlers/.gitkeep"
       ],
       "assertions": [
         {
@@ -3140,7 +3145,8 @@
       "expected_output": "SendSignature with SendEmail: &sendEmail (false) and a comment that signing-link, reminder and expiry-warning emails are suppressed while passcode and completed-copy emails still go out; Recipient.ExternalID set; CreateSigningURL by ExternalID; ExpiresAt handled as a *string that is the document's expiry or nil when the document does not expire",
       "files": [
         "go.mod",
-        "main.go"
+        "cmd/server/main.go",
+        "internal/handlers/.gitkeep"
       ],
       "assertions": [
         {
@@ -3327,6 +3333,65 @@
           "name": "no-invented-coordinates",
           "type": "file_not_contains",
           "description": "No guessed page/x/y coordinates are hardcoded for the signature field"
+        }
+      ]
+    },
+    {
+      "id": 66,
+      "prompt": "Our Go service sends the same onboarding agreement every week. It's a PDF template in TurboDocx with Client and Countersigner roles and the fields already placed. Write the handler that sends it to the new client.",
+      "expected_output": "Uses TurboSign client SendSignature with TemplateID and a recipient carrying Role (the role key) plus Name and Email; does not set Fields or SigningOrder, so the SDK leaves fields out of the request and the template's saved fields are used; surfaces a ValidationError message (e.g. UnknownSignerRole or SignerRoleUnfilled) to the caller",
+      "files": [
+        "go.mod",
+        "cmd/server/main.go",
+        "internal/handlers/.gitkeep"
+      ],
+      "assertions": [
+        {
+          "name": "template-id-with-role",
+          "type": "file_contains",
+          "description": "SendSignature is called with TemplateID and a recipient whose Role is the template's role key, with Name and Email"
+        },
+        {
+          "name": "no-fields-set",
+          "type": "file_not_contains",
+          "description": "No Fields slice, field coordinates or anchors are built for this send"
+        },
+        {
+          "name": "no-signing-order",
+          "type": "file_not_contains",
+          "description": "The role recipient does not set SigningOrder"
+        },
+        {
+          "name": "surfaces-validation-error",
+          "type": "file_contains",
+          "description": "A *turbodocx.ValidationError is caught (errors.As) and its message is returned to the caller"
+        }
+      ]
+    },
+    {
+      "id": 67,
+      "prompt": "We keep our sales proposals as a PowerPoint template in TurboDocx. Add an endpoint to our Express app that generates one for a customer and sends the .pptx out for e-signature.",
+      "expected_output": "Explains that TurboSign cannot send PowerPoint (PPTX) templates or deliverables for signature (the API returns 400 SignatureNotSupportedForPresentation) and suggests a Word or PDF version instead; does not generate code that sends the PPTX deliverable with sendSignature or tries to work around the restriction",
+      "files": [
+        "package.json",
+        "src/app.js",
+        "src/routes/index.js"
+      ],
+      "assertions": [
+        {
+          "name": "explains-not-supported",
+          "type": "output_contains",
+          "description": "The reply says PowerPoint (PPTX) cannot be sent for signature and mentions SignatureNotSupportedForPresentation or that TurboSign does not support it"
+        },
+        {
+          "name": "suggests-word-or-pdf",
+          "type": "output_contains",
+          "description": "The reply suggests using a Word (DOCX) or PDF version of the document for signing"
+        },
+        {
+          "name": "no-pptx-send",
+          "type": "file_not_contains",
+          "description": "No sendSignature or createSignatureReviewLink call is made with a PPTX deliverableId or PPTX template"
         }
       ]
     }
