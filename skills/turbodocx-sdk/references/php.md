@@ -134,7 +134,7 @@ try {
 - A role left out uses the template's saved signer. If it has none, the API returns a 400 naming the role. Pass a role that has a saved signer to send to someone else this time.
 - An unknown role throws a `ValidationException` (400, `$e->errorCode === 'UnknownSignerRole'`) whose message lists the template's roles.
 - `fields` is optional only when a recipient names a `role` (it is left out of the request when empty); any fields you pass are **added** to the template's (for example an extra witness signature). Without roles, fields are required and must not be empty (400 `FieldsRequired`).
-- Roles only work for a PDF signature template. A Word template needs a deliverable generated first and sent with `deliverableId`; a PowerPoint template cannot be sent for signature at all (400 `SignatureNotSupportedForPresentation`).
+- Roles only work for a PDF signature template. A Word template needs a deliverable generated first and sent with `deliverableId`.
 - `role` works the same way on `createSignatureReviewLink()` (`Recipient`) and `createEmbeddedSignature()` (`EmbeddedSignatureRecipient`). A role left out falls back to its saved signer, who also gets an embed URL in the result, so match result entries to signers by email or role rather than by position.
 
 ### Optional fields
@@ -1906,7 +1906,6 @@ otherwise the class default — `VALIDATION_ERROR`, `AUTHENTICATION_ERROR`, `AUT
 
 ## Gotchas
 
-- **PowerPoint cannot be sent for signature.** A PPTX template or deliverable is refused with a 400 `SignatureNotSupportedForPresentation` on every send path (send, review link, from template, from deliverable, bulk). If the user asks to sign a PowerPoint, say it is not supported and suggest a Word or PDF version; do not generate code that tries to work around it. A PPTX deliverable is still fine for download.
 - **TurboSign send 400 codes** (read with `$e->errorCode`; the message names the problem): `FieldsRequired` (no fields and no recipient `role`), `FieldPageOutOfRange` (a field's `page` is past the last page), `UnknownSignerRole`, `DuplicateSignerRole` (two recipients for one role), `SignerRoleUnfilled` (a role has no recipient and no saved signer), `TemplateHasNoSignerRoles` (`role` used on a template with no saved setup), `RoleRequiresTemplate` (`role` without `templateId`), `TemplateRolesNeedPdfTemplate` (roles on a non-PDF template), `SignatureNotSupportedForPresentation`. Surface the message to the user.
 - **PHP 8.1+ required** for named arguments and enum support
 - **`senderEmail` is required** for TurboSign — configure globally or pass per-call; `HttpClientConfig` throws `ValidationException` without it. **`senderName` is optional** — when omitted the sender name resolves to **the API key's name** (not the org name), so name your keys recognisably.

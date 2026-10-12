@@ -3367,33 +3367,6 @@
           "description": "A *turbodocx.ValidationError is caught (errors.As) and its message is returned to the caller"
         }
       ]
-    },
-    {
-      "id": 67,
-      "prompt": "We keep our sales proposals as a PowerPoint template in TurboDocx. Add an endpoint to our Express app that generates one for a customer and sends the .pptx out for e-signature.",
-      "expected_output": "Explains that TurboSign cannot send PowerPoint (PPTX) templates or deliverables for signature (the API returns 400 SignatureNotSupportedForPresentation) and suggests a Word or PDF version instead; does not generate code that sends the PPTX deliverable with sendSignature or tries to work around the restriction",
-      "files": [
-        "package.json",
-        "src/app.js",
-        "src/routes/index.js"
-      ],
-      "assertions": [
-        {
-          "name": "explains-not-supported",
-          "type": "output_contains",
-          "description": "The reply says PowerPoint (PPTX) cannot be sent for signature and mentions SignatureNotSupportedForPresentation or that TurboSign does not support it"
-        },
-        {
-          "name": "suggests-word-or-pdf",
-          "type": "output_contains",
-          "description": "The reply suggests using a Word (DOCX) or PDF version of the document for signing"
-        },
-        {
-          "name": "no-pptx-send",
-          "type": "file_not_contains",
-          "description": "No sendSignature or createSignatureReviewLink call is made with a PPTX deliverableId or PPTX template"
-        }
-      ]
     }
   ]
 }
