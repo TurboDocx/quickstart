@@ -1626,7 +1626,7 @@ The exception attributes are `e.status_code` (int or `None`) and `e.code` (str) 
 
 ## Gotchas
 
-- **TurboSign send 400 codes** (read with `e.code`; the message names the problem): `FieldsRequired` (no `fields` and no recipient `role`), `FieldPageOutOfRange` (a field's `page` is past the last page), `UnknownSignerRole`, `DuplicateSignerRole` (two recipients for one role), `SignerRoleUnfilled` (a role has no recipient and no saved signer), `TemplateHasNoSignerRoles` (`role` used on a template with no saved setup), `RoleRequiresTemplate` (`role` without `templateId`), `TemplateRolesNeedPdfTemplate` (roles on a non-PDF template), `SignatureNotSupportedForPresentation`. Surface the message to the user.
+- **TurboSign send 400 codes** (read with `e.code`; the message names the problem): `FieldsRequired` (no `fields` and no recipient `role`), `FieldPageOutOfRange` (a field's `page` is past the last page), `UnknownSignerRole`, `DuplicateSignerRole` (two recipients for one role), `SignerRoleUnfilled` (a role has no recipient and no saved signer), `TemplateHasNoSignerRoles` (`role` used on a template with no saved setup), `RoleRequiresTemplate` (`role` without `templateId`), `TemplateRolesNeedPdfTemplate` (roles on a non-PDF template). Surface the message to the user.
 - **All SDK methods are async** — use `await` in async functions, or `asyncio.run()` for sync contexts
 - **`sender_email` is required** — configure it globally or pass per-call
 - **Flask needs asyncio.run()** wrapping since Flask routes are synchronous by default
