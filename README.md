@@ -34,7 +34,7 @@ Works with any tool that supports the Agent Skills standard: Claude Code, GitHub
 |:---------|:--------|:-----------|
 | <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/typescript/typescript-original.svg" width="20"/> **JavaScript/TypeScript** | `@turbodocx/sdk` | Express, Next.js, Fastify, NestJS, etc. |
 | <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/python/python-original.svg" width="20"/> **Python** | `turbodocx-sdk` | FastAPI, Flask, Django |
-| <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/go/go-original.svg" width="20"/> **Go** | `github.com/turbodocx/sdk` | Gin, Echo, Fiber, net/http |
+| <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/go/go-original.svg" width="20"/> **Go** | `github.com/TurboDocx/SDK/packages/go-sdk` | Gin, Echo, Fiber, net/http |
 | <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/php/php-original.svg" width="20"/> **PHP** | `turbodocx/sdk` | Laravel, Symfony |
 | <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/java/java-original.svg" width="20"/> **Java** | `com.turbodocx:turbodocx-sdk` | Spring Boot, Micronaut, Quarkus |
 | <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/ruby/ruby-original.svg" width="20"/> **Ruby** | `turbodocx-sdk` | Rails, Sinatra, Rack |
