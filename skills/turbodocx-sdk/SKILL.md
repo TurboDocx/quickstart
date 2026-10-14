@@ -3,7 +3,7 @@ name: turbodocx-sdk
 description: Install TurboDocx SDK and generate integration code for TurboSign (digital signatures), Deliverable (template-based document generation), TurboPartner (partner management), TurboWebhooks (signature event subscriptions), and/or TurboQuote (sales quotes and proposals). Use when the user wants to add e-signatures, document signing, generate documents from templates with variable substitution, partner organization management, signature webhooks, build quotes/proposals/CPQ with products and price books, or any TurboDocx/TurboSign/TurboPartner/Deliverable/TurboWebhooks/TurboQuote functionality to their project. Supports JavaScript, TypeScript, Python, Go, PHP, Java, and Ruby.
 metadata:
   author: TurboDocx
-  version: "1.7.0"
+  version: "1.8.0"
 license: MIT
 ---
 
@@ -46,7 +46,7 @@ Otherwise, ask which products they need. Use AskUserQuestion with multi-select:
 ```
 Which TurboDocx products do you need? (select all that apply)
 
-1. TurboSign   — Send documents for e-signature, generate preview/review links before sending, embed in-app signing (iframe/kiosk/widget) with email or SMS OTP identity verification, track status, download signed PDFs, void, resend, audit trail
+1. TurboSign   — Send documents for e-signature (or send a template set up in TurboDocx by naming each signer's role), generate preview/review links before sending, embed in-app signing (iframe/kiosk/widget) with email or SMS OTP identity verification, track status, download signed PDFs, void, resend, audit trail
 2. Deliverable — Generate documents from templates with variable substitution (DOCX/PPTX/PDF output)
 ```
 
@@ -181,8 +181,16 @@ The config file should:
 
 Create working route handlers / endpoint code for the selected product(s). The language reference contains exact method signatures, request shapes, and response shapes — follow those, don't guess.
 
+**Field placement for TurboSign.** Coordinates are fully supported. If the user gives field positions (page plus x/y) or says they know them, use them as given: no pushback, no "last resort" framing, no question about switching methods. Only when the user hasn't given positions or doesn't know them, steer toward the options that are easier to build and maintain, in this order. Pick the first that fits; if the request doesn't make it clear, ask once with AskUserQuestion listing these three options in this order (option 1 marked recommended for a document sent more than once):
+1. **Template set up in TurboDocx, sent by signer role** (recommended). For any document that goes out more than once, tell the user to set it up once in the TurboDocx UI (upload the PDF as a template, add each signer as a role such as "Client", drag each role's fields onto the page, save the signature setup) and generate code that sends it by `role` with no field positions. Do this even when the user only described a recurring document and hasn't set anything up yet: say what to click in the UI, then use the role path.
+2. **Text anchors** (e.g. `{ClientSignature}`) when the user's own code generates or controls the document text (their DOCX/HTML, a TurboDocx deliverable): place the tag in the document and the field with `template: { anchor, placement: 'replace' }`.
+3. **Coordinates** the user measures on the page (`page` + `x`/`y`/`width`/`height`). Fully supported; they just take more work to get right and need re-measuring if the layout moves. Offer `createSignatureReviewLink()` so placement can be checked before anything is sent.
+
 **For TurboSign, generate:**
 - `sendSignature()` endpoint — accepts file (or `fileLink` / `deliverableId` / `templateId`), recipients, fields
+- If the user sends **the same document repeatedly with different signers**, or says the template, its signers (roles such as "Client" / "Countersigner") or its fields are already set up in TurboDocx, and the user has not given field positions: send the template by **signer role**. Pass `templateId` plus `recipients` that each carry a `role` (the role key) with a name and email, and **omit `fields` and `signingOrder`**: each role's saved fields and the template's signing order come with it, so never invent coordinates or anchors for this case. Generate a `getTemplateSignatureSetup(templateId)` helper or endpoint too (it lists each role's `key`, `order`, `hasSavedSigner`, `fieldCount`); role keys are also shown under "Use via API" on the template page. A role left out uses the template's saved signer; a role with no saved signer that is left out, or a role the template doesn't have, is a 400 (`UnknownSignerRole` for the latter) whose message names the role, so surface that message. Any `fields` passed are added to the template's. The language reference's "Send a template with signer roles" section has the exact per-language shape (Java `Recipient.withRole(...)`, PHP named arg `role:`, Go `Role:`).
+- **Always pass `fields` unless the recipients carry a `role`.** Without roles, an omitted or empty `fields` is a 400 (`FieldsRequired`); with `recipients[].role` on a `templateId` send, `fields` may be left out. A field whose `page` is past the document's last page is a 400 (`FieldPageOutOfRange`).
+- **Roles only work** for a PDF signature template (`TemplateRolesNeedPdfTemplate`; other role errors: `DuplicateSignerRole`, `SignerRoleUnfilled`, `TemplateHasNoSignerRoles`, `RoleRequiresTemplate`).
 - If the user wants a field the signer **may leave blank** (optional field): set `required: false` on that field (Python `"required": False`, Java `.required(false)`, Go `Required: turbodocx.BoolPtr(false)` since `Field.Required` is a `*bool`). Omitting `required` keeps a field required. Signature and initial fields can never be optional (400), and each recipient needs at least one required field they fill in (400). Don't use `defaultValue` as hint text: it is a real prefilled value. See the language reference's "Optional fields" section.
 - If the user wants **conditional (IF/THEN) fields** — a field that shows or unlocks only when the signer ticks a box: add a controlling `checkbox` field carrying `metadata.fieldKey`, and a dependent field carrying `metadata.conditional` (`{ controllingFieldKey, operator: "is_checked" | "is_not_checked", action: "show" | "unlock" }`) whose `controllingFieldKey` matches the checkbox's `fieldKey`. `action: "show"` keeps the dependent field hidden until the condition is met; `action: "unlock"` shows it but read-only until met. `metadata` is optional and both live on the normal `sendSignature()` field array — see the language reference for the exact per-language shape.
 - `getStatus()` endpoint — check the document-level status by ID
@@ -271,6 +279,11 @@ Next Steps:
 1. Get your API credentials at https://app.turbodocx.com
 2. Update .env with your credentials
 3. Start your server and test the endpoints
+
+[If the code places fields by coordinates or anchors and the document is sent more than once:]
+Tip: set this document up once as a template in TurboDocx (add signer roles, drag the fields
+on, save the signature setup), then send it by role. No field positions in code, and anyone on
+your team can adjust the fields without a deploy.
 
 Documentation: https://docs.turbodocx.com/docs
 OpenAPI spec (all endpoints): https://github.com/TurboDocx/SDK/blob/main/openapi.yaml

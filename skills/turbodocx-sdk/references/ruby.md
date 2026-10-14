@@ -106,6 +106,50 @@ result["recipients"].each { |r| puts "#{r['name']} <#{r['email']}> #{r['id']}" }
 
 Fields support either coordinate-based placement (`page` + `x`/`y`/`width`/`height`) or anchor-based placement via `template: { anchor: "{signature1}", placement: "replace", size: { width: 100, height: 30 } }`. The anchor text must literally exist in the document.
 
+### Choosing field placement
+
+1. **A template set up in TurboDocx, sent by signer role** (recommended for any document sent more than once). Set it up once in the TurboDocx UI: upload the PDF as a template, add each signer as a role, drag their fields onto the page, save the signature setup. Code then sends by `role` with no field positions at all (next section).
+2. **Text anchors** when your code generates or controls the document text: put a tag such as `{ClientSignature}` where the field goes (its own text, one distinct tag per signer and field) and place the field with `template: { anchor: "{ClientSignature}", placement: "replace" }`.
+3. **Coordinates** (`page` + `x`/`y`/`width`/`height`). Fully supported: if you already know the positions, use them directly. When you don't, options 1 and 2 are easier than measuring. Coordinates need re-measuring if the layout moves; a review link lets you check placement before sending.
+
+### Send a template with signer roles
+
+Use this when the same document goes out again and again with different signers (an NDA, a contract, an onboarding form). The user sets the template up **once** in TurboDocx: upload the PDF as a template, add each signer as a role on its Signatures tab (e.g. "Client", "Countersigner"), drag each role's fields onto the page, and save the signature setup. A role that is always the same person (e.g. your countersigner) can be given a saved signer there. The code then names each recipient's `role` and passes **no field coordinates or anchors**: the fields saved for that role come with it.
+
+```ruby
+# Role keys are shown under "Use via API" on the template's page in TurboDocx, or read them here.
+setup = TurboDocxSdk::TurboSign.get_template_signature_setup(template_id)
+setup["roles"].each do |r| # in signing order
+  puts "#{r['key']} (#{r['label']}) order #{r['order']}, saved signer: #{r['hasSavedSigner']}, #{r['fieldCount']} field(s)"
+end
+
+begin
+  result = TurboDocxSdk::TurboSign.send_signature(
+    templateId: template_id,
+    documentName: "Services Agreement - Acme",
+    recipients: [
+      { role: "client", name: "Jane Doe", email: "jane@client.com" } # no signingOrder needed
+      # "countersigner" left out: the signer saved on the template is used
+    ]
+    # no fields: each role's saved fields are used
+  )
+  puts result["documentId"]
+rescue TurboDocxSdk::ValidationError => e
+  # e.message names the bad role and lists the template's roles
+  warn "Unknown role: #{e.message}" if e.code == "UnknownSignerRole"
+  raise
+end
+```
+
+`get_template_signature_setup(template_id)` returns a Hash with `"templateId"` and `"roles"`; each role has `"key"`, `"label"`, `"order"`, `"hasSavedSigner"`, `"fieldCount"`, plus `"defaultName"`/`"defaultEmail"` when `"hasSavedSigner"` is true. `"key"` is the value for a recipient's `role`.
+
+- Roles sign in the order saved on the template, so a recipient with a `role` needs no `signingOrder`; recipients without a `role` sign after them.
+- A role left out uses the template's saved signer. If it has none, the API returns a 400 naming the role. Pass a role that has a saved signer to send to someone else this time.
+- An unknown role raises `TurboDocxSdk::ValidationError` (400, `e.code == "UnknownSignerRole"`) whose message lists the template's roles.
+- `fields` is optional only when a recipient names a `role` (it is left out of the request when empty); any fields you pass are **added** to the template's (for example an extra witness signature). Without roles, fields are required and must not be empty (400 `FieldsRequired`).
+- Roles only work for a PDF signature template. A Word template needs a deliverable generated first and sent with `deliverableId`.
+- `role` works the same way on `create_signature_review_link` and `create_embedded_signature`. A role left out falls back to its saved signer, who also gets an embed URL in the result, so match result entries to signers by email or role rather than by position.
+
 ### Optional fields
 
 ```ruby
@@ -1318,6 +1362,7 @@ The error classes are **not** nested under a sub-module (e.g. not `TurboDocxSdk:
 | `TurboDocxSdk::TurboSign.configure(api_key:, org_id:, sender_email:, sender_name:)` | Set credentials (sender_email required) |
 | `TurboDocxSdk::TurboSign.create_signature_review_link(request)` | Prepare a document and get a preview URL (no emails sent) |
 | `TurboDocxSdk::TurboSign.send_signature(request)` | Prepare a document and immediately email recipients |
+| `TurboDocxSdk::TurboSign.get_template_signature_setup(template_id)` | List a template's signer roles (`key`, `order`, `hasSavedSigner`, `fieldCount`) to send it with recipients' `role` |
 | `TurboDocxSdk::TurboSign.get_status(document_id)` | Get document-level status + expiresAt (no recipients) |
 | `TurboDocxSdk::TurboSign.get_embedded_signing_settings` | Read the org's embedded-signing gates (enabled, allowExternalIdv, allowIdentityOverride, defaultChannel, allowChannelOverride, allowedFrameAncestors) |
 | `TurboDocxSdk::TurboSign.create_signing_url(document_id, recipient_id:/external_id:, identity_assertion:, return_url:)` | Mint one recipient's embedded signing URL at click time (exactly one selector) |
@@ -1460,6 +1505,7 @@ The error classes are **not** nested under a sub-module (e.g. not `TurboDocxSdk:
 
 ## Gotchas
 
+- **TurboSign send 400 codes** (read with `e.code`; the message names the problem): `FieldsRequired` (no fields and no recipient `role`), `FieldPageOutOfRange` (a field's `page` is past the last page), `UnknownSignerRole`, `DuplicateSignerRole` (two recipients for one role), `SignerRoleUnfilled` (a role has no recipient and no saved signer), `TemplateHasNoSignerRoles` (`role` used on a template with no saved setup), `RoleRequiresTemplate` (`role` without `templateId`), `TemplateRolesNeedPdfTemplate` (roles on a non-PDF template). Surface the message to the user.
 - **Method args are snake_case; request-hash keys stay camelCase.** `send_signature`, `create_quote`, `api_key:`, `sender_email:` are snake_case. But keys **inside** a request hash (`documentName`, `signingOrder`, `recipientEmail`, `companyId`, `billingFrequency`, `productId`, …) are forwarded to the API verbatim and must stay camelCase. Writing `document_name:` in a payload hash silently drops the value.
 - **`sender_email` is required** for `TurboSign.configure` — omitting it raises `TurboDocxSdk::ValidationError`. `sender_name` is optional; when omitted the sender name resolves to **your API key's name**, so name your keys recognisably. `Deliverable`, `TurboWebhooks`, and `TurboQuote` do **not** accept it in `configure`.
 - **TurboQuote still sends email.** `TurboQuote.configure` has no `sender_email`, but `send_quote` emails the contact and creates a signature request — the sender comes from the org's **quote template** (Quote Settings). An API-key caller whose template has no sender gets 400 `SenderEmailRequired`. Fix it once with `update_template`.

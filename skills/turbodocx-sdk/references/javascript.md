@@ -102,6 +102,53 @@ console.log(result.recipients);   // ReviewRecipient[] with { id, name, email, m
 
 Fields support either coordinate-based (`page` + `x` / `y` / `width` / `height`) or anchor-based placement via `template: { anchor: '{TagName}', placement: 'replace', size: {...} }`.
 
+### Choosing field placement
+
+1. **A template set up in TurboDocx, sent by signer role** (recommended for any document sent more than once). Set it up once in the TurboDocx UI: upload the PDF as a template, add each signer as a role, drag their fields onto the page, save the signature setup. Code then sends by `role` with no field positions at all (next section).
+2. **Text anchors** when your code generates or controls the document text: put a tag such as `{ClientSignature}` where the field goes (its own text, one distinct tag per signer and field) and place the field with `template: { anchor: '{ClientSignature}', placement: 'replace' }`.
+3. **Coordinates** (`page` + `x`/`y`/`width`/`height`). Fully supported: if you already know the positions, use them directly. When you don't, options 1 and 2 are easier than measuring. Coordinates need re-measuring if the layout moves; a review link lets you check placement before sending.
+
+### Send a template with signer roles
+
+Use this when the same document goes out again and again with different signers (an NDA, a contract, an onboarding form). The user sets the template up **once** in TurboDocx: upload the PDF as a template, add each signer as a role on its Signatures tab (e.g. "Client", "Countersigner"), drag each role's fields onto the page, and save the signature setup. A role that is always the same person (e.g. your countersigner) can be given a saved signer there. The code then names each recipient's `role` and passes **no field coordinates or anchors**: the fields saved for that role come with it.
+
+```typescript
+import { TurboSign, ValidationError } from '@turbodocx/sdk';
+
+// Role keys are shown under "Use via API" on the template's page in TurboDocx, or read them here.
+const { roles } = await TurboSign.getTemplateSignatureSetup(templateId);
+// roles (in signing order): [{ key: 'client', label: 'Client', order: 1, hasSavedSigner: false, fieldCount: 3 },
+//   { key: 'countersigner', label: 'Countersigner', order: 2, hasSavedSigner: true,
+//     defaultName: 'Sam Lee', defaultEmail: 'sam@yourco.com', fieldCount: 2 }]
+
+try {
+  const result = await TurboSign.sendSignature({
+    templateId,
+    documentName: 'Services Agreement - Acme',
+    recipients: [
+      { role: 'client', name: 'Jane Doe', email: 'jane@client.com' }, // no signingOrder needed
+      // 'countersigner' left out: the signer saved on the template is used
+    ],
+    // no `fields`: each role's saved fields are used
+  });
+  console.log(result.documentId);
+} catch (err) {
+  if (err instanceof ValidationError && err.code === 'UnknownSignerRole') {
+    // err.message names the bad role and lists the template's roles
+  }
+  throw err;
+}
+```
+
+`getTemplateSignatureSetup(templateId)` returns `{ templateId, roles: TemplateSignatureRole[] }`; each role is `{ key, label, order, hasSavedSigner, defaultName?, defaultEmail?, fieldCount }`, and `key` is the value for `recipients[].role`.
+
+- Roles sign in the order saved on the template, so a recipient with a `role` needs no `signingOrder`; recipients without a `role` sign after them.
+- A role left out uses the template's saved signer. If it has none, the API returns a 400 naming the role. Pass a role that has a saved signer to send to someone else this time.
+- An unknown role returns a 400 (`ValidationError`, `code === 'UnknownSignerRole'`) whose message lists the template's roles.
+- `fields` is optional only when a recipient names a `role` (it is left out of the request when empty); any fields you pass are **added** to the template's (for example an extra witness signature). Without roles `fields` is required and must not be empty (400 `FieldsRequired`).
+- Roles only work for a PDF signature template. A Word template needs a deliverable generated first and sent with `deliverableId`.
+- `role` works the same way on `createSignatureReviewLink` and on `createEmbeddedSignature` recipients. A role left out falls back to its saved signer, who also gets an embed URL in the result, so match result entries to signers by email or role rather than by position.
+
 ### Optional fields
 
 ```typescript
@@ -1559,6 +1606,7 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode`, `code`, and
 | `TurboSign.configure(config)` | Set apiKey, orgId, senderEmail, senderName |
 | `TurboSign.createSignatureReviewLink(request)` | Prepare a document and get a preview URL (no emails sent) |
 | `TurboSign.sendSignature(request)` | Prepare a document and immediately email recipients |
+| `TurboSign.getTemplateSignatureSetup(templateId)` | List a template's signer roles (`key`, `order`, `hasSavedSigner`, `fieldCount`) to send it with `recipients[].role` |
 | `TurboSign.getStatus(documentId)` | Get current document status + expiresAt |
 | `TurboSign.download(documentId)` | Download signed PDF as `Blob` |
 | `TurboSign.void(documentId, reason)` | Cancel a signature request (reason is required) |
@@ -1761,6 +1809,7 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode`, `code`, and
 
 ## Gotchas
 
+- **TurboSign send 400 codes** (read with `err.code`; the message names the problem): `FieldsRequired` (no `fields` and no recipient `role`), `FieldPageOutOfRange` (a field's `page` is past the last page), `UnknownSignerRole`, `DuplicateSignerRole` (two recipients for one role), `SignerRoleUnfilled` (a role has no recipient and no saved signer), `TemplateHasNoSignerRoles` (`role` used on a template with no saved setup), `RoleRequiresTemplate` (`role` without `templateId`), `TemplateRolesNeedPdfTemplate` (roles on a non-PDF template). Surface the message to the user.
 - **`senderEmail` is required** for `TurboSign.configure()` — without it `ValidationError` is thrown. `senderName` is optional; when omitted it resolves to **your API key's name** (name your keys accordingly). An API-key send with no resolvable sender email is rejected with `400 SenderEmailRequired`.
 - **File input** to TurboSign accepts: `Buffer`, file-path `string`, browser `File`, remote URL (`fileLink`), `deliverableId`, or `templateId`. Magic-byte detection identifies PDF / DOCX / PPTX automatically.
 - **Template anchors** like `{signature1}` must literally exist in the document text for `template.anchor` field placement to work.

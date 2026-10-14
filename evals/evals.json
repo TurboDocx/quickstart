@@ -448,7 +448,8 @@
       "expected_output": "Creates config with both clients, Gin handlers using *gin.Context, routes with r.POST/r.GET, .env with all 6 vars",
       "files": [
         "go.mod",
-        "main.go",
+        "cmd/server/main.go",
+        "internal/handlers/.gitkeep",
         "internal/handlers/.gitkeep",
         "internal/config/.gitkeep"
       ],
@@ -1908,7 +1909,8 @@
       "expected_output": "Configures the TurboDocx Go SDK quote client (api key + org id, no sender email), a handler that calls quoteClient.GetQuoteNumberConfig(ctx) and quoteClient.UpdateQuoteNumberConfig(ctx, &turbodocx.QuoteNumberFormat{...}) using the typed struct + typed enum constants (QuoteNumberYearTokenNone, QuoteNumberResetCadenceNever), wires the GET+PATCH handlers, and reads env TURBODOCX_API_KEY + TURBODOCX_ORG_ID. PascalCase method names; no invented methods.",
       "files": [
         "go.mod",
-        "main.go"
+        "cmd/server/main.go",
+        "internal/handlers/.gitkeep"
       ],
       "assertions": [
         {
@@ -2277,7 +2279,8 @@
       "expected_output": "Creates a TurboQuote config (apiKey + orgId, NO senderEmail), a handler that calls qc.BulkCreateProducts(ctx, rows) once with a slice of CreateProductRequest rows, and reports partial-success results by reading result.Imported, result.Failed (each BulkImportRowIssue { Row, Reason }, Row 1-indexed), and result.Adjusted \u2014 NOT assuming all-or-nothing and NOT looping CreateProduct per row. Adds .env with TURBODOCX_API_KEY + TURBODOCX_ORG_ID. PascalCase method names; no invented methods.",
       "files": [
         "go.mod",
-        "main.go"
+        "cmd/server/main.go",
+        "internal/handlers/.gitkeep"
       ],
       "assertions": [
         {
@@ -2482,7 +2485,8 @@
       "expected_output": "Creates a Deliverable config built with turbodocx.NewDeliverableClientOnly (apiKey + orgId, NO SenderEmail), a handler that calls dc.GenerateDeliverable(ctx, &turbodocx.CreateDeliverableRequest{TemplateID: ..., Variables: ...}) then dc.DownloadPDF(ctx, deliverableID), wires the handler into main.go, and adds .env with TURBODOCX_API_KEY + TURBODOCX_ORG_ID (no sender vars, no partner vars). PascalCase method names with camelCase-serialized payload keys (templateId).",
       "files": [
         "go.mod",
-        "main.go"
+        "cmd/server/main.go",
+        "internal/handlers/.gitkeep"
       ],
       "assertions": [
         {
@@ -2791,7 +2795,7 @@
     {
       "id": 50,
       "prompt": "I'm a TurboDocx partner. I want to turn off the signature verification hash for one of my customer organizations without logging into their account.",
-      "expected_output": "Generates TurboPartner preferences endpoints — getOrganizationPreferences to read the tenant's current display settings and updateOrganizationPreferences sending only hideSignatureHash, wired with partner credentials",
+      "expected_output": "Generates TurboPartner preferences endpoints \u2014 getOrganizationPreferences to read the tenant's current display settings and updateOrganizationPreferences sending only hideSignatureHash, wired with partner credentials",
       "files": [
         "package.json",
         "tsconfig.json",
@@ -2807,7 +2811,7 @@
         {
           "name": "sends-only-requested-key",
           "type": "file_contains",
-          "description": "The update sends only hideSignatureHash — it does NOT also send hideSignatureOutline, lockedFieldsBackground, or allowDownloadBeforeSigning, which would overwrite the tenant's settings"
+          "description": "The update sends only hideSignatureHash \u2014 it does NOT also send hideSignatureOutline, lockedFieldsBackground, or allowDownloadBeforeSigning, which would overwrite the tenant's settings"
         },
         {
           "name": "camelcase-keys",
@@ -2881,7 +2885,8 @@
       "expected_output": "Generates a SendSignature handler where the Notes text field sets Required: turbodocx.BoolPtr(false); Field.Required is a *bool, so a plain bool literal does not compile",
       "files": [
         "go.mod",
-        "main.go"
+        "cmd/server/main.go",
+        "internal/handlers/.gitkeep"
       ],
       "assertions": [
         {
@@ -2982,7 +2987,7 @@
         {
           "name": "single-selector-only",
           "type": "file_not_contains",
-          "description": "The create_signing_url call does NOT also pass recipient_id alongside external_id — exactly one selector is allowed and passing both is rejected"
+          "description": "The create_signing_url call does NOT also pass recipient_id alongside external_id \u2014 exactly one selector is allowed and passing both is rejected"
         },
         {
           "name": "surfaces-url",
@@ -3040,7 +3045,7 @@
         {
           "name": "key-not-in-browser",
           "type": "file_not_contains",
-          "description": "The raw API key / TURBODOCX_API_KEY does NOT appear in the client-side / browser-facing code — only the minted URL reaches the browser, the key stays server-side"
+          "description": "The raw API key / TURBODOCX_API_KEY does NOT appear in the client-side / browser-facing code \u2014 only the minted URL reaches the browser, the key stays server-side"
         },
         {
           "name": "routes-wired",
@@ -3140,7 +3145,8 @@
       "expected_output": "SendSignature with SendEmail: &sendEmail (false) and a comment that signing-link, reminder and expiry-warning emails are suppressed while passcode and completed-copy emails still go out; Recipient.ExternalID set; CreateSigningURL by ExternalID; ExpiresAt handled as a *string that is the document's expiry or nil when the document does not expire",
       "files": [
         "go.mod",
-        "main.go"
+        "cmd/server/main.go",
+        "internal/handlers/.gitkeep"
       ],
       "assertions": [
         {
@@ -3167,6 +3173,198 @@
           "name": "no-stale-expiry-claim",
           "type": "file_not_contains",
           "description": "No comment claims ExpiresAt is always nil for otp/no-verification links or that the link 'follows the document window'"
+        }
+      ]
+    },
+    {
+      "id": 61,
+      "prompt": "I set up a contract template in TurboDocx with Client and Countersigner roles and dragged all the signature fields onto it there. Our countersigner is always the same person and is saved on the template. Add an endpoint to my Express app that sends that template to a new client (name and email from the request body).",
+      "expected_output": "Endpoint calls TurboSign.sendSignature with templateId and recipients[] carrying role: 'client' plus name/email, omits fields and signingOrder, leaves the countersigner out (its saved signer is used) or explains that; also uses or mentions TurboSign.getTemplateSignatureSetup to find the role keys; surfaces the 400 message (UnknownSignerRole) when a role is wrong",
+      "files": [
+        "package.json",
+        "tsconfig.json",
+        "src/index.ts",
+        "package-lock.json"
+      ],
+      "assertions": [
+        {
+          "name": "sends-by-template-id",
+          "type": "file_contains",
+          "description": "TurboSign.sendSignature is called with templateId (not file / fileLink / deliverableId)"
+        },
+        {
+          "name": "recipient-has-role",
+          "type": "file_contains",
+          "description": "A recipient object passed to sendSignature carries role: 'client' (or the role key from the request) together with name and email"
+        },
+        {
+          "name": "no-field-coordinates",
+          "type": "file_not_contains",
+          "description": "The send has no fields array with page/x/y/width/height coordinates or template anchors for the template-role send (fields omitted or empty)"
+        },
+        {
+          "name": "no-signing-order-on-role-recipient",
+          "type": "file_not_contains",
+          "description": "The role recipient is not given a signingOrder"
+        },
+        {
+          "name": "mentions-role-discovery",
+          "type": "output_contains",
+          "description": "Code or reply uses TurboSign.getTemplateSignatureSetup or points the user to the role keys under 'Use via API' on the template page"
+        },
+        {
+          "name": "countersigner-saved-signer",
+          "type": "output_contains",
+          "description": "Code comment or reply explains that the countersigner role is left out and its saved signer on the template is used"
+        },
+        {
+          "name": "routes-wired",
+          "type": "file_contains",
+          "description": "Main app file (src/index.ts) was modified to register the new route"
+        }
+      ]
+    },
+    {
+      "id": 62,
+      "prompt": "We send the same NDA over and over from our FastAPI service. It's already a TurboDocx template with a 'Recipient' signer role and its fields placed. Write the endpoint to send it to whoever we pass in, and a helper that lists the template's role keys so I can check them.",
+      "expected_output": "Uses await TurboSign.send_signature(template_id=..., recipients=[{'role': <key>, 'name': ..., 'email': ...}]) with no fields and no signingOrder; adds a helper calling await TurboSign.get_template_signature_setup(template_id) and reads setup['roles'][i]['key']; catches ValidationError (code UnknownSignerRole) and surfaces its message",
+      "files": [
+        "pyproject.toml",
+        "app/main.py",
+        "app/routers/__init__.py"
+      ],
+      "assertions": [
+        {
+          "name": "send-signature-template-id",
+          "type": "file_contains",
+          "description": "TurboSign.send_signature is awaited with template_id="
+        },
+        {
+          "name": "recipient-role-key",
+          "type": "file_contains",
+          "description": "A recipient dict passed to send_signature has a \"role\" key alongside \"name\" and \"email\""
+        },
+        {
+          "name": "no-field-coordinates",
+          "type": "file_not_contains",
+          "description": "No fields list with page/x/y coordinates or template anchors is built for this send"
+        },
+        {
+          "name": "lists-roles-helper",
+          "type": "file_contains",
+          "description": "A helper or endpoint awaits TurboSign.get_template_signature_setup and reads the roles' \"key\" values (camelCase keys like hasSavedSigner kept as-is)"
+        },
+        {
+          "name": "handles-unknown-role",
+          "type": "file_contains",
+          "description": "ValidationError is caught (optionally checking code == 'UnknownSignerRole') and its message is returned to the caller"
+        }
+      ]
+    },
+    {
+      "id": 63,
+      "prompt": "Add e-signature to our Express app for our consulting agreement PDF. The client signature line is on page 3 at about x=100, y=650 (letter size). Just send it to the client email we pass in.",
+      "expected_output": "Uses the given coordinates (page 3, x=100, y=650) for the client signature field without pushing back or calling coordinates a last resort. May add a short optional tip about templates with roles for recurring sends, but does not block on it or ask the user to switch methods",
+      "files": [
+        "package.json",
+        "src/app.js",
+        "src/routes/index.js"
+      ],
+      "assertions": [
+        {
+          "name": "uses-given-coordinates",
+          "type": "file_contains",
+          "description": "The signature field is placed on page 3 at x=100, y=650 as the user specified"
+        },
+        {
+          "name": "no-pushback-on-coordinates",
+          "type": "output_not_contains",
+          "description": "The reply does not call coordinates a last resort, does not argue against using them, and does not ask the user to choose a different placement method before generating the code"
+        }
+      ]
+    },
+    {
+      "id": 64,
+      "prompt": "We generate offer letters as DOCX from our own HTML in Python (FastAPI) and need the candidate to sign at the bottom. Add e-signature.",
+      "expected_output": "Uses a text anchor such as {CandidateSignature} written into the generated document and a signature field placed by that anchor (placement replace); does not hardcode page/x/y coordinates",
+      "files": [
+        "pyproject.toml",
+        "app/main.py"
+      ],
+      "assertions": [
+        {
+          "name": "anchor-in-document",
+          "type": "file_contains",
+          "description": "The generated document HTML/DOCX includes a distinct anchor tag such as {CandidateSignature}"
+        },
+        {
+          "name": "anchor-field",
+          "type": "file_contains",
+          "description": "send_signature fields place the signature by that anchor with placement \"replace\""
+        },
+        {
+          "name": "no-coordinates",
+          "type": "file_not_contains",
+          "description": "No page/x/y coordinates are hardcoded for the signature field"
+        }
+      ]
+    },
+    {
+      "id": 65,
+      "prompt": "Add e-signature to our Express app for our standard consulting agreement PDF. We send it to every new client and they sign on the last page. Just send it to the client email we pass in.",
+      "expected_output": "Since no field positions were given, steers toward setting the PDF up once as a template in TurboDocx with a Client role (upload, add the role, drag the signature field, save the signature setup) and generates a send by role with no field positions; mentions anchors as the alternative if they control the document text. Does not invent page/x/y coordinates",
+      "files": [
+        "package.json",
+        "src/app.js",
+        "src/routes/index.js"
+      ],
+      "assertions": [
+        {
+          "name": "recommends-template-setup",
+          "type": "output_contains",
+          "description": "The response tells the user to set the PDF up once as a template in TurboDocx (add a Client role, drag the fields, save the signature setup)"
+        },
+        {
+          "name": "sends-by-role",
+          "type": "file_contains",
+          "description": "The generated send passes templateId and a recipient with role (e.g. client) and no fields"
+        },
+        {
+          "name": "no-invented-coordinates",
+          "type": "file_not_contains",
+          "description": "No guessed page/x/y coordinates are hardcoded for the signature field"
+        }
+      ]
+    },
+    {
+      "id": 66,
+      "prompt": "Our Go service sends the same onboarding agreement every week. It's a PDF template in TurboDocx with Client and Countersigner roles and the fields already placed. Write the handler that sends it to the new client.",
+      "expected_output": "Uses TurboSign client SendSignature with TemplateID and a recipient carrying Role (the role key) plus Name and Email; does not set Fields or SigningOrder, so the SDK leaves fields out of the request and the template's saved fields are used; surfaces a ValidationError message (e.g. UnknownSignerRole or SignerRoleUnfilled) to the caller",
+      "files": [
+        "go.mod",
+        "cmd/server/main.go",
+        "internal/handlers/.gitkeep"
+      ],
+      "assertions": [
+        {
+          "name": "template-id-with-role",
+          "type": "file_contains",
+          "description": "SendSignature is called with TemplateID and a recipient whose Role is the template's role key, with Name and Email"
+        },
+        {
+          "name": "no-fields-set",
+          "type": "file_not_contains",
+          "description": "No Fields slice, field coordinates or anchors are built for this send"
+        },
+        {
+          "name": "no-signing-order",
+          "type": "file_not_contains",
+          "description": "The role recipient does not set SigningOrder"
+        },
+        {
+          "name": "surfaces-validation-error",
+          "type": "file_contains",
+          "description": "A *turbodocx.ValidationError is caught (errors.As) and its message is returned to the caller"
         }
       ]
     }

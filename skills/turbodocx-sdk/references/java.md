@@ -77,6 +77,64 @@ SendSignatureResponse result = client.turboSign().sendSignature(
 System.out.println("Document ID: " + result.getDocumentId());
 ```
 
+### Choosing field placement
+
+1. **A template set up in TurboDocx, sent by signer role** (recommended for any document sent more than once). Set it up once in the TurboDocx UI: upload the PDF as a template, add each signer as a role, drag their fields onto the page, save the signature setup. Code then sends by `role` with no field positions at all (next section).
+2. **Text anchors** when your code generates or controls the document text: put a tag such as `{ClientSignature}` where the field goes (its own text, one distinct tag per signer and field) and place the field by anchor with `placement` `replace` (see the anchor example in this reference).
+3. **Coordinates** (`page` + `x`/`y`/`width`/`height`). Fully supported: if you already know the positions, use them directly. When you don't, options 1 and 2 are easier than measuring. Coordinates need re-measuring if the layout moves; a review link lets you check placement before sending.
+
+### Send a template with signer roles
+
+Use this when the same document goes out again and again with different signers (an NDA, a contract, an onboarding form). The user sets the template up **once** in TurboDocx: upload the PDF as a template, add each signer as a role on its Signatures tab (e.g. "Client", "Countersigner"), drag each role's fields onto the page, and save the signature setup. A role that is always the same person (e.g. your countersigner) can be given a saved signer there. The code then names each recipient's role with `Recipient.withRole(...)` and passes **no field coordinates or anchors**: the fields saved for that role come with it.
+
+```java
+import java.util.Arrays;
+
+import com.turbodocx.TurboDocxException;
+import com.turbodocx.models.Recipient;
+import com.turbodocx.models.SendSignatureRequest;
+import com.turbodocx.models.SendSignatureResponse;
+import com.turbodocx.models.TemplateSignatureRole;
+import com.turbodocx.models.TemplateSignatureSetup;
+
+// Role keys are shown under "Use via API" on the template's page in TurboDocx, or read them here.
+TemplateSignatureSetup setup = client.turboSign().getTemplateSignatureSetup(templateId);
+for (TemplateSignatureRole role : setup.getRoles()) { // in signing order
+    System.out.println(role.getKey() + " (" + role.getLabel() + ") order " + role.getOrder()
+        + ", saved signer: " + role.hasSavedSigner() + ", " + role.getFieldCount() + " field(s)");
+}
+
+try {
+    SendSignatureResponse result = client.turboSign().sendSignature(
+        new SendSignatureRequest.Builder()
+            .templateId(templateId)
+            .documentName("Services Agreement - Acme")
+            .recipients(Arrays.asList(
+                Recipient.withRole("client", "Jane Doe", "jane@client.com") // no signing order needed
+                // "countersigner" left out: the signer saved on the template is used
+            ))
+            // no .fields(...): each role's saved fields are used
+            .build()
+    );
+    System.out.println(result.getDocumentId());
+} catch (TurboDocxException.ValidationException e) {
+    if ("UnknownSignerRole".equals(e.getCode())) {
+        // e.getMessage() names the bad role and lists the template's roles
+    }
+    throw e;
+}
+```
+
+`getTemplateSignatureSetup(templateId)` returns a `TemplateSignatureSetup` (`getTemplateId()`, `getRoles()`); each `TemplateSignatureRole` has `getKey()`, `getLabel()`, `getOrder()`, `hasSavedSigner()`, `getDefaultName()`/`getDefaultEmail()` (null unless `hasSavedSigner()`), and `getFieldCount()`. `getKey()` is the value for the recipient's role.
+
+- Roles sign in the order saved on the template, so a role recipient needs no signing order (`Recipient.getSigningOrder()` stays an `int` and returns 0 when unset; 0 is left out of the request); recipients without a role sign after them.
+- A role left out uses the template's saved signer. If it has none, the API returns a 400 naming the role. Pass a role that has a saved signer to send to someone else this time.
+- An unknown role returns a 400 (`ValidationException` with code `UnknownSignerRole`) whose message lists the template's roles.
+- `.fields(...)` is optional only when a recipient names a `role` (it is left out of the request when empty); any fields you pass are **added** to the template's (for example an extra witness signature). Without roles, fields are required and must not be empty (400 `FieldsRequired`).
+- Roles only work for a PDF signature template. A Word template needs a deliverable generated first and sent with `deliverableId`.
+- Use `new Recipient.Builder().role("client").name(...).email(...)` when the role recipient also needs a phone or external id.
+- `role` works the same way on `createSignatureReviewLink` and, via `new EmbeddedSignatureRecipient.Builder().role(...)`, on `createEmbeddedSignature`. A role left out falls back to its saved signer, who also gets an embed URL in the result, so match result entries to signers by email or role rather than by position.
+
 ### Optional fields
 
 ```java
@@ -1609,6 +1667,7 @@ All seven subtypes are **nested classes** on `com.turbodocx.TurboDocxException` 
 |--------|-------------|
 | `client.turboSign().sendSignature(req)` | Send document for e-signature |
 | `client.turboSign().createSignatureReviewLink(req)` | Preview without emails |
+| `client.turboSign().getTemplateSignatureSetup(templateId)` | List a template's signer roles (`getKey()`, `getOrder()`, `hasSavedSigner()`, `getFieldCount()`) to send it with `Recipient.withRole(...)` |
 | `client.turboSign().getStatus(id)` | Get document-level status + expiresAt (no recipients) |
 | `client.turboSign().download(id)` | Download signed PDF as byte[] |
 | `client.turboSign().voidDocument(id, reason)` | Cancel a signature request (`reason` required) |
@@ -1737,6 +1796,7 @@ All seven subtypes are **nested classes** on `com.turbodocx.TurboDocxException` 
 
 ## Gotchas
 
+- **TurboSign send 400 codes** (read with `e.getCode()`; the message names the problem): `FieldsRequired` (no fields and no recipient `role`), `FieldPageOutOfRange` (a field's `page` is past the last page), `UnknownSignerRole`, `DuplicateSignerRole` (two recipients for one role), `SignerRoleUnfilled` (a role has no recipient and no saved signer), `TemplateHasNoSignerRoles` (`role` used on a template with no saved setup), `RoleRequiresTemplate` (`role` without `templateId`), `TemplateRolesNeedPdfTemplate` (roles on a non-PDF template). Surface the message to the user.
 - **Java SDK uses Builder pattern** — create clients with `.Builder()...build()`
 - **`senderEmail` is required** for TurboSign operations. **`senderName` is optional** — when omitted, the sender name resolves to the **API key's name**.
 - **TurboQuote takes no `senderEmail`/`senderName`, but `sendQuote` still emails the recipient** (it creates a signature request). The sender comes from the org's quote template (Quote Settings); an API-key caller whose template has no sender gets 400 `SenderEmailRequired`.

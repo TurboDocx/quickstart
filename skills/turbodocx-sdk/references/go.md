@@ -76,6 +76,55 @@ if err != nil {
 fmt.Printf("Document ID: %s\n", result.DocumentID)
 ```
 
+### Choosing field placement
+
+1. **A template set up in TurboDocx, sent by signer role** (recommended for any document sent more than once). Set it up once in the TurboDocx UI: upload the PDF as a template, add each signer as a role, drag their fields onto the page, save the signature setup. Code then sends by `role` with no field positions at all (next section).
+2. **Text anchors** when your code generates or controls the document text: put a tag such as `{ClientSignature}` where the field goes (its own text, one distinct tag per signer and field) and place the field by anchor with `placement` `replace` (see the anchor example in this reference).
+3. **Coordinates** (`page` + `x`/`y`/`width`/`height`). Fully supported: if you already know the positions, use them directly. When you don't, options 1 and 2 are easier than measuring. Coordinates need re-measuring if the layout moves; a review link lets you check placement before sending.
+
+### Send a template with signer roles
+
+Use this when the same document goes out again and again with different signers (an NDA, a contract, an onboarding form). The user sets the template up **once** in TurboDocx: upload the PDF as a template, add each signer as a role on its Signatures tab (e.g. "Client", "Countersigner"), drag each role's fields onto the page, and save the signature setup. A role that is always the same person (e.g. your countersigner) can be given a saved signer there. The code then sets each recipient's `Role` and passes **no field coordinates or anchors**: the fields saved for that role come with it.
+
+```go
+// Role keys are shown under "Use via API" on the template's page in TurboDocx, or read them here.
+setup, err := client.TurboSign.GetTemplateSignatureSetup(ctx, templateID)
+if err != nil {
+    return err
+}
+for _, role := range setup.Roles { // in signing order
+    fmt.Printf("%s (%s) order %d, saved signer: %t, %d field(s)\n",
+        role.Key, role.Label, role.Order, role.HasSavedSigner, role.FieldCount)
+}
+
+result, err := client.TurboSign.SendSignature(ctx, &turbodocx.SendSignatureRequest{
+    TemplateID:   templateID,
+    DocumentName: "Services Agreement - Acme",
+    Recipients: []turbodocx.Recipient{
+        {Role: "client", Name: "Jane Doe", Email: "jane@client.com"}, // no SigningOrder needed
+        // "countersigner" left out: the signer saved on the template is used
+    },
+    // no Fields: each role's saved fields are used
+})
+if err != nil {
+    var vErr *turbodocx.ValidationError
+    if errors.As(err, &vErr) && vErr.Code == "UnknownSignerRole" {
+        // vErr.Message names the bad role and lists the template's roles
+    }
+    return err
+}
+fmt.Println(result.DocumentID)
+```
+
+`GetTemplateSignatureSetup(ctx, templateID)` returns `*turbodocx.TemplateSignatureSetup{TemplateID, Roles []TemplateSignatureRole}`; each role has `Key`, `Label`, `Order`, `HasSavedSigner`, `DefaultName`, `DefaultEmail` (set only when `HasSavedSigner`), and `FieldCount`. `Key` is the value for `Recipient.Role`.
+
+- Roles sign in the order saved on the template, so a recipient with a `Role` needs no `SigningOrder` (it is `omitempty`, 0 is left off the wire); recipients without a `Role` sign after them.
+- A role left out uses the template's saved signer. If it has none, the API returns a 400 naming the role. Pass a role that has a saved signer to send to someone else this time.
+- An unknown role returns a 400 (`*turbodocx.ValidationError` with `Code` `"UnknownSignerRole"`) whose message lists the template's roles.
+- `Fields` is optional only when a recipient names a `role` (it is left out of the request when empty); any fields you pass are **added** to the template's (for example an extra witness signature). Without roles `Fields` is required and must not be empty (400 `FieldsRequired`).
+- Roles only work for a PDF signature template. A Word template needs a deliverable generated first and sent with `deliverableId`.
+- `Role` works the same way on `CreateSignatureReviewLink` and on `EmbeddedSignatureRecipient` for `CreateEmbeddedSignature`. A role left out falls back to its saved signer, who also gets an embed URL in the result, so match result entries to signers by email or role rather than by position.
+
 ### Optional fields
 
 ```go
@@ -1704,6 +1753,7 @@ Every typed error embeds `turbodocx.TurboDocxError`, so `Code` (string), `Messag
 |--------|-------------|
 | `client.TurboSign.SendSignature(ctx, req)` | Send document for e-signature |
 | `client.TurboSign.CreateSignatureReviewLink(ctx, req)` | Preview without emails |
+| `client.TurboSign.GetTemplateSignatureSetup(ctx, templateID)` | List a template's signer roles (`Key`, `Order`, `HasSavedSigner`, `FieldCount`) to send it with `Recipient.Role` |
 | `client.TurboSign.GetStatus(ctx, id)` | Get document-level status + expiresAt (no recipients) |
 | `client.TurboSign.Download(ctx, id)` | Download signed PDF as []byte |
 | `client.TurboSign.VoidDocument(ctx, id, reason)` | Cancel a signature request (reason required) |
@@ -1829,6 +1879,7 @@ Every typed error embeds `turbodocx.TurboDocxError`, so `Code` (string), `Messag
 
 ## Gotchas
 
+- **TurboSign send 400 codes** (read with `vErr.Code` (a `*turbodocx.ValidationError`); the message names the problem): `FieldsRequired` (no `Fields` and no recipient `role`), `FieldPageOutOfRange` (a field's `page` is past the last page), `UnknownSignerRole`, `DuplicateSignerRole` (two recipients for one role), `SignerRoleUnfilled` (a role has no recipient and no saved signer), `TemplateHasNoSignerRoles` (`role` used on a template with no saved setup), `RoleRequiresTemplate` (`role` without `templateId`), `TemplateRolesNeedPdfTemplate` (roles on a non-PDF template). Surface the message to the user.
 - **Go SDK uses instance methods**, not static methods — create a client first with `NewClientWithConfig`
 - **`SenderEmail` is required** in `ClientConfig` for TurboSign operations — `NewClientWithConfig` returns a `*turbodocx.ValidationError` without it. **`SenderName` is optional**; when omitted the sender name resolves to **the name of your API key**.
 - **Context is required** for all API calls — pass `context.Background()` or request context

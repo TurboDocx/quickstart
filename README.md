@@ -138,6 +138,7 @@ Skip the product selection prompt:
 ### TurboSign Integration
 - Client configuration with env var loading
 - `sendSignature()`, `getStatus()`, `download()` — send, track, retrieve signed PDFs
+- Templates sent by signer role: set the template's signers and fields up once in TurboDocx, then send it with `templateId` and each recipient's `role` (no field coordinates); `getTemplateSignatureSetup()` lists the role keys
 - Conditional (IF/THEN) fields — a controlling `checkbox` plus dependent fields that show or unlock only when it is ticked (via optional field `metadata`)
 - Optional: `void()`, `resend()`, `getAuditTrail()` — cancellation, reminders, tamper-evident audit log
 - Route handlers wired into your existing app
