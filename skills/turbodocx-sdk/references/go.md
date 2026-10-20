@@ -1088,12 +1088,18 @@ func (h *SignatureHandler) SendSignature(w http.ResponseWriter, r *http.Request)
         Fields:       fields,
     })
     if err != nil {
-        var tdxErr *turbodocx.TurboDocxError
-        if errors.As(err, &tdxErr) {
-            http.Error(w, tdxErr.Message, tdxErr.StatusCode)
-            return
+        // Match the concrete types: they embed TurboDocxError by value with no Unwrap, so
+        // errors.As against *turbodocx.TurboDocxError would not match them.
+        var valErr *turbodocx.ValidationError
+        var nf *turbodocx.NotFoundError
+        switch {
+        case errors.As(err, &valErr):
+            http.Error(w, valErr.Message, http.StatusBadRequest)
+        case errors.As(err, &nf):
+            http.Error(w, nf.Message, http.StatusNotFound)
+        default: // 401/403 mean our API key is wrong; 429/5xx are ours to retry
+            http.Error(w, "internal error", http.StatusInternalServerError)
         }
-        http.Error(w, "internal error", http.StatusInternalServerError)
         return
     }
 
@@ -1757,15 +1763,13 @@ if err != nil {
     case errors.As(err, &netErr):  // connection failure
     }
 
-    // Or handle generically — every typed error embeds TurboDocxError.
-    var tdxErr *turbodocx.TurboDocxError
-    if errors.As(err, &tdxErr) {
-        fmt.Println(tdxErr.Code, tdxErr.StatusCode, tdxErr.Message)
-    }
+    // Don't use errors.As(err, &tdxErr) with tdxErr *turbodocx.TurboDocxError as a catch-all:
+    // the typed errors embed it by value with no Unwrap, so it matches only a status the SDK
+    // has no typed error for (e.g. a 5xx). Read Code/Message off the typed value you matched.
 }
 ```
 
-Every typed error embeds `turbodocx.TurboDocxError`, so `Code` (string), `Message` (string) and `StatusCode` (int) are available on all of them. **`Code` is always populated** — the API's code when it sends one, otherwise the class default: `VALIDATION_ERROR`, `AUTHENTICATION_ERROR`, `AUTHORIZATION_ERROR`, `NOT_FOUND`, `CONFLICT`, `RATE_LIMIT_EXCEEDED`, `NETWORK_ERROR`. Branch on it without a nil check.
+Every typed error embeds `turbodocx.TurboDocxError`, so `Code` (string), `Message` (string) and `StatusCode` (int) are available on all of them (`valErr.Code`). Because the embedding is by value with no `Unwrap`, `errors.As` against `*turbodocx.TurboDocxError` does **not** match the typed errors; match each concrete type as above. **`Code` is always populated** — the API's code when it sends one, otherwise the class default: `VALIDATION_ERROR`, `AUTHENTICATION_ERROR`, `AUTHORIZATION_ERROR`, `NOT_FOUND`, `CONFLICT`, `RATE_LIMIT_EXCEEDED`, `NETWORK_ERROR`. Branch on it without a nil check.
 
 ## Method Reference
 
