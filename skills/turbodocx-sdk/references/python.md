@@ -1368,6 +1368,9 @@ expired), by creator (`createdBy`, ids from the creators call; `createdByApiKeys
 and by Valid until (`validUntilWindow` = `thisWeek` | `thisMonth` | `past`, `validUntilFrom` /
 `validUntilTo`). Each quote carries `isExpired` and `lineItemCount`; the response adds
 `statusCounts` (per tab) and `summary` (pipeline, win rate, monthly recurring, in `summaryCurrency`).
+In the other lists, each price book carries `overrideCount` (products with their own price), each
+bundle `itemCount` and `billingTotals` (its price per billing type, e.g. `one-time` and `monthly`),
+and each company `contactCount`.
 
 ```python
 page = await TurboQuote.list_quotes({
