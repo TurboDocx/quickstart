@@ -539,7 +539,7 @@ echo "Expires: " . ($link->expiresAt ?? '(none; the document does not expire)') 
 - **Exactly one selector** — pass `recipientId` **or** `externalId`, never both and never neither, or the SDK throws `ValidationException` (`RecipientSelectorInvalid`) before any HTTP call. `returnUrl`, when present, must be `https://`.
 - **Request at click time, never store.** For the **bypass modes** (`external_idv`, `override`) the URL is **single-use** and expires 5 minutes after issue (a `?sut=` link the page redeems once); mint a fresh one each time. For `otp` / no-verification the `url` is the reusable `?token=` signing link, so `expiresAt` is the **document's own expiry**, or `null` when the document doesn't expire.
 - `pendingChecks` lists the passcode step the signer clears on the page (`['email_otp']` / `['sms_otp']`); it is non-empty **only for `otp`** (including an `otp` the org default applied). With no verification, external_idv, or override it is `[]`.
-- **`identityAssertion` is for external_idv only** — pass it here when the recipient's mode is `external_idv` (see below).
+- **`identityAssertion` is for external_idv only** — pass it here when the recipient's mode is `external_idv` (see below). Sending it for an OTP, override, or no-verification recipient is rejected with a 400 `IdentityModeConflict` error, not ignored.
 
 ### Identity verification modes
 

@@ -479,7 +479,7 @@ System.out.println(link.getIdentityVerificationMode()); // "otp" | "external_idv
 System.out.println(link.getPendingChecks());            // ["email_otp"] | ["sms_otp"] | []
 ```
 
-For an `external_idv` recipient, pass the assertion from your own identity provider:
+For an `external_idv` recipient, pass the assertion from your own identity provider. Pass it **only** for `external_idv`: sending it for an OTP, override, or no-verification recipient is rejected with a 400 `IdentityModeConflict` error, not ignored.
 
 ```java
 CreateSigningUrlResponse link = client.turboSign().createSigningUrl(
