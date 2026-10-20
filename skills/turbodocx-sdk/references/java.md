@@ -470,6 +470,7 @@ CreateSigningUrlResponse link = client.turboSign().createSigningUrl(
     new CreateSigningUrlRequest.Builder()
         .externalId("your_customer_123")                 // XOR .recipientId("recipient-uuid")
         .returnUrl("https://app.yourcompany.com/signed") // optional, https only
+        // .pageNavigation(PageNavigation.COLLAPSED)     // optional: page thumbnails in the iframe: AUTO (default) | COLLAPSED | HIDDEN
         .build()
 );
 
@@ -504,6 +505,8 @@ CreateSigningUrlResponse link = client.turboSign().createSigningUrl(
 ```
 
 Request it **at click time**. For the bypass modes (`external_idv` / `override`) the URL is **single-use** and expires 5 minutes after issue (a `?sut=` link redeemed once when opened), so mint a fresh one each time. For no-verification and `otp` recipients the URL is the reusable signing link (`?token=`) that survives a refresh, and `getExpiresAt()` is the **document's own expiry**, or `null` when the document doesn't expire.
+
+**`.pageNavigation(...)` is optional; leave it out unless the user asks to change the page navigation.** It takes the `com.turbodocx.models.PageNavigation` enum and sets how the signing page shows its page thumbnails inside your iframe: `PageNavigation.AUTO` (the default) sizes it to the iframe width (the thumbnail rail is open at 1200px and wider, collapsed from 900px to 1199px, and a "Pages" button in the bottom bar under 900px), `PageNavigation.COLLAPSED` starts the rail collapsed at any width (the signer can still open it), and `PageNavigation.HIDDEN` shows no rail and no Pages button. Null sends nothing. It applies to that URL only: a later `createSigningUrl` call without it resets to `AUTO`, so set it on every mint. It has no effect when the URL is opened outside an iframe.
 
 ### getEmbeddedSigningSettings
 
@@ -555,6 +558,7 @@ try {
                     .build()
             ))
             .returnUrl("https://app.yourcompany.com/signed") // optional, passed to each embed URL
+            // .pageNavigation(PageNavigation.HIDDEN)        // optional, passed to each embed URL: AUTO (default) | COLLAPSED | HIDDEN
             .build()
     );
 } catch (TurboDocxException.AuthorizationException e) {
@@ -571,7 +575,7 @@ for (EmbeddedSignatureRecipientResult r : embedded.getRecipients()) {
 }
 ```
 
-`sendEmail` defaults to `false` for this flow: the signing-link emails, the initial CC notice, the next signer's "your turn" email and the scheduled reminder and expiry-warning emails are suppressed, while passcode and completed-copy emails are still sent. No `auth` means the org's `defaultChannel` applies; an `auth` channel that differs from a locked default fails the whole call with `OtpOverrideNotAllowed`. For a `ready` signer `getIdentityVerificationMode()` is the mode the backend resolved; for `pending` / `completed` no URL was minted, so it is the mode you **requested** via `auth` (`null` when you set none, even if the org's default channel will apply). Pass a top-level `.fields(List<Field>)` to override every recipient's `fields` shorthand verbatim; an empty list counts as absent, so the shorthand still expands (0.8.0 sent the empty list and dropped it). It is **turn-aware**: with a real signing order the backend mints a URL only for the signer whose turn it is: a later signer comes back `pending` with a null `embedUrl`, so re-mint with `createSigningUrl` once earlier signers finish (e.g. an in-person kiosk handing the device to the next signer). A genuine error (any code other than not-in-turn / already-signed) still throws.
+`sendEmail` defaults to `false` for this flow: the signing-link emails, the initial CC notice, the next signer's "your turn" email and the scheduled reminder and expiry-warning emails are suppressed, while passcode and completed-copy emails are still sent. No `auth` means the org's `defaultChannel` applies; an `auth` channel that differs from a locked default fails the whole call with `OtpOverrideNotAllowed`. For a `ready` signer `getIdentityVerificationMode()` is the mode the backend resolved; for `pending` / `completed` no URL was minted, so it is the mode you **requested** via `auth` (`null` when you set none, even if the org's default channel will apply). Pass a top-level `.fields(List<Field>)` to override every recipient's `fields` shorthand verbatim; an empty list counts as absent, so the shorthand still expands (0.8.0 sent the empty list and dropped it). It is **turn-aware**: with a real signing order the backend mints a URL only for the signer whose turn it is: a later signer comes back `pending` with a null `embedUrl`, so re-mint with `createSigningUrl` once earlier signers finish (e.g. an in-person kiosk handing the device to the next signer). `.pageNavigation(...)` is passed to each embed URL like `.returnUrl(...)`, but it is not saved on the document: set it again on the `CreateSigningUrlRequest` when you re-mint a `pending` signer, or that signer gets the default `AUTO` navigation. A genuine error (any code other than not-in-turn / already-signed) still throws.
 
 ### Identity verification modes
 

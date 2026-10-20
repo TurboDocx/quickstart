@@ -408,6 +408,7 @@ link = await TurboSign.create_signing_url(
     external_id="your_customer_123",   # select the recipient by YOUR key...
     # recipient_id="rec-uuid",         # ...OR by TurboDocx's recipient id — pass EXACTLY ONE
     return_url="https://app.yourcompany.com/signed",  # optional; https only
+    # page_navigation="collapsed",  # optional: page thumbnails in the iframe: "auto" (default) | "collapsed" | "hidden"
 )
 
 print(link["url"])                       # open / redirect / iframe this
@@ -417,6 +418,8 @@ print(link["expiresAt"])                 # see below; None when the document doe
 ```
 
 The response also carries `recipientId` and (when set) `externalId`. Select the recipient with **exactly one** of `external_id` / `recipient_id` — zero or both raises `ValidationError(code="RecipientSelectorInvalid")` before any HTTP call; a non-`https` `return_url` raises `InvalidReturnUrl`.
+
+`page_navigation=` is optional; leave it out unless the user asks to change the page navigation. It sets how the signing page shows its page thumbnails inside your iframe (sent as `pageNavigation`; the type is `turbodocx_sdk.PageNavigationMode`): `"auto"` (the default) sizes it to the iframe width (the thumbnail rail is open at 1200px and wider, collapsed from 900px to 1199px, and a "Pages" button in the bottom bar under 900px), `"collapsed"` starts the rail collapsed at any width (the signer can still open it), and `"hidden"` shows no rail and no Pages button. It applies to that URL only: a later `create_signing_url` call without it resets to `"auto"`, so pass it on every mint. It has no effect when the URL is opened outside an iframe.
 
 **The URL's lifetime depends on the recipient's mode:**
 
@@ -490,6 +493,7 @@ try:
             },
         ],
         # return_url="https://app.yourcompany.com/signed",  # optional; passed to each embed URL
+        # page_navigation="hidden",  # optional; passed to each embed URL: "auto" (default) | "collapsed" | "hidden"
     )
 except AuthorizationError as e:
     if e.code == "OtpOverrideNotAllowed":
@@ -506,7 +510,7 @@ Returns `documentId` plus `recipients`; each entry has `recipientId`, `name`, `e
 **`status` is turn-aware** — with a sequential signing order the backend only mints a URL for the signer whose turn it is:
 
 - `'ready'` — it's their turn; `embedUrl` is set, frame it now.
-- `'pending'` — an earlier signer hasn't finished; `embedUrl` is `None`. Re-mint with `create_signing_url` once earlier signers complete.
+- `'pending'` — an earlier signer hasn't finished; `embedUrl` is `None`. Re-mint with `create_signing_url` once earlier signers complete. `page_navigation` is not saved on the document, so pass the same value again when you re-mint, or that signer gets the default `"auto"` navigation.
 - `'completed'` — they already signed; `embedUrl` is `None`.
 
 This is one underlying condition seen from both methods: `create_signing_url` **throws** `RecipientNotInTurn` / `RecipientAlreadySigned`, while `create_embedded_signature` **catches those codes** and degrades them to `pending` / `completed`. (The SDK also catches `NotSignersTurn` for cross-SDK parity; it is reserved and the current API never returns it, so don't write handling for it.) Any other error propagates. An SMS-OTP recipient with no `phone` (E.164) raises `PhoneRequiredForSmsOtp` before the send.
@@ -1520,7 +1524,7 @@ The exception attributes are `e.status_code` (int or `None`) and `e.code` (str) 
 | `TurboSign.void_document(document_id, reason)` | Cancel a signature request (reason required) |
 | `TurboSign.resend_email(document_id, recipient_ids)` | Resend signature email to recipient UUIDs |
 | `TurboSign.get_audit_trail(document_id)` | Get complete audit trail |
-| `TurboSign.create_signing_url(document_id, recipient_id=/external_id=, identity_assertion=, return_url=)` | Mint an embedded signing URL for one recipient (exactly one selector) |
+| `TurboSign.create_signing_url(document_id, recipient_id=/external_id=, identity_assertion=, return_url=, page_navigation=)` | Mint an embedded signing URL for one recipient (exactly one selector) |
 | `TurboSign.get_embedded_signing_settings()` | Read the org's read-only embedded-signing gates (`enabled`, `allowExternalIdv`, `allowIdentityOverride`, `defaultChannel`, `allowChannelOverride`, `allowedFrameAncestors`) |
 | `TurboSign.create_embedded_signature(recipients, ...)` | One call: send + mint a per-recipient embed URL; recipients carry `status` (`ready`/`pending`/`completed`) + `embedUrl` |
 | `Deliverable.configure(api_key, org_id, base_url=...)` | Configure the deliverable client (no sender_email needed) |

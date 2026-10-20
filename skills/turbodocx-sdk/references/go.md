@@ -526,6 +526,7 @@ documentID := sent.DocumentID
 link, err := client.TurboSign.CreateSigningURL(ctx, documentID, &turbodocx.CreateSigningURLRequest{
     ExternalID: "your_customer_123",                  // XOR RecipientID
     ReturnURL:  "https://app.yourcompany.com/signed", // optional, https only
+    // PageNavigation: turbodocx.PageNavigationCollapsed, // optional: page thumbnails in the iframe: Auto (default) | Collapsed | Hidden
 })
 if err != nil {
     log.Fatal(err)
@@ -563,6 +564,7 @@ Returns `*turbodocx.CreateSigningURLResponse` — `URL`, `ExpiresAt` (`*string`)
 - **`IdentityAssertion` is only for `external_idv` recipients.** Sending it for an OTP, override, or no-verification recipient is rejected with a 400 `IdentityModeConflict` error, so pass it only when the recipient is `external_idv`. `Provider`, `VerificationID`, `VerifiedAt`, `SubjectEmail` are required; `Method`, `MethodDetail` (required when `Method` is `"other"`), `AssuranceLevel`, `VerifiedName`, `EvidenceURL` (https) and `OverrideEmailMatching` (`bool`) are optional and left off the wire when empty.
 - **Request at click time, never store the URL.** For the bypass modes (`external_idv` / `override`) the link is single-use and expires 5 minutes after issue (a `?sut=` redeem-once URL), so mint a fresh one each time. For `otp` and no-verification recipients `URL` is the reusable signing link (a `?token=` URL), so `ExpiresAt` is the **document's own expiry**, or nil when the document doesn't expire.
 - **`ReturnURL` must be https**, or the SDK returns a `*turbodocx.ValidationError` with code `InvalidReturnUrl`.
+- **`PageNavigation` is optional; leave it out unless the user asks to change the page navigation.** It is a `turbodocx.PageNavigationMode` that sets how the signing page shows its page thumbnails inside your iframe: `turbodocx.PageNavigationAuto` (`"auto"`, the default) sizes it to the iframe width (the thumbnail rail is open at 1200px and wider, collapsed from 900px to 1199px, and a "Pages" button in the bottom bar under 900px), `turbodocx.PageNavigationCollapsed` starts the rail collapsed at any width (the signer can still open it), and `turbodocx.PageNavigationHidden` shows no rail and no Pages button. Empty sends nothing. It applies to that URL only: a later `CreateSigningURL` call without it resets to auto, so set it on every mint. It has no effect when the URL is opened outside an iframe.
 
 ### CreateEmbeddedSignature
 
@@ -584,6 +586,7 @@ resp, err := client.TurboSign.CreateEmbeddedSignature(ctx, &turbodocx.CreateEmbe
         },
     },
     ReturnURL: "https://app.yourcompany.com/signed", // optional, https, passed to each embed URL
+    // PageNavigation: turbodocx.PageNavigationHidden, // optional, passed to each embed URL: Auto (default) | Collapsed | Hidden
     // SendEmail nil already means false here: no signing-link, reminder or expiry-warning emails.
 })
 var authz *turbodocx.AuthorizationError
@@ -604,6 +607,7 @@ for _, r := range resp.Recipients {
 Returns `*turbodocx.CreateEmbeddedSignatureResponse`: `DocumentID` plus `Recipients` (`[]turbodocx.EmbeddedSignatureRecipientResult`), one result per signer **in signing order**, each carrying `RecipientID`, `Name`, `Email`, `EmbedURL`, `Status`, `IdentityVerificationMode`. For a `"ready"` signer that mode is what the backend resolved for the URL; for `"pending"` / `"completed"` no URL was minted, so it is the mode you **requested** via `Auth` (`""` when you set none, even if the org's default channel will apply). `CreateSigningURL` reports the effective mode.
 
 - **Turn-aware `Status`.** `SigningOrder` defaults to each recipient's index + 1, so a two-signer call is sequential: only signer 1 comes back `"ready"` with an `EmbedURL`, and the rest are `"pending"` (an earlier signer has not finished, `EmbedURL` empty) or `"completed"` (already signed). Re-mint the next signer's URL with `CreateSigningURL` once earlier signers finish (the just-in-time kiosk pattern). Give every recipient the same `SigningOrder` if you want them all `"ready"` at once.
+- **`PageNavigation` is passed to each embed URL, like `ReturnURL`.** It is not saved on the document: when you re-mint a `"pending"` signer's URL with `CreateSigningURL`, set the same `PageNavigation` again or that signer gets the default auto navigation.
 - **`Auth` is OTP-only.** `EmailOTP: true` maps to `{Mode: "otp", Channel: "email"}`; `SMS: &EmbeddedRecipientSMS{PhoneNumber: "+13055551234"}` maps to `{Mode: "otp", Channel: "sms"}` and sets the recipient's `Phone`. `EmailOTP` wins if both are set. No `Auth` means the org's `DefaultChannel` applies; an `Auth` channel that differs from a locked default fails the whole call with `OtpOverrideNotAllowed`. An SMS recipient with no resolvable phone returns a `*turbodocx.ValidationError` with code `PhoneRequiredForSmsOtp`. For `external_idv` / `override`, use `SendSignature` + `CreateSigningURL` instead.
 - **The `Fields` shorthand anchors by text.** Each key (`Signature`, `Date`, `Initials`, `FullName`) takes the anchor text to replace, expanded to a full field with `Placement: "replace"` and a default size. Note `Initials` emits the field type `"initial"` (there is no `"initials"` type). Pass a top-level `Fields []turbodocx.Field` for full control; it **replaces** the per-recipient shorthand, it does not merge with it. An empty top-level `Fields` counts as absent, so the shorthand still expands (0.8.0 sent the empty list and dropped it).
 - **`SendEmail` defaults to `false`** for this flow: the signing-link emails, the initial CC notice, the next signer's "your turn" email and the scheduled reminder and expiry-warning emails are suppressed, while passcode and completed-copy emails are still sent. Set `SendEmail` to a `*bool` to override.
