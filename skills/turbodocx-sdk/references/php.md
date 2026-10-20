@@ -16,7 +16,7 @@ Load in your bootstrap/entry point:
 // createUnsafeImmutable (not createImmutable) so getenv() sees the .env values too:
 // createImmutable fills only $_ENV / $_SERVER, and the snippets below read getenv().
 $dotenv = Dotenv\Dotenv::createUnsafeImmutable(__DIR__);
-$dotenv->load();
+$dotenv->safeLoad(); // no error when .env is absent (production uses real env vars)
 ```
 
 ## Imports
