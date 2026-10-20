@@ -1576,7 +1576,7 @@ product, err := qc.CreateProduct(ctx, &turbodocx.CreateProductRequest{
     ListPrice:        799.00,
     BillingFrequency: "annual",
     CategoryID:       categoryID,
-    // Images: []turbodocx.ProductImageInput{...},  // MAX 5 images per product, MAX 2 MB each
+    // Images: []turbodocx.ProductImageInput{...},  // MAX 3 images per product, MAX 2 MB each
 })
 
 // Duplicate a bundle
@@ -1714,6 +1714,68 @@ updated, err := qc.UpdateTemplate(ctx, template.ID, &turbodocx.UpdateQuoteTempla
 })
 ```
 
+### Sorting, filters and the list summary
+
+Every list takes `sortBy` / `sortDirection` (`asc` | `desc`); leave them out for the order the
+list always had. Sort columns: quotes `updatedOn` · `createdOn` · `total` · `validUntil` · `quoteNumber`;
+products `name` · `listPrice` · `createdOn`; price books `name` · `discountPercent` · `overrideCount` ·
+`validFrom` · `validTo` · `createdOn`; bundles `name` · `itemCount` · `totalListPrice` · `totalFinalPrice` ·
+`createdOn`; companies `name` · `contactCount` · `lastActivityDate`; contacts `name` · `createdOn`;
+types `name` · `usageCount`.
+
+The quote list also filters by several companies (`companyIds`) and currencies (`currencies`), by
+`expired` in `statuses` (a draft or sent quote past its Valid until day, UTC, or whose signature
+expired), by creator (`createdBy`, ids from the creators call; `createdByApiKeys` for API-key quotes)
+and by Valid until (`validUntilWindow` = `thisWeek` | `thisMonth` | `past`, `validUntilFrom` /
+`validUntilTo`). Each quote carries `isExpired` and `lineItemCount`; the response adds
+`statusCounts` (per tab) and `summary` (pipeline, win rate, monthly recurring, in `summaryCurrency`).
+
+Go option structs take the sort as `SortBy` / `SortDirection` (`SortAsc` / `SortDesc`). Products and
+bundles take several values in `BillingFrequencies` / `CurrencyCodes` next to the single fields.
+
+```go
+str := func(s string) *string { return &s }
+
+page, err := qc.ListQuotes(ctx, &turbodocx.ListQuotesOptions{
+	Statuses:         []string{"sent", turbodocx.QuoteListStatusExpired},
+	Currencies:       []string{"USD", "EUR"},
+	ValidUntilWindow: str(turbodocx.ValidUntilThisMonth),
+	SortBy:           str(turbodocx.QuoteSortByValidUntil),
+	SortDirection:    str(turbodocx.SortAsc),
+})
+fmt.Println(page.StatusCounts.Expired, page.Summary.WinRate.Percent)
+
+creators, _ := qc.ListQuoteCreators(ctx) // IDs for CreatedBy
+summary, _ := qc.GetQuoteSummary(ctx, &turbodocx.QuoteSummaryOptions{CreatedBy: []string{creators[0].ID}})
+next, _ := qc.GetNextQuoteNumber(ctx) // read only
+
+copy, _ := qc.DuplicateQuote(ctx, quote.ID, turbodocx.DuplicateOptions{Name: "Q4 renewal"}) // name is optional
+```
+
+`DuplicateQuote`, `DuplicateProduct`, `DuplicatePriceBook` and `DuplicateBundle` take an optional
+`DuplicateOptions{Name: …}` (otherwise "Copy of …"). Companies take an optional `Email` (`ClearEmail()` on
+update); `UpdatePriceBookRequest.ResetProductPricing` puts every product back on the book's discount.
+`ListCompanyContacts` now takes `*ListCompanyContactsOptions` (pagination plus the sort).
+
+### Custom line item images
+
+A custom line item (one with no catalog product) can show up to three images on the quote (PNG or
+JPEG, 2 MB each; draft quotes only). Catalog products use `GetProductQuoteImages(ctx, productIDs)`.
+
+```go
+images, err := qc.AddLineItemImages(ctx, quote.ID, itemID, []turbodocx.ProductImageInput{{FilePath: "./diagram.png"}})
+_, err = qc.ReorderLineItemImages(ctx, quote.ID, itemID, []string{images[1].ID, images[0].ID})
+_, err = qc.RemoveLineItemImage(ctx, quote.ID, itemID, images[0].ID)
+byItem, err := qc.GetQuoteLineItemImages(ctx, quote.ID) // map[lineItemID][]LineItemImage
+```
+
+**Deletes the API refuses.** `DeleteQuote` on a **sent** quote is a 409 `*ConflictError` with code
+`CANNOT_DELETE_SENT_QUOTE` — void it instead; an accepted quote is a 409 `CANNOT_DELETE_ACCEPTED_QUOTE`.
+`DeleteCompany` is a 409 `CompanyHasOpenQuotes` while the company has open quotes (draft, pending approval or
+sent), and `DeleteContact` is a 409 `LastContact` (the company's only contact) or `ContactHasOpenQuotes`.
+`DeletePriceBook` on the org's default price book is a 400 `*ValidationError` `PriceBookIsDefault`. Branch on
+`err.Code`; `GetCompanyOpenQuotes` / `GetContactOpenQuotes` list the open quotes that block a delete.
+
 ### TurboQuote error handling
 
 ```go
@@ -1833,11 +1895,13 @@ Every typed error embeds `turbodocx.TurboDocxError`, so `Code` (string), `Messag
 | `turbodocx.VerifyWebhookSignature(rawBody, sigHeader, tsHeader, secret, opts)` | Free function; verifies inbound deliveries |
 | `turbodocx.NewQuoteClient(cfg)` | Construct a TurboQuote client (no SenderEmail required) |
 | `qc.ListQuotes(ctx, opts)` | Paginated quote list with filters |
+| `qc.GetQuoteSummary(ctx, opts)` | The quote list's summary cards (pipeline, win rate, monthly recurring…) for the list filters, in `summaryCurrency` |
+| `qc.ListQuoteCreators(ctx)` | People and API keys who created the org's quotes — the ids for the `createdBy` filter |
 | `qc.CreateQuote(ctx, req)` | Create a new quote (status: draft) |
 | `qc.GetQuote(ctx, id)` | Get quote + merged `statusInfo` and `preparedBy` (single-quote fetch only) |
 | `qc.UpdateQuote(ctx, id, req)` | Patch quote fields; use `ClearPriceBookID()` etc. to null-clear |
-| `qc.DeleteQuote(ctx, id)` | Delete a quote |
-| `qc.DuplicateQuote(ctx, id)` | Duplicate a quote |
+| `qc.DeleteQuote(ctx, id)` | Delete a quote (a sent or accepted quote is refused — 409) |
+| `qc.DuplicateQuote(ctx, id, turbodocx.DuplicateOptions{Name: …}?)` | Duplicate a quote |
 | `qc.ApplyPriceBook(ctx, quoteID, priceBookID)` | Apply price-book discounts; returns updatedCount / skippedCount |
 | `qc.RemovePriceBook(ctx, quoteID)` | Remove price-book association from a quote |
 | `qc.DownloadQuotePdf(ctx, id)` | Download quote as PDF ([]byte) |
@@ -1849,19 +1913,26 @@ Every typed error embeds `turbodocx.TurboDocxError`, so `Code` (string), `Messag
 | `qc.CreateAndSend(ctx, req)` | Convenience: create + add items + send in one call |
 | `qc.GetQuoteNumberConfig(ctx)` | Get the org's quote-number config (admin; `{ format, currentFloor }`) |
 | `qc.UpdateQuoteNumberConfig(ctx, format)` | Update the org's quote-number format (admin; returns `{ format, currentFloor }`) |
+| `qc.GetNextQuoteNumber(ctx)` | The number the next quote will get (read only; any role that can create quotes) |
 | `qc.ListLineItems(ctx, quoteID, opts)` | List line items for a quote |
 | `qc.AddLineItems(ctx, quoteID, items...)` | Add 1–50 product line items (variadic). `ProductID` (key; nil sends null), `ProductName`, `UnitPrice`, `BillingFrequency` all required |
 | `qc.AddBundleLineItems(ctx, quoteID, items...)` | Add 1–50 bundle line items (variadic); each needs only `BundleID` + `BundleName` (the server expands the children) |
 | `qc.UpdateLineItem(ctx, quoteID, itemID, req)` | Update a line item |
 | `qc.RemoveLineItem(ctx, quoteID, itemID)` | Remove a line item |
+| `qc.GetQuoteLineItemImages(ctx, quoteID)` | Every custom line item's images (up to three, in order), keyed by line item ID |
+| `qc.GetLineItemImages(ctx, quoteID, itemID)` | One custom line item's images, in order |
+| `qc.AddLineItemImages(ctx, quoteID, itemID, images)` | Add images to a custom line item (PNG/JPEG, 2 MB each, three in all; draft quotes only) |
+| `qc.ReorderLineItemImages(ctx, quoteID, itemID, imageIDs)` | Set the image order, first to last |
+| `qc.RemoveLineItemImage(ctx, quoteID, itemID, imageID)` | Remove one image; returns the images left |
 | `qc.ListProducts(ctx, opts)` | Paginated product catalog |
-| `qc.CreateProduct(ctx, req)` | Create a product; `CategoryID` required (multipart when images provided — max 5 images, 2 MB each) |
+| `qc.CreateProduct(ctx, req)` | Create a product; `CategoryID` required (multipart when images provided — max 3 images, 2 MB each) |
 | `qc.BulkCreateProducts(ctx, rows)` | Bulk-import products; each row needs `Name`, `CategoryID` (UUID), `ListPrice`, `BillingFrequency`. Returns `(*BulkImportResult, error)` (partial success) |
 | `qc.GetProduct(ctx, id)` | Get a product by ID |
-| `qc.UpdateProduct(ctx, id, req)` | Update a product (multipart when images provided — max 5 images, 2 MB each) |
+| `qc.UpdateProduct(ctx, id, req)` | Update a product (multipart when images provided — max 3 images, 2 MB each) |
 | `qc.DeleteProduct(ctx, id)` | Delete a product |
 | `qc.DuplicateProduct(ctx, id)` | Duplicate a product |
 | `qc.GetProductPrimaryImages(ctx, productIDs)` | Batch-fetch primary images by product ID |
+| `qc.GetProductQuoteImages(ctx, productIDs)` | The images each product shows on a quote: up to three, in order |
 | `qc.ListPriceBooks(ctx, opts)` | Paginated price-book list |
 | `qc.CreatePriceBook(ctx, req)` | Create a price book |
 | `qc.BulkCreatePriceBooks(ctx, rows)` | Bulk-import price books; returns `(*BulkImportResult, error)` (partial success) |
@@ -1883,12 +1954,14 @@ Every typed error embeds `turbodocx.TurboDocxError`, so `Code` (string), `Messag
 | `qc.GetCompany(ctx, id)` | Get a company by ID |
 | `qc.UpdateCompany(ctx, id, req)` | Update a company |
 | `qc.DeleteCompany(ctx, id)` | Delete a company |
+| `qc.GetCompanyOpenQuotes(ctx, companyID)` | Open quotes (draft, pending approval, sent) that block deleting the company: `{ results, totalRecords }` |
 | `qc.ListCompanyContacts(ctx, companyID, opts)` | List contacts for a specific company |
 | `qc.ListContacts(ctx, opts)` | Paginated contact list |
 | `qc.CreateContact(ctx, req)` | Create a contact |
 | `qc.BulkCreateContacts(ctx, rows)` | Bulk-import contacts; returns `(*BulkImportResult, error)` (partial success) |
 | `qc.UpdateContact(ctx, id, req)` | Update a contact |
 | `qc.DeleteContact(ctx, id)` | Delete a contact |
+| `qc.GetContactOpenQuotes(ctx, contactID)` | Open quotes made out to the contact that block deleting them: `{ results, totalRecords }` |
 | `qc.ListTemplates(ctx, opts)` | Paginated quote template list |
 | `qc.GetTemplate(ctx)` | Get the active (singleton) quote template. Self-heals: auto-creates one from org branding if none exists, so it always returns a template |
 | `qc.GetTemplateByID(ctx, id)` | Get a specific quote template by ID |
@@ -1936,7 +2009,9 @@ Every typed error embeds `turbodocx.TurboDocxError`, so `Code` (string), `Messag
 - **`TermDays` defaults to 60** (not 30), maxes out at 3650, and `-1` means auto-renewal. `RenewalPeriod` (`"weekly" | "monthly" | "quarterly" | "annually"`) is **required when `TermDays` is -1** and must be absent for any other `TermDays` — sending it otherwise is a 400. Use `ClearRenewalPeriod()` on `UpdateQuoteRequest` when moving a quote off auto-renewal.
 - **`HandleExpiredQuote` only accepts `Action: "void"` or `"decline"`.** `"extend"` and `"resend"` do not exist in the API and return a 400. `Reason` (max 190 chars) and `NewValidUntil` (ISO date) are both required; the endpoint voids/declines the original and issues a duplicate carrying the new date — that duplicate *is* the "extend".
 - **Quote templates are auto-provisioned.** `GetTemplate` self-heals — it creates one from org branding when none exists — so `CreateTemplate` on an established org returns 400 `TEMPLATE_ALREADY_EXISTS` and is effectively unreachable. Always do `GetTemplate` → `UpdateTemplate`. `DeleteTemplate` is a reset-to-branding-defaults, not a permanent removal.
-- **Product images: max 5 per product, 2 MB each.** Exceeding either returns 400 `MAX_IMAGES_EXCEEDED`.
+- **Product images: max 3 per product, 2 MB each** (custom line items: the same). Exceeding either returns 400 `MAX_IMAGES_EXCEEDED`. A product that already has more keeps them until one is added; a duplicate copies the first three.
+- **Some deletes are refused.** A **sent** quote can't be deleted — void it (409 `CANNOT_DELETE_SENT_QUOTE`); an accepted one neither (409 `CANNOT_DELETE_ACCEPTED_QUOTE`). A company with open quotes (409 `CompanyHasOpenQuotes`), a company's last contact (409 `LastContact`), a contact on open quotes (409 `ContactHasOpenQuotes`) and the default price book (400 `PriceBookIsDefault`) are refused too. Check the open-quotes calls before deleting a company or contact.
+- **List sorting is opt-in.** Every list takes `sortBy` / `sortDirection`; leave them out and the list keeps its usual order (quotes: newest created first). `"expired"` is a `statuses` filter value, not a stored status — an expired quote still reads `draft` or `sent`.
 - **Bulk creates are partial-success, not transactional.** `BulkCreateProducts`/`BulkCreatePriceBooks`/`BulkCreateBundles`/`BulkCreateCompanies`/`BulkCreateContacts`/`BulkCreateTypes` return a non-nil `err` only for transport/request-level failures (e.g. exceeding the 500-row cap → 400). A bad row does not error — read `result.Failed` (`[]BulkImportRowIssue{Row, Reason}`, `Row` 1-indexed) and `result.Adjusted`; earlier rows are not rolled back. Admin + contributor keys only.
 - **Bulk product rows take `CategoryID`, never a category name.** The row schema is strict and rejects unknown keys. Resolve or create the category with `ListTypes` / `CreateType` first and pass its UUID. Required per row: `Name`, `CategoryID`, `ListPrice`, `BillingFrequency`.
 

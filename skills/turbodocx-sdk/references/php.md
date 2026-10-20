@@ -1482,7 +1482,7 @@ $product = TurboQuote::createProduct(new CreateProductRequest(
     billingFrequency: 'annual',
     categoryId: 'category-uuid',
     showInCatalog: true,
-    // images: [...],  // optional — MAX 5 images per product, MAX 2 MB each
+    // images: [...],  // optional — MAX 3 images per product, MAX 2 MB each
 ));
 
 // Create a bundle. Each catalog bundle item requires productId, unitPrice and
@@ -1624,6 +1624,67 @@ Bulk-create semantics:
 - **Partial success** — a failed row does **not** throw and does **not** roll back the rows before it. It is reported in `$result->failed` with a 1-indexed `row` and a `reason`. Rows the server tweaked (e.g. an unknown bundle item dropped) appear in `$result->adjusted`. Always read `$result->failed` rather than assuming every row imported.
 - **500-row cap per request** — more than 500 rows throws `ValidationException` (400). The SDK does not validate the rows or the cap client-side.
 - **Roles** — available to administrator and contributor API keys.
+
+### Sorting, Filters and the List Summary
+
+Every list takes `sortBy` / `sortDirection` (`asc` | `desc`); leave them out for the order the
+list always had. Sort columns: quotes `updatedOn` · `createdOn` · `total` · `validUntil` · `quoteNumber`;
+products `name` · `listPrice` · `createdOn`; price books `name` · `discountPercent` · `overrideCount` ·
+`validFrom` · `validTo` · `createdOn`; bundles `name` · `itemCount` · `totalListPrice` · `totalFinalPrice` ·
+`createdOn`; companies `name` · `contactCount` · `lastActivityDate`; contacts `name` · `createdOn`;
+types `name` · `usageCount`.
+
+The quote list also filters by several companies (`companyIds`) and currencies (`currencies`), by
+`expired` in `statuses` (a draft or sent quote past its Valid until day, UTC, or whose signature
+expired), by creator (`createdBy`, ids from the creators call; `createdByApiKeys` for API-key quotes)
+and by Valid until (`validUntilWindow` = `thisWeek` | `thisMonth` | `past`, `validUntilFrom` /
+`validUntilTo`). Each quote carries `isExpired` and `lineItemCount`; the response adds
+`statusCounts` (per tab) and `summary` (pipeline, win rate, monthly recurring, in `summaryCurrency`).
+
+```php
+use TurboDocx\Types\Requests\Quote\ListQuotesRequest;
+use TurboDocx\Types\Requests\Quote\QuoteSummaryRequest;
+
+$page = TurboQuote::listQuotes(new ListQuotesRequest(
+    statuses: ['sent', 'expired'],
+    currencies: ['USD', 'EUR'],
+    validUntilWindow: 'thisMonth',
+    sortBy: 'validUntil',
+    sortDirection: 'asc',
+    summaryCurrency: 'USD',
+));
+echo $page->statusCounts?->expired, ' ', $page->summary?->winRate['percent'];
+
+$creators = TurboQuote::listQuoteCreators();            // ids for createdBy
+$summary = TurboQuote::getQuoteSummary(new QuoteSummaryRequest(createdBy: [$creators[0]->id]));
+$next = TurboQuote::getNextQuoteNumber();               // read only
+
+$copy = TurboQuote::duplicateQuote($quote->id, 'Q4 renewal'); // name is optional
+```
+
+`duplicateQuote()`, `duplicateProduct()`, `duplicatePriceBook()` and `duplicateBundle()` take an optional
+name (otherwise "Copy of …"). `ListProductsRequest` / `ListBundlesRequest` take one value or an array for
+`billingFrequency` / `currency`. Companies take an optional `email` (`includeEmail: true` + `email: null`
+clears it); `UpdatePriceBookRequest(resetProductPricing: true)` puts every product back on the book's discount.
+
+### Custom Line Item Images
+
+A custom line item (one with no catalog product) can show up to three images on the quote (PNG or
+JPEG, 2 MB each; draft quotes only). Catalog products use `getProductQuoteImages($productIds)`.
+
+```php
+$images = TurboQuote::addLineItemImages($quote->id, $itemId, ['/path/to/diagram.png']); // paths or raw bytes
+TurboQuote::reorderLineItemImages($quote->id, $itemId, [$images[1]->id, $images[0]->id]);
+TurboQuote::removeLineItemImage($quote->id, $itemId, $images[0]->id);
+$byItem = TurboQuote::getQuoteLineItemImages($quote->id); // [lineItemId => LineItemImage[]]
+```
+
+**Deletes the API refuses.** `deleteQuote()` on a **sent** quote is a 409 `ConflictException` with code
+`CANNOT_DELETE_SENT_QUOTE` — void it instead; an accepted quote is a 409 `CANNOT_DELETE_ACCEPTED_QUOTE`.
+`deleteCompany()` is a 409 `CompanyHasOpenQuotes` while the company has open quotes (draft, pending approval or
+sent), and `deleteContact()` is a 409 `LastContact` (the company's only contact) or `ContactHasOpenQuotes`.
+`deletePriceBook()` on the org's default price book is a 400 `ValidationException` `PriceBookIsDefault`. Branch on
+`$e->errorCode`; `getCompanyOpenQuotes()` / `getContactOpenQuotes()` list the open quotes that block a delete.
 
 ### TurboQuote error handling
 
@@ -1851,10 +1912,12 @@ otherwise the class default — `VALIDATION_ERROR`, `AUTHENTICATION_ERROR`, `AUT
 | **TurboQuote — Quotes** | |
 | `TurboQuote::createQuote($request)` | Create a new quote |
 | `TurboQuote::listQuotes($request?)` | List quotes with pagination, filters, and stats |
+| `TurboQuote::getQuoteSummary($request?)` | The quote list's summary cards (pipeline, win rate, monthly recurring…) for the list filters, in `summaryCurrency` |
+| `TurboQuote::listQuoteCreators()` | People and API keys who created the org's quotes — the ids for the `createdBy` filter |
 | `TurboQuote::getQuote($id)` | Get quote by ID (`statusInfo` merged in; `preparedBy` present on this call only) |
 | `TurboQuote::updateQuote($id, $request)` | Update quote fields (PATCH — null-clears nullable fields) |
-| `TurboQuote::deleteQuote($id)` | Delete a quote |
-| `TurboQuote::duplicateQuote($id)` | Duplicate a quote |
+| `TurboQuote::deleteQuote($id)` | Delete a quote (a sent or accepted quote is refused — 409) |
+| `TurboQuote::duplicateQuote($id, $name?)` | Duplicate a quote |
 | `TurboQuote::downloadQuotePdf($id)` | Download quote as raw PDF bytes |
 | `TurboQuote::sendQuote($id, $request?)` | Send quote to the contact |
 | `TurboQuote::sendQuoteWithDeliverable($id, $request)` | Send with a TurboDocx-generated document attached |
@@ -1870,6 +1933,11 @@ otherwise the class default — `VALIDATION_ERROR`, `AUTHENTICATION_ERROR`, `AUT
 | `TurboQuote::addBundleLineItems($quoteId, $items)` | Add 1–50 bundle line items; each needs only `bundleId` + `bundleName` (the server expands the children) |
 | `TurboQuote::updateLineItem($quoteId, $itemId, $request)` | Update a line item |
 | `TurboQuote::removeLineItem($quoteId, $itemId)` | Remove a line item |
+| `TurboQuote::getQuoteLineItemImages($quoteId)` | Every custom line item's images (up to three, in order), keyed by line item ID |
+| `TurboQuote::getLineItemImages($quoteId, $itemId)` | One custom line item's images, in order |
+| `TurboQuote::addLineItemImages($quoteId, $itemId, $images)` | Add images to a custom line item (PNG/JPEG, 2 MB each, three in all; draft quotes only) |
+| `TurboQuote::reorderLineItemImages($quoteId, $itemId, $imageIds)` | Set the image order, first to last |
+| `TurboQuote::removeLineItemImage($quoteId, $itemId, $imageId)` | Remove one image; returns the images left |
 | **TurboQuote — Products** | |
 | `TurboQuote::listProducts($request?)` | List catalog products |
 | `TurboQuote::createProduct($request)` | Create a product (supports image upload via multipart) |
@@ -1879,6 +1947,7 @@ otherwise the class default — `VALIDATION_ERROR`, `AUTHENTICATION_ERROR`, `AUT
 | `TurboQuote::deleteProduct($id)` | Delete a product |
 | `TurboQuote::duplicateProduct($id)` | Duplicate a product |
 | `TurboQuote::getProductPrimaryImages($productIds)` | Batch-fetch primary images for product IDs |
+| `TurboQuote::getProductQuoteImages($productIds)` | The images each product shows on a quote: up to three, in order |
 | **TurboQuote — Price Books** | |
 | `TurboQuote::listPriceBooks($request?)` | List price books |
 | `TurboQuote::createPriceBook($request)` | Create a price book |
@@ -1903,6 +1972,7 @@ otherwise the class default — `VALIDATION_ERROR`, `AUTHENTICATION_ERROR`, `AUT
 | `TurboQuote::getCompany($id)` | Get company by ID |
 | `TurboQuote::updateCompany($id, $request)` | Update a company |
 | `TurboQuote::deleteCompany($id)` | Delete a company |
+| `TurboQuote::getCompanyOpenQuotes($companyId)` | Open quotes (draft, pending approval, sent) that block deleting the company: `{ results, totalRecords }` |
 | `TurboQuote::listCompanyContacts($companyId, $request?)` | List contacts for a company |
 | **TurboQuote — Contacts** | |
 | `TurboQuote::listContacts($request?)` | List contacts |
@@ -1910,6 +1980,7 @@ otherwise the class default — `VALIDATION_ERROR`, `AUTHENTICATION_ERROR`, `AUT
 | `TurboQuote::bulkCreateContacts($rows)` | Bulk-import contacts; returns a partial-success `BulkImportResult` |
 | `TurboQuote::updateContact($id, $request)` | Update a contact |
 | `TurboQuote::deleteContact($id)` | Delete a contact |
+| `TurboQuote::getContactOpenQuotes($contactId)` | Open quotes made out to the contact that block deleting them: `{ results, totalRecords }` |
 | **TurboQuote — Templates** | |
 | `TurboQuote::listTemplates($request?)` | List quote templates |
 | `TurboQuote::getTemplate()` | Get the org's active quote template (singleton endpoint). Self-heals: auto-creates one from org branding if none exists, so it always returns a template |
@@ -1926,6 +1997,7 @@ otherwise the class default — `VALIDATION_ERROR`, `AUTHENTICATION_ERROR`, `AUT
 | **TurboQuote — Quote Numbering** | |
 | `TurboQuote::getQuoteNumberConfig()` | Get the org's quote-number config (admin only) |
 | `TurboQuote::updateQuoteNumberConfig($format)` | Update the quote-number format (admin only) |
+| `TurboQuote::getNextQuoteNumber()` | The number the next quote will get (read only; any role that can create quotes) |
 
 ## Gotchas
 
@@ -1960,7 +2032,9 @@ otherwise the class default — `VALIDATION_ERROR`, `AUTHENTICATION_ERROR`, `AUT
 - **`termDays` defaults to 60** (not 30), maxes out at 3650, and `-1` means auto-renewal. `renewalPeriod` (`'weekly' | 'monthly' | 'quarterly' | 'annually'`) is **required when `termDays` is -1** and must be absent/`null` for any other `termDays` — sending it otherwise is a 400.
 - **`handleExpiredQuote` only accepts `action: 'void'` or `'decline'`.** `'extend'` and `'resend'` do not exist in the API and return a 400. `reason` (max 190 chars) and `newValidUntil` (ISO date) are both required; the endpoint voids/declines the original and issues a duplicate carrying the new date — that duplicate *is* the "extend".
 - **Quote templates are auto-provisioned.** `getTemplate()` self-heals — it creates one from org branding when none exists — so `createTemplate()` on an established org throws 400 `TEMPLATE_ALREADY_EXISTS` and is effectively unreachable. Always do `getTemplate()` → `updateTemplate()`. `deleteTemplate()` is a reset-to-branding-defaults, not a permanent removal.
-- **Product images: max 5 per product, 2 MB each.** Exceeding either returns 400 `MAX_IMAGES_EXCEEDED`.
+- **Product images: max 3 per product, 2 MB each** (custom line items: the same). Exceeding either returns 400 `MAX_IMAGES_EXCEEDED`. A product that already has more keeps them until one is added; a duplicate copies the first three.
+- **Some deletes are refused.** A **sent** quote can't be deleted — void it (409 `CANNOT_DELETE_SENT_QUOTE`); an accepted one neither (409 `CANNOT_DELETE_ACCEPTED_QUOTE`). A company with open quotes (409 `CompanyHasOpenQuotes`), a company's last contact (409 `LastContact`), a contact on open quotes (409 `ContactHasOpenQuotes`) and the default price book (400 `PriceBookIsDefault`) are refused too. Check the open-quotes calls before deleting a company or contact.
+- **List sorting is opt-in.** Every list takes `sortBy` / `sortDirection`; leave them out and the list keeps its usual order (quotes: newest created first). `"expired"` is a `statuses` filter value, not a stored status — an expired quote still reads `draft` or `sent`.
 - **Bulk creates are partial-success, not transactional.** `bulkCreateProducts`/`bulkCreatePriceBooks`/`bulkCreateBundles`/`bulkCreateCompanies`/`bulkCreateContacts`/`bulkCreateTypes` never throw on a bad row — read `$result->failed` (`BulkImportRowIssue[]` with 1-indexed `$row` + `$reason`) and `$result->adjusted`; earlier rows are not rolled back. Cap is 500 rows/request (over → `ValidationException` 400). Admin + contributor keys only.
 - **Bulk product rows take `categoryId`, never `categoryName`.** The row schema is strict and rejects unknown keys, so a `categoryName` field 400s the row. Resolve or create the category with `listTypes()` / `createType()` first and pass its UUID. Required per row: `name`, `categoryId`, `listPrice`, `billingFrequency`.
 

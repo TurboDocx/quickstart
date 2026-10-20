@@ -3568,6 +3568,95 @@
           "description": ".env file contains TURBODOCX_API_KEY and TURBODOCX_ORG_ID"
         }
       ]
+    },
+    {
+      "id": 72,
+      "prompt": "Add a quotes dashboard API to my Express app using TurboDocx TurboQuote: an endpoint that lists sent and expired quotes in a given set of currencies, sorted by valid-until date (soonest first), and returns the per-status counts and the summary numbers (pipeline, win rate) alongside the page of quotes.",
+      "expected_output": "Configures TurboQuote with apiKey + orgId (NO senderEmail). The handler calls TurboQuote.listQuotes once with statuses ['sent','expired'], currencies (an array, not a comma-joined string), sortBy 'validUntil' and sortDirection 'asc', plus limit/offset paging, and returns results, statusCounts and summary from that one response (or calls getQuoteSummary for the cards). It does NOT fetch every quote and sort or filter in JavaScript, and does NOT treat 'expired' as something it computes itself.",
+      "files": [
+        "package.json",
+        "tsconfig.json",
+        "src/index.ts",
+        "package-lock.json"
+      ],
+      "assertions": [
+        {
+          "name": "config-uses-turboquote",
+          "type": "file_contains",
+          "description": "Config calls TurboQuote.configure with apiKey and orgId (NOT TurboSign)"
+        },
+        {
+          "name": "server-side-sort",
+          "type": "file_contains",
+          "description": "listQuotes is called with sortBy: 'validUntil' and sortDirection: 'asc'"
+        },
+        {
+          "name": "expired-status-filter",
+          "type": "file_contains",
+          "description": "statuses includes 'expired' (the API's filter value) alongside 'sent'"
+        },
+        {
+          "name": "currencies-array",
+          "type": "file_contains",
+          "description": "Passes several currencies as an array (currencies or currency), not a comma-joined string"
+        },
+        {
+          "name": "returns-counts-and-summary",
+          "type": "file_contains",
+          "description": "Response includes statusCounts and summary from the listQuotes response (or getQuoteSummary)"
+        },
+        {
+          "name": "no-client-side-sort",
+          "type": "file_not_contains",
+          "description": "Does NOT sort or filter the quotes array in JavaScript (.sort( / .filter( on quote results) instead of using the API parameters"
+        },
+        {
+          "name": "no-sender-env-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL"
+        }
+      ]
+    },
+    {
+      "id": 73,
+      "prompt": "In my FastAPI app, add an endpoint that deletes a TurboQuote company, but only if it's safe: if the company still has open quotes, return them to the caller instead of deleting.",
+      "expected_output": "Configures TurboQuote (api_key + org_id, NO sender email). The endpoint calls TurboQuote.get_company_open_quotes(company_id) first and returns the open quotes (results, totalRecords) when totalRecords > 0; otherwise calls TurboQuote.delete_company(company_id). It also catches ConflictError (409, code CompanyHasOpenQuotes) from delete_company, since a quote can be opened in between, and returns a 409 with the reason.",
+      "files": [
+        "requirements.txt",
+        "main.py"
+      ],
+      "assertions": [
+        {
+          "name": "config-uses-turboquote",
+          "type": "file_contains",
+          "description": "Calls TurboQuote.configure with api_key and org_id (NOT TurboSign)"
+        },
+        {
+          "name": "checks-open-quotes",
+          "type": "file_contains",
+          "description": "Calls TurboQuote.get_company_open_quotes before deleting"
+        },
+        {
+          "name": "deletes-company",
+          "type": "file_contains",
+          "description": "Calls TurboQuote.delete_company when there are no open quotes"
+        },
+        {
+          "name": "handles-conflict",
+          "type": "file_contains",
+          "description": "Catches ConflictError (409) from delete_company and returns the API's reason/code"
+        },
+        {
+          "name": "no-invented-methods",
+          "type": "file_not_contains",
+          "description": "Does NOT call invented methods like list_open_quotes, company_has_quotes or delete_company_safe"
+        },
+        {
+          "name": "no-sender-env-vars",
+          "type": "file_not_contains",
+          "description": ".env does NOT contain TURBODOCX_SENDER_EMAIL"
+        }
+      ]
     }
   ]
 }

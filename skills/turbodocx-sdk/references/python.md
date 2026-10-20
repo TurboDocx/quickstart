@@ -1321,7 +1321,7 @@ product = await TurboQuote.create_product({
     "billingFrequency": "one-time",
     "categoryId": "category-uuid",
     "showInCatalog": True,
-    # "images": [...]  # optional — MAX 5 images per product, MAX 2 MB each
+    # "images": [...]  # optional — MAX 3 images per product, MAX 2 MB each
 })
 
 # Create a price book and apply to a quote.
@@ -1352,6 +1352,64 @@ result = await TurboQuote.create_and_send({
 })
 print(result["quote"]["status"])  # 'sent'
 ```
+
+### Sorting, filters and the list summary
+
+Every list takes `sortBy` / `sortDirection` (`asc` | `desc`); leave them out for the order the
+list always had. Sort columns: quotes `updatedOn` · `createdOn` · `total` · `validUntil` · `quoteNumber`;
+products `name` · `listPrice` · `createdOn`; price books `name` · `discountPercent` · `overrideCount` ·
+`validFrom` · `validTo` · `createdOn`; bundles `name` · `itemCount` · `totalListPrice` · `totalFinalPrice` ·
+`createdOn`; companies `name` · `contactCount` · `lastActivityDate`; contacts `name` · `createdOn`;
+types `name` · `usageCount`.
+
+The quote list also filters by several companies (`companyIds`) and currencies (`currencies`), by
+`expired` in `statuses` (a draft or sent quote past its Valid until day, UTC, or whose signature
+expired), by creator (`createdBy`, ids from the creators call; `createdByApiKeys` for API-key quotes)
+and by Valid until (`validUntilWindow` = `thisWeek` | `thisMonth` | `past`, `validUntilFrom` /
+`validUntilTo`). Each quote carries `isExpired` and `lineItemCount`; the response adds
+`statusCounts` (per tab) and `summary` (pipeline, win rate, monthly recurring, in `summaryCurrency`).
+
+```python
+page = await TurboQuote.list_quotes({
+    "statuses": ["sent", "expired"],
+    "currencies": ["USD", "EUR"],
+    "validUntilWindow": "thisMonth",
+    "sortBy": "validUntil",
+    "sortDirection": "asc",
+    "summaryCurrency": "USD",
+})
+print(page["statusCounts"]["expired"], page["summary"]["winRate"]["percent"])
+
+creators = await TurboQuote.list_quote_creators()           # ids for createdBy
+summary = await TurboQuote.get_quote_summary({"createdBy": [creators[0]["id"]]})
+next_number = await TurboQuote.get_next_quote_number()      # read only
+
+products = await TurboQuote.list_products({"billingFrequency": ["monthly", "annual"], "sortBy": "listPrice"})
+copy = await TurboQuote.duplicate_quote(quote["id"], name="Q4 renewal")  # name is optional
+```
+
+`duplicate_quote`, `duplicate_product`, `duplicate_price_book` and `duplicate_bundle` take an optional
+`name=` (otherwise "Copy of …"). Companies take an optional `"email"`; `update_price_book(id, {"resetProductPricing": True})`
+puts every product back on the book's discount.
+
+### Custom line item images
+
+A custom line item (one with no catalog product) can show up to three images on the quote (PNG or
+JPEG, 2 MB each; draft quotes only). Catalog products use `get_product_quote_images(product_ids)`.
+
+```python
+images = await TurboQuote.add_line_item_images(quote["id"], item_id, ["./diagram.png"])  # paths, bytes or files
+await TurboQuote.reorder_line_item_images(quote["id"], item_id, [i["id"] for i in reversed(images)])
+await TurboQuote.remove_line_item_image(quote["id"], item_id, images[0]["id"])
+by_item = await TurboQuote.get_quote_line_item_images(quote["id"])  # {line_item_id: [image, ...]}
+```
+
+**Deletes the API refuses.** `delete_quote` on a **sent** quote is a 409 `ConflictError` with code
+`CANNOT_DELETE_SENT_QUOTE` — void it instead; an accepted quote is a 409 `CANNOT_DELETE_ACCEPTED_QUOTE`.
+`delete_company` is a 409 `CompanyHasOpenQuotes` while the company has open quotes (draft, pending approval or
+sent), and `delete_contact` is a 409 `LastContact` (the company's only contact) or `ContactHasOpenQuotes`.
+`delete_price_book` on the org's default price book is a 400 `ValidationError` `PriceBookIsDefault`. Branch on
+`err.code`; `get_company_open_quotes` / `get_contact_open_quotes` list the open quotes that block a delete.
 
 ### TurboQuote error handling
 
@@ -1573,11 +1631,13 @@ The exception attributes are `e.status_code` (int or `None`) and `e.code` (str) 
 | `verify_webhook_signature(raw_body, sig_header, ts_header, secret, ...)` | Free function; verifies inbound deliveries |
 | `TurboQuote.configure(api_key, org_id, base_url=...)` | Configure the quote client (no sender_email needed) |
 | `TurboQuote.list_quotes(options=)` | List quotes with pagination and filters |
+| `TurboQuote.get_quote_summary(options=)` | The quote list's summary cards (pipeline, win rate, monthly recurring…) for the list filters, in `summaryCurrency` |
+| `TurboQuote.list_quote_creators()` | People and API keys who created the org's quotes — the ids for the `createdBy` filter |
 | `TurboQuote.create_quote(request)` | Create a new quote |
 | `TurboQuote.get_quote(id)` | Get quote by ID (statusInfo merged in) |
 | `TurboQuote.update_quote(id, request)` | PATCH any subset of quote fields |
-| `TurboQuote.delete_quote(id)` | Delete a quote |
-| `TurboQuote.duplicate_quote(id)` | Duplicate a quote |
+| `TurboQuote.delete_quote(id)` | Delete a quote (a sent or accepted quote is refused — 409) |
+| `TurboQuote.duplicate_quote(id, name=None)` | Duplicate a quote |
 | `TurboQuote.send_quote(id, request=)` | Send quote to recipient; returns `{quote, message}` |
 | `TurboQuote.send_quote_with_deliverable(id, request)` | Send with attached deliverable; returns `{quote, message, documentId}` |
 | `TurboQuote.decline_quote(id, {reason})` | Decline a sent quote or a draft (a draft is declined with no reason — one passed is not recorded) |
@@ -1588,20 +1648,27 @@ The exception attributes are `e.status_code` (int or `None`) and `e.code` (str) 
 | `TurboQuote.download_quote_pdf(id)` | Download quote as raw PDF bytes |
 | `TurboQuote.get_quote_number_config()` | Get the org's quote-number config (admin only); returns `{format, currentFloor}` |
 | `TurboQuote.update_quote_number_config(format)` | Update the quote-number format (admin only); returns `{format, currentFloor}` |
+| `TurboQuote.get_next_quote_number()` | The number the next quote will get (read only; any role that can create quotes) |
 | `TurboQuote.create_and_send(request)` | Convenience: create + add items + send in one call |
 | `TurboQuote.list_line_items(quote_id, options=)` | List line items for a quote |
 | `TurboQuote.add_line_items(quote_id, items)` | Add 1–50 product line items (single dict auto-wrapped). `productId` (key), `productName`, `unitPrice`, `billingFrequency` all required |
 | `TurboQuote.add_bundle_line_items(quote_id, items)` | Add 1–50 bundle line items; each needs only `bundleId` + `bundleName` (the server expands the children) |
 | `TurboQuote.update_line_item(quote_id, item_id, request)` | Update a line item |
 | `TurboQuote.remove_line_item(quote_id, item_id)` | Remove a line item |
+| `TurboQuote.get_quote_line_item_images(quote_id)` | Every custom line item's images (up to three, in order), keyed by line item ID |
+| `TurboQuote.get_line_item_images(quote_id, item_id)` | One custom line item's images, in order |
+| `TurboQuote.add_line_item_images(quote_id, item_id, images)` | Add images to a custom line item (PNG/JPEG, 2 MB each, three in all; draft quotes only) |
+| `TurboQuote.reorder_line_item_images(quote_id, item_id, image_ids)` | Set the image order, first to last |
+| `TurboQuote.remove_line_item_image(quote_id, item_id, image_id)` | Remove one image; returns the images left |
 | `TurboQuote.list_products(options=)` | List products |
-| `TurboQuote.create_product(request)` | Create product; `categoryId` required (multipart when `images` provided — max 5 images, 2 MB each) |
+| `TurboQuote.create_product(request)` | Create product; `categoryId` required (multipart when `images` provided — max 3 images, 2 MB each) |
 | `TurboQuote.bulk_create_products(rows)` | Bulk-import products; each row needs `name`, `categoryId` (UUID), `listPrice`, `billingFrequency`. Returns a partial-success `BulkImportResult` dict |
 | `TurboQuote.get_product(id)` | Get product by ID |
-| `TurboQuote.update_product(id, request)` | Update product (max 5 images, 2 MB each) |
+| `TurboQuote.update_product(id, request)` | Update product (max 3 images, 2 MB each) |
 | `TurboQuote.delete_product(id)` | Delete product |
 | `TurboQuote.duplicate_product(id)` | Duplicate product |
 | `TurboQuote.get_product_primary_images(product_ids)` | Batch-fetch primary images; returns `{product_id: image|None}` |
+| `TurboQuote.get_product_quote_images(product_ids)` | The images each product shows on a quote: up to three, in order |
 | `TurboQuote.list_price_books(options=)` | List price books |
 | `TurboQuote.create_price_book(request)` | Create price book |
 | `TurboQuote.bulk_create_price_books(rows)` | Bulk-import price books; returns a partial-success `BulkImportResult` dict |
@@ -1623,12 +1690,14 @@ The exception attributes are `e.status_code` (int or `None`) and `e.code` (str) 
 | `TurboQuote.get_company(id)` | Get company by ID |
 | `TurboQuote.update_company(id, request)` | Update company |
 | `TurboQuote.delete_company(id)` | Delete company |
+| `TurboQuote.get_company_open_quotes(company_id)` | Open quotes (draft, pending approval, sent) that block deleting the company: `{ results, totalRecords }` |
 | `TurboQuote.list_company_contacts(company_id, options=)` | List contacts for a company |
 | `TurboQuote.list_contacts(options=)` | List contacts |
 | `TurboQuote.create_contact(request)` | Create contact |
 | `TurboQuote.bulk_create_contacts(rows)` | Bulk-import contacts; returns a partial-success `BulkImportResult` dict |
 | `TurboQuote.update_contact(id, request)` | Update contact |
 | `TurboQuote.delete_contact(id)` | Delete contact |
+| `TurboQuote.get_contact_open_quotes(contact_id)` | Open quotes made out to the contact that block deleting them: `{ results, totalRecords }` |
 | `TurboQuote.list_templates(options=)` | List quote templates |
 | `TurboQuote.get_template()` | Get the org's default (singleton) template. Self-heals: auto-creates one from org branding if none exists, so it always returns a template |
 | `TurboQuote.get_template_by_id(id)` | Get a specific template by ID |
@@ -1671,7 +1740,9 @@ The exception attributes are `e.status_code` (int or `None`) and `e.code` (str) 
 - **`termDays` defaults to 60** (not 30), maxes out at 3650, and `-1` means auto-renewal. `renewalPeriod` (`"weekly" | "monthly" | "quarterly" | "annually"`) is **required when `termDays == -1`** and must be absent/`None` for any other `termDays` — sending it otherwise is a 400.
 - **`handle_expired_quote` only accepts `"action": "void" | "decline"`.** `"extend"` and `"resend"` do not exist in the API and return a 400. `reason` (max 190 chars) and `newValidUntil` (ISO date) are both required; the endpoint voids/declines the original and issues a duplicate carrying the new date — that duplicate *is* the "extend".
 - **Quote templates are auto-provisioned.** `get_template()` self-heals — it creates one from org branding when none exists — so `create_template()` on an established org returns 400 `TEMPLATE_ALREADY_EXISTS` and is effectively unreachable. Always do `get_template()` → `update_template()`. `delete_template()` is a reset-to-branding-defaults, not a permanent removal.
-- **Product images: max 5 per product, 2 MB each.** Exceeding either returns 400 `MAX_IMAGES_EXCEEDED`.
+- **Product images: max 3 per product, 2 MB each** (custom line items: the same). Exceeding either returns 400 `MAX_IMAGES_EXCEEDED`. A product that already has more keeps them until one is added; a duplicate copies the first three.
+- **Some deletes are refused.** A **sent** quote can't be deleted — void it (409 `CANNOT_DELETE_SENT_QUOTE`); an accepted one neither (409 `CANNOT_DELETE_ACCEPTED_QUOTE`). A company with open quotes (409 `CompanyHasOpenQuotes`), a company's last contact (409 `LastContact`), a contact on open quotes (409 `ContactHasOpenQuotes`) and the default price book (400 `PriceBookIsDefault`) are refused too. Check the open-quotes calls before deleting a company or contact.
+- **List sorting is opt-in.** Every list takes `sortBy` / `sortDirection`; leave them out and the list keeps its usual order (quotes: newest created first). `"expired"` is a `statuses` filter value, not a stored status — an expired quote still reads `draft` or `sent`.
 - **Bulk creates are partial-success, not transactional.** `bulk_create_products`/`bulk_create_price_books`/`bulk_create_bundles`/`bulk_create_companies`/`bulk_create_contacts`/`bulk_create_types` never raise on a bad row — read `result["failed"]` (`[{ "row", "reason" }]`, `row` 1-indexed) and `result["adjusted"]`; earlier rows are not rolled back. Cap is 500 rows/request (over → 400). Admin + contributor keys only. Row-dict keys stay camelCase.
 - **Bulk product rows take `categoryId`, never `categoryName`.** The row schema is strict and rejects unknown keys, so a `"categoryName"` field 400s the row. Resolve or create the category with `list_types()` / `create_type()` first and pass its UUID. Required per row: `name`, `categoryId`, `listPrice`, `billingFrequency`.
 
