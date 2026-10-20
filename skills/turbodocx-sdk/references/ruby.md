@@ -160,7 +160,7 @@ end
 - Roles sign in the order saved on the template, so a recipient with a `role` needs no `signingOrder`; recipients without a `role` sign after them.
 - A role left out uses the template's saved signer. If it has none, the API returns a 400 naming the role. Pass a role that has a saved signer to send to someone else this time.
 - An unknown role raises `TurboDocxSdk::ValidationError` (400, `e.code == "UnknownSignerRole"`) whose message lists the template's roles.
-- `fields` is optional only when a recipient names a `role` (it is left out of the request when empty); any fields you pass are **added** to the template's (for example an extra witness signature). Without roles, fields are required and must not be empty (400 `FieldsRequired`).
+- On a send, `fields` is optional only when a recipient names a `role` (it is left out of the request when empty); any fields you pass are **added** to the template's (for example an extra witness signature). On a send (`send_signature`, `create_embedded_signature`) where no recipient names a role, an omitted or empty `fields` is a 400 `FieldsRequired` (SDK 0.8.0 sent the empty list and created a document with nothing to sign). A review link (`create_signature_review_link`) needs no fields: the SDK sends `[]` and you place them in the preview.
 - Roles only work for a PDF signature template. A Word template needs a deliverable generated first and sent with `deliverableId`.
 - `role` works the same way on `create_signature_review_link` and `create_embedded_signature`. A role left out falls back to its saved signer, who also gets an embed URL in the result, so match result entries to signers by email or role rather than by position.
 
@@ -526,7 +526,7 @@ end
 - **No `auth:` means the org's `defaultChannel` applies.** An `auth:` channel that differs from a locked default fails the whole call with `OtpOverrideNotAllowed`.
 - **The `auth:` shorthand only produces OTP.** `auth: { emailOtp: true }` maps to `{ mode: "otp", channel: "email" }`; `auth: { sms: { phoneNumber: "..." } }` maps to `{ mode: "otp", channel: "sms" }` and sets the recipient's phone. `emailOtp` wins when both are set. `external_idv` and `override` are **not** reachable from this shorthand — use the two-call path (`send_signature` with an explicit `identityVerification` hash, then `create_signing_url`) for those.
 - **SMS OTP without a phone raises client-side.** A recipient with `sms` auth and no resolvable phone (E.164) raises `ValidationError` (`PhoneRequiredForSmsOtp`) before any HTTP call.
-- **The `fields:` shorthand** anchors one field per key — `signature`, `date`, `initials`, `fullName` — to the given text with `placement: "replace"` and a default size. Pass a top-level `fields:` array to take full field control instead.
+- **The `fields:` shorthand** anchors one field per key — `signature`, `date`, `initials`, `fullName` — to the given text with `placement: "replace"` and a default size. Pass a top-level `fields:` array to take full field control instead. An empty top-level `fields:` counts as absent, so the shorthand still expands (0.8.0 sent the empty list and dropped it).
 
 #### Reference implementation
 
@@ -933,7 +933,7 @@ event = JSON.parse(raw_body)
 [200, {}, ["ok"]]
 ```
 
-The helper enforces a 300-second timestamp tolerance by default (`tolerance_seconds: 0` disables it — not recommended) and uses constant-time comparison. It is a **free module function** — `TurboDocxSdk.verify_webhook_signature`, not a method on `TurboWebhooks` — with no API key dependency.
+The helper enforces a 300-second timestamp tolerance by default (`tolerance_seconds: 0` disables it — not recommended; a negative value, NaN, `Infinity` or a non-number such as `"300"` rejects every delivery; the `X-TurboDocx-Timestamp` header must be digits only) and uses constant-time comparison. It is a **free module function** — `TurboDocxSdk.verify_webhook_signature`, not a method on `TurboWebhooks` — with no API key dependency.
 
 ### TurboWebhooks error handling
 
@@ -1521,7 +1521,7 @@ The error classes are **not** nested under a sub-module (e.g. not `TurboDocxSdk:
 
 ## Gotchas
 
-- **TurboSign send 400 codes** (read with `e.code`; the message names the problem): `FieldsRequired` (no fields and no recipient `role`), `FieldPageOutOfRange` (a field's `page` is past the last page), `UnknownSignerRole`, `DuplicateSignerRole` (two recipients for one role), `SignerRoleUnfilled` (a role has no recipient and no saved signer), `TemplateHasNoSignerRoles` (`role` used on a template with no saved setup), `RoleRequiresTemplate` (`role` without `templateId`), `TemplateRolesNeedPdfTemplate` (roles on a non-PDF template). Surface the message to the user.
+- **TurboSign send 400 codes** (read with `e.code`; the message names the problem): `FieldsRequired` (a send, not a review link, with no or empty fields and no recipient `role`), `FieldPageOutOfRange` (a field's `page` is past the last page), `UnknownSignerRole`, `DuplicateSignerRole` (two recipients for one role), `SignerRoleUnfilled` (a role has no recipient and no saved signer), `TemplateHasNoSignerRoles` (`role` used on a template with no saved setup), `RoleRequiresTemplate` (`role` without `templateId`), `TemplateRolesNeedPdfTemplate` (roles on a non-PDF template). Surface the message to the user.
 - **Method args are snake_case; request-hash keys stay camelCase.** `send_signature`, `create_quote`, `api_key:`, `sender_email:` are snake_case. But keys **inside** a request hash (`documentName`, `signingOrder`, `recipientEmail`, `companyId`, `billingFrequency`, `productId`, …) are forwarded to the API verbatim and must stay camelCase. Writing `document_name:` in a payload hash silently drops the value.
 - **`sender_email` is required** for `TurboSign.configure` — omitting it raises `TurboDocxSdk::ValidationError`. `sender_name` is optional; when omitted the sender name resolves to **your API key's name**, so name your keys recognisably. `Deliverable`, `TurboWebhooks`, and `TurboQuote` do **not** accept it in `configure`.
 - **TurboQuote still sends email.** `TurboQuote.configure` has no `sender_email`, but `send_quote` emails the contact and creates a signature request — the sender comes from the org's **quote template** (Quote Settings). An API-key caller whose template has no sender gets 400 `SenderEmailRequired`. Fix it once with `update_template`.

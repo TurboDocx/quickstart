@@ -152,7 +152,7 @@ try {
 - Roles sign in the order saved on the template, so a `Recipient` with a `role` needs no `signingOrder`; recipients without a `role` sign after them and still need a `signingOrder` (the constructor throws `ValidationException` when neither is given).
 - A role left out uses the template's saved signer. If it has none, the API returns a 400 naming the role. Pass a role that has a saved signer to send to someone else this time.
 - An unknown role throws a `ValidationException` (400, `$e->errorCode === 'UnknownSignerRole'`) whose message lists the template's roles.
-- `fields` is optional only when a recipient names a `role` (it is left out of the request when empty); any fields you pass are **added** to the template's (for example an extra witness signature). Without roles, fields are required and must not be empty (400 `FieldsRequired`).
+- On a send, `fields` is optional only when a recipient names a `role` (it is left out of the request when empty); any fields you pass are **added** to the template's (for example an extra witness signature). On a send (`sendSignature()`, `createEmbeddedSignature()`) where no recipient names a role, an omitted or empty `fields` is a 400 `FieldsRequired` (SDK 0.8.0 sent the empty list and created a document with nothing to sign). A review link (`createSignatureReviewLink()`) needs no fields: the SDK sends `[]` and you place them in the preview.
 - Roles only work for a PDF signature template. A Word template needs a deliverable generated first and sent with `deliverableId`.
 - `role` works the same way on `createSignatureReviewLink()` (`Recipient`) and `createEmbeddedSignature()` (`EmbeddedSignatureRecipient`). A role left out falls back to its saved signer, who also gets an embed URL in the result, so match result entries to signers by email or role rather than by position.
 
@@ -645,6 +645,8 @@ foreach ($result->recipients as $r) {   // one entry per signer, in signing orde
 `CreateEmbeddedSignatureResponse` carries `documentId` and a `recipients` array; each `EmbeddedSignatureRecipientResult` has `recipientId`, `name`, `email`, `status`, `identityVerificationMode`, and `embedUrl`. It is **turn-aware**: with a sequential signing order the backend only mints a URL for the signer whose turn it is, so a later signer comes back `status: 'pending'` with `embedUrl: null` (re-mint with `createSigningUrl()` once earlier signers finish), and an already-signed one comes back `completed`. Any genuine error still throws. For a `ready` signer `identityVerificationMode` is the mode the backend resolved for the URL; for `pending` / `completed` no URL was minted, so it is the mode you **requested** via `auth` (`null` when you set none, even if the org's default channel will apply). `createSigningUrl()` reports the effective mode.
 
 The `auth` shorthand expresses **OTP or no verification only** (`emailOtp` / `smsPhoneNumber`). No `auth` means the org's `defaultChannel` applies; an `auth` channel that differs from a locked default fails the whole call with `OtpOverrideNotAllowed`. For `external_idv` or `override`, use the `sendSignature()` + `createSigningUrl()` path above with `IdentityVerification::externalIdv()` / `::override()` on the `Recipient`.
+
+A top-level `fields:` array on `CreateEmbeddedSignatureRequest` replaces the recipients' `fields` shorthand. An empty top-level `fields` counts as absent, so the shorthand still expands (0.8.0 sent the empty list and dropped it).
 
 ### Allowed embedding domains are deny-by-default
 
@@ -1215,7 +1217,7 @@ $stats = TurboWebhooks::getWebhookStats(days: 30);
 
 ### Verifying inbound webhook signatures
 
-When TurboDocx POSTs to your receiver, verify the `X-TurboDocx-Signature` header before trusting the payload. The helper enforces a 5-minute timestamp tolerance and uses constant-time comparison.
+When TurboDocx POSTs to your receiver, verify the `X-TurboDocx-Signature` header before trusting the payload. The helper enforces a 5-minute timestamp tolerance and uses constant-time comparison. Pass `toleranceSeconds: N`: `0` disables the check (not recommended in production); a negative value rejects every delivery. `toleranceSeconds` and `now` take an int or a finite float; any other value (NaN, INF, a numeric string such as `"300"` included) returns `false` rather than throwing. The `X-TurboDocx-Timestamp` header must be digits only.
 
 `verifyWebhookSignature` returns `false` (it does not throw, not even a `TypeError` for a non-string argument) on bad or missing input, so answer 401 on `false` without a try/catch.
 
@@ -1927,7 +1929,7 @@ otherwise the class default — `VALIDATION_ERROR`, `AUTHENTICATION_ERROR`, `AUT
 
 ## Gotchas
 
-- **TurboSign send 400 codes** (read with `$e->errorCode`; the message names the problem): `FieldsRequired` (no fields and no recipient `role`), `FieldPageOutOfRange` (a field's `page` is past the last page), `UnknownSignerRole`, `DuplicateSignerRole` (two recipients for one role), `SignerRoleUnfilled` (a role has no recipient and no saved signer), `TemplateHasNoSignerRoles` (`role` used on a template with no saved setup), `RoleRequiresTemplate` (`role` without `templateId`), `TemplateRolesNeedPdfTemplate` (roles on a non-PDF template). Surface the message to the user.
+- **TurboSign send 400 codes** (read with `$e->errorCode`; the message names the problem): `FieldsRequired` (a send, not a review link, with no or empty fields and no recipient `role`), `FieldPageOutOfRange` (a field's `page` is past the last page), `UnknownSignerRole`, `DuplicateSignerRole` (two recipients for one role), `SignerRoleUnfilled` (a role has no recipient and no saved signer), `TemplateHasNoSignerRoles` (`role` used on a template with no saved setup), `RoleRequiresTemplate` (`role` without `templateId`), `TemplateRolesNeedPdfTemplate` (roles on a non-PDF template). Surface the message to the user.
 - **PHP 8.1+ required** for named arguments and enum support
 - **`senderEmail` is required** for TurboSign — configure globally or pass per-call; `HttpClientConfig` throws `ValidationException` without it. **`senderName` is optional** — when omitted the sender name resolves to **the API key's name** (not the org name), so name your keys recognisably.
 - **All SDK exceptions are in `TurboDocx\Exceptions`** (`TurboDocxException` + `ValidationException`, `AuthenticationException`, `AuthorizationException`, `NotFoundException`, `ConflictException`, `RateLimitException`, `NetworkException`). Read the HTTP status off the **public readonly property** `$e->statusCode` and the code off `$e->errorCode` — there is no `getStatusCode()`, and `$e->getCode()` is always `0`.

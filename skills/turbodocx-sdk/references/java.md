@@ -142,10 +142,10 @@ try {
 }
 ```
 
-- Roles sign in the order saved on the template, so a role recipient needs no signing order (`Recipient.getSigningOrder()` stays an `int` and returns 0 when unset; 0 is left out of the request); recipients without a role sign after them.
+- Roles sign in the order saved on the template, so a role recipient needs no signing order (`Recipient.getSigningOrder()` stays an `int` and returns 0 when unset; 0 is left out of the request, and `Recipient.Builder().signingOrder(0)` means the same, where 0.8.0 threw a `NullPointerException`); recipients without a role sign after them.
 - A role left out uses the template's saved signer. If it has none, the API returns a 400 naming the role. Pass a role that has a saved signer to send to someone else this time.
 - An unknown role returns a 400 (`ValidationException` with code `UnknownSignerRole`) whose message lists the template's roles.
-- `.fields(...)` is optional only when a recipient names a `role` (it is left out of the request when empty); any fields you pass are **added** to the template's (for example an extra witness signature). Without roles, fields are required and must not be empty (400 `FieldsRequired`).
+- On a send, `.fields(...)` is optional only when a recipient names a `role` (it is left out of the request when empty); any fields you pass are **added** to the template's (for example an extra witness signature). On a send (`sendSignature`, `createEmbeddedSignature`) where no recipient names a role, an omitted or empty fields is a 400 `FieldsRequired` (SDK 0.8.0 sent the empty list and created a document with nothing to sign). A review link (`createSignatureReviewLink`) needs no fields: the SDK sends an empty list and you place them in the preview.
 - Roles only work for a PDF signature template. A Word template needs a deliverable generated first and sent with `deliverableId`.
 - Use `new Recipient.Builder().role("client").name(...).email(...)` when the role recipient also needs a phone or external id.
 - `role` works the same way on `createSignatureReviewLink` and, via `new EmbeddedSignatureRecipient.Builder().role(...)`, on `createEmbeddedSignature`. A role left out falls back to its saved signer, who also gets an embed URL in the result, so match result entries to signers by email or role rather than by position.
@@ -571,7 +571,7 @@ for (EmbeddedSignatureRecipientResult r : embedded.getRecipients()) {
 }
 ```
 
-`sendEmail` defaults to `false` for this flow: the signing-link emails, the initial CC notice, the next signer's "your turn" email and the scheduled reminder and expiry-warning emails are suppressed, while passcode and completed-copy emails are still sent. No `auth` means the org's `defaultChannel` applies; an `auth` channel that differs from a locked default fails the whole call with `OtpOverrideNotAllowed`. For a `ready` signer `getIdentityVerificationMode()` is the mode the backend resolved; for `pending` / `completed` no URL was minted, so it is the mode you **requested** via `auth` (`null` when you set none, even if the org's default channel will apply). Pass a top-level `.fields(List<Field>)` to override every recipient's `fields` shorthand verbatim. It is **turn-aware**: with a real signing order the backend mints a URL only for the signer whose turn it is: a later signer comes back `pending` with a null `embedUrl`, so re-mint with `createSigningUrl` once earlier signers finish (e.g. an in-person kiosk handing the device to the next signer). A genuine error (any code other than not-in-turn / already-signed) still throws.
+`sendEmail` defaults to `false` for this flow: the signing-link emails, the initial CC notice, the next signer's "your turn" email and the scheduled reminder and expiry-warning emails are suppressed, while passcode and completed-copy emails are still sent. No `auth` means the org's `defaultChannel` applies; an `auth` channel that differs from a locked default fails the whole call with `OtpOverrideNotAllowed`. For a `ready` signer `getIdentityVerificationMode()` is the mode the backend resolved; for `pending` / `completed` no URL was minted, so it is the mode you **requested** via `auth` (`null` when you set none, even if the org's default channel will apply). Pass a top-level `.fields(List<Field>)` to override every recipient's `fields` shorthand verbatim; an empty list counts as absent, so the shorthand still expands (0.8.0 sent the empty list and dropped it). It is **turn-aware**: with a real signing order the backend mints a URL only for the signer whose turn it is: a later signer comes back `pending` with a null `embedUrl`, so re-mint with `createSigningUrl` once earlier signers finish (e.g. an in-person kiosk handing the device to the next signer). A genuine error (any code other than not-in-turn / already-signed) still throws.
 
 ### Identity verification modes
 
@@ -1233,7 +1233,7 @@ JsonObject stats = webhooks.getWebhookStats(30); // sliding window in days; pass
 
 ### Verifying inbound webhook signatures (Spring Boot)
 
-When TurboDocx POSTs to your receiver, verify the `X-TurboDocx-Signature` header before trusting the payload. Java has no free functions — the helper is exposed as `WebhookSignatureVerifier.verify(...)`, a static method on a final utility class. It enforces a 5-minute timestamp tolerance and uses `MessageDigest.isEqual` for constant-time comparison.
+When TurboDocx POSTs to your receiver, verify the `X-TurboDocx-Signature` header before trusting the payload. Java has no free functions — the helper is exposed as `WebhookSignatureVerifier.verify(...)`, a static method on a final utility class. It enforces a 5-minute timestamp tolerance and uses `MessageDigest.isEqual` for constant-time comparison. Use the 6-arg overload to override `toleranceSeconds`: `0` disables the check (not recommended in production); a negative value rejects every delivery.
 
 `WebhookSignatureVerifier.verify(...)` returns `false` (it does not throw) on bad or missing input, such as a `null` body, a `null` or empty header or secret, or a malformed timestamp, so answer 401 on `false` without a try/catch.
 
@@ -1813,7 +1813,7 @@ All seven subtypes are **nested classes** on `com.turbodocx.TurboDocxException` 
 
 ## Gotchas
 
-- **TurboSign send 400 codes** (read with `e.getCode()`; the message names the problem): `FieldsRequired` (no fields and no recipient `role`), `FieldPageOutOfRange` (a field's `page` is past the last page), `UnknownSignerRole`, `DuplicateSignerRole` (two recipients for one role), `SignerRoleUnfilled` (a role has no recipient and no saved signer), `TemplateHasNoSignerRoles` (`role` used on a template with no saved setup), `RoleRequiresTemplate` (`role` without `templateId`), `TemplateRolesNeedPdfTemplate` (roles on a non-PDF template). Surface the message to the user.
+- **TurboSign send 400 codes** (read with `e.getCode()`; the message names the problem): `FieldsRequired` (a send, not a review link, with no or empty fields and no recipient `role`), `FieldPageOutOfRange` (a field's `page` is past the last page), `UnknownSignerRole`, `DuplicateSignerRole` (two recipients for one role), `SignerRoleUnfilled` (a role has no recipient and no saved signer), `TemplateHasNoSignerRoles` (`role` used on a template with no saved setup), `RoleRequiresTemplate` (`role` without `templateId`), `TemplateRolesNeedPdfTemplate` (roles on a non-PDF template). Surface the message to the user.
 - **Java SDK uses Builder pattern** — create clients with `.Builder()...build()`
 - **`senderEmail` is required** for TurboSign operations. **`senderName` is optional** — when omitted, the sender name resolves to the **API key's name**.
 - **TurboQuote takes no `senderEmail`/`senderName`, but `sendQuote` still emails the recipient** (it creates a signature request). The sender comes from the org's quote template (Quote Settings); an API-key caller whose template has no sender gets 400 `SenderEmailRequired`.
