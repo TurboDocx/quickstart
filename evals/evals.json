@@ -3367,6 +3367,176 @@
           "description": "A *turbodocx.ValidationError is caught (errors.As) and its message is returned to the caller"
         }
       ]
+    },
+    {
+      "id": 68,
+      "prompt": "In my FastAPI app, add an endpoint that reports the signing progress of a TurboDocx document \u2014 who has signed, who we're still waiting on, and whether each person has actually been emailed.",
+      "expected_output": "Adds the Python SDK dependency, creates a TurboSign config module, and a router calling await TurboSign.get_recipients(document_id), reading each recipient's effectiveStatus and delivery block plus the summary. Registers the router and adds the TurboDocx env vars.",
+      "files": [
+        "pyproject.toml",
+        "app/main.py",
+        "app/routers/__init__.py"
+      ],
+      "assertions": [
+        {
+          "name": "uses-get-recipients",
+          "type": "file_contains",
+          "description": "Route handler calls TurboSign.get_recipients (NOT get_status, which returns only the document-level status and expiry and cannot answer who signed)"
+        },
+        {
+          "name": "awaits-the-call",
+          "type": "file_contains",
+          "description": "get_recipients is awaited \u2014 the Python SDK method is async and a bare call returns a coroutine"
+        },
+        {
+          "name": "branches-on-effective-status",
+          "type": "file_contains",
+          "description": "Generated code reads effectiveStatus for per-signer state rather than the raw status field, since an unsigned signer on a voided document still reads 'pending' in status"
+        },
+        {
+          "name": "surfaces-delivery-or-summary",
+          "type": "file_contains",
+          "description": "Response exposes the delivery block (email history) and/or the summary counts including waitingOn"
+        },
+        {
+          "name": "emailed-from-total-sent",
+          "type": "file_contains",
+          "description": "Whether a signer has actually been emailed is read from their delivery block (totalSent of 0 / firstSentOn of None means never emailed), not inferred from summary.waitingOn, which also counts signers later in the signing order who have not been invited yet"
+        },
+        {
+          "name": "router-wired",
+          "type": "file_contains",
+          "description": "app/main.py was modified to include the new router"
+        },
+        {
+          "name": "env-file-created",
+          "type": "file_contains",
+          "description": ".env file contains TURBODOCX_API_KEY and TURBODOCX_ORG_ID"
+        }
+      ]
+    },
+    {
+      "id": 69,
+      "prompt": "I have a Gin service. Add a handler that shows who has signed a TurboDocx document and who is still outstanding, including how many times each signer has been emailed.",
+      "expected_output": "Adds the Go SDK module, creates a TurboDocx client config, and a Gin handler calling client.TurboSign.GetRecipients(ctx, documentID), reading each recipient's EffectiveStatus and Delivery fields plus the Summary. Registers the route and adds the TurboDocx env vars.",
+      "files": [
+        "go.mod",
+        "main.go",
+        "internal/handlers/.gitkeep",
+        "internal/config/.gitkeep"
+      ],
+      "assertions": [
+        {
+          "name": "uses-get-recipients",
+          "type": "file_contains",
+          "description": "Handler calls GetRecipients(ctx, documentID) (NOT GetStatus, which returns only the document-level status and expiry and cannot answer who signed)"
+        },
+        {
+          "name": "passes-context",
+          "type": "file_contains",
+          "description": "The call passes a context.Context as its first argument, matching the Go SDK signature"
+        },
+        {
+          "name": "handles-error-return",
+          "type": "file_contains",
+          "description": "The two-value return is handled \u2014 the error is checked rather than discarded"
+        },
+        {
+          "name": "branches-on-effective-status",
+          "type": "file_contains",
+          "description": "Generated code reads EffectiveStatus for per-signer state rather than the raw Status field, since an unsigned signer on a voided document still reads 'pending' in Status"
+        },
+        {
+          "name": "surfaces-delivery-or-summary",
+          "type": "file_contains",
+          "description": "Response exposes the Delivery block (email history) and/or the Summary counts including WaitingOn"
+        },
+        {
+          "name": "times-emailed-is-total-sent",
+          "type": "file_contains",
+          "description": "The times-emailed count comes from Delivery.TotalSent (every email sent to that signer), not Delivery.ReminderCount, which counts only automatic scheduled reminders"
+        },
+        {
+          "name": "route-wired",
+          "type": "file_contains",
+          "description": "main.go was modified to register the new route"
+        }
+      ]
+    },
+    {
+      "id": 70,
+      "prompt": "Set up an endpoint in my Laravel app that reports TurboDocx signing progress for a document \u2014 who signed, who hasn't, and each signer's email history.",
+      "expected_output": "Adds the PHP SDK via Composer, creates TurboDocx config, and a controller calling TurboSign::getRecipients($documentId), reading each recipient's effectiveStatus and delivery data plus the summary. Registers the route and adds the TurboDocx env vars.",
+      "files": [
+        "composer.json",
+        "routes/web.php",
+        "app/Http/Controllers/.gitkeep"
+      ],
+      "assertions": [
+        {
+          "name": "uses-get-recipients",
+          "type": "file_contains",
+          "description": "Controller calls getRecipients($documentId) (NOT getStatus, which returns only the document-level status and expiry and cannot answer who signed)"
+        },
+        {
+          "name": "branches-on-effective-status",
+          "type": "file_contains",
+          "description": "Generated code reads effectiveStatus for per-signer state rather than the raw status field, since an unsigned signer on a voided document still reads 'pending' in status"
+        },
+        {
+          "name": "surfaces-delivery-or-summary",
+          "type": "file_contains",
+          "description": "Response exposes the delivery block (email history) and/or the summary counts including waitingOn"
+        },
+        {
+          "name": "route-wired",
+          "type": "file_contains",
+          "description": "routes/web.php was modified to register the new route"
+        },
+        {
+          "name": "env-file-created",
+          "type": "file_contains",
+          "description": ".env file contains TURBODOCX_API_KEY and TURBODOCX_ORG_ID"
+        }
+      ]
+    },
+    {
+      "id": 71,
+      "prompt": "I have a Rails app. Add an action that shows the signing status of every recipient on a TurboDocx document, including how many reminders each person has been sent.",
+      "expected_output": "Adds the Ruby SDK gem, creates a TurboDocx initializer, and a controller action calling TurboDocxSdk::TurboSign.get_recipients(document_id), reading each recipient's effectiveStatus and delivery data plus the summary. Adds the route and the TurboDocx env vars.",
+      "files": [
+        "Gemfile",
+        "config/application.rb",
+        "config/routes.rb",
+        "app/controllers/application_controller.rb"
+      ],
+      "assertions": [
+        {
+          "name": "uses-get-recipients",
+          "type": "file_contains",
+          "description": "Controller action calls TurboDocxSdk::TurboSign.get_recipients (NOT get_status, which returns only the document-level status and expiry and cannot answer who signed)"
+        },
+        {
+          "name": "branches-on-effective-status",
+          "type": "file_contains",
+          "description": "Generated code reads effectiveStatus for per-signer state rather than the raw status field, since an unsigned signer on a voided document still reads 'pending' in status"
+        },
+        {
+          "name": "reads-delivery-reminders",
+          "type": "file_contains",
+          "description": "Code reads each recipient's \"delivery\" hash to report reminders, and does not present \"reminderCount\" as every reminder sent: it counts only automatic (scheduled) reminders, while a manual remind-now lands only in \"totalSent\". Either reports both or labels reminderCount as scheduled reminders"
+        },
+        {
+          "name": "route-wired",
+          "type": "file_contains",
+          "description": "config/routes.rb was modified to add the new route"
+        },
+        {
+          "name": "env-file-created",
+          "type": "file_contains",
+          "description": ".env file contains TURBODOCX_API_KEY and TURBODOCX_ORG_ID"
+        }
+      ]
     }
   ]
 }
