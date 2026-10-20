@@ -1411,7 +1411,7 @@ const product = await TurboQuote.createProduct({
   billingFrequency: 'annual',
   categoryId: 'category-uuid',  // required — from a createType({ categoryType: 'product_category' })
   showInCatalog: true,
-  images: [imageBuffer],        // optional — MAX 5 images per product, MAX 2 MB each
+  images: [imageBuffer],        // optional — MAX 3 images per product, MAX 2 MB each
 });
 console.log(product.id);
 
@@ -1471,6 +1471,67 @@ const result = await TurboQuote.createAndSend({
 });
 console.log(result.quote.status); // 'sent'
 ```
+
+### Sorting, filters and the list summary
+
+Every list takes `sortBy` / `sortDirection` (`asc` | `desc`); leave them out for the order the
+list always had. Sort columns: quotes `updatedOn` · `createdOn` · `total` · `validUntil` · `quoteNumber`;
+products `name` · `listPrice` · `createdOn`; price books `name` · `discountPercent` · `overrideCount` ·
+`validFrom` · `validTo` · `createdOn`; bundles `name` · `itemCount` · `totalListPrice` · `totalFinalPrice` ·
+`createdOn`; companies `name` · `contactCount` · `lastActivityDate`; contacts `name` · `createdOn`;
+types `name` · `usageCount`.
+
+The quote list also filters by several companies (`companyIds`) and currencies (`currencies`), by
+`expired` in `statuses` (a draft or sent quote past its Valid until day, UTC, or whose signature
+expired), by creator (`createdBy`, ids from the creators call; `createdByApiKeys` for API-key quotes)
+and by Valid until (`validUntilWindow` = `thisWeek` | `thisMonth` | `past`, `validUntilFrom` /
+`validUntilTo`). Each quote carries `isExpired` and `lineItemCount`; the response adds
+`statusCounts` (per tab) and `summary` (pipeline, win rate, monthly recurring, in `summaryCurrency`).
+In the other lists, each price book carries `overrideCount` (products with their own price), each
+bundle `itemCount` and `billingTotals` (its price per billing type, e.g. `one-time` and `monthly`),
+and each company `contactCount`.
+
+```typescript
+const page = await TurboQuote.listQuotes({
+  statuses: ['sent', 'expired'],
+  currencies: ['USD', 'EUR'],
+  validUntilWindow: 'thisMonth',
+  sortBy: 'validUntil',
+  sortDirection: 'asc',
+  summaryCurrency: 'USD',
+});
+console.log(page.statusCounts?.expired, page.summary?.winRate.percent);
+
+const creators = await TurboQuote.listQuoteCreators();         // ids for createdBy
+const summary = await TurboQuote.getQuoteSummary({ createdBy: [creators[0].id] });
+const { nextNumber } = await TurboQuote.getNextQuoteNumber();   // read only
+
+const products = await TurboQuote.listProducts({ billingFrequency: ['monthly', 'annual'], sortBy: 'listPrice' });
+const copy = await TurboQuote.duplicateQuote(quote.id, { name: 'Q4 renewal' }); // name is optional
+```
+
+`duplicateQuote`, `duplicateProduct`, `duplicatePriceBook` and `duplicateBundle` take an optional
+`{ name }` (otherwise "Copy of …"). Companies take an optional `email`; `updatePriceBook({ resetProductPricing: true })`
+puts every product back on the book's discount.
+
+### Custom line item images
+
+A custom line item (one with no catalog product) can show up to three images on the quote (PNG or
+JPEG, 2 MB each; draft quotes only). Catalog products use `getProductQuoteImages(productIds)`.
+
+```typescript
+const images = await TurboQuote.addLineItemImages(quote.id, itemId, ['./diagram.png']); // paths, Buffers or Files
+await TurboQuote.reorderLineItemImages(quote.id, itemId, images.map(i => i.id).reverse());
+await TurboQuote.removeLineItemImage(quote.id, itemId, images[0].id);
+const byItem = await TurboQuote.getQuoteLineItemImages(quote.id); // { [lineItemId]: LineItemImage[] }
+```
+
+**Deletes the API refuses.** `deleteQuote` on a **sent** quote is a 409 `ConflictError` with code
+`CANNOT_DELETE_SENT_QUOTE` — void it instead; an accepted quote is a 409 `CANNOT_DELETE_ACCEPTED_QUOTE`.
+`deleteCompany` is a 409 `CompanyHasOpenQuotes` while the company has open quotes (draft or
+sent), and `deleteContact` is a 409 `LastContact` (the company's only contact) or `ContactHasOpenQuotes`.
+`deletePriceBook` on the org's default price book is a 400 `ValidationError` `PriceBookIsDefault`. Branch on
+`err.code`; `getCompanyOpenQuotes` / `getContactOpenQuotes` list the open quotes that block a delete.
 
 ### TurboQuote error handling
 
@@ -1728,11 +1789,13 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode`, `code`, and
 |--------|-------------|
 | `TurboQuote.configure(config)` | Set apiKey (or accessToken), orgId, baseUrl. There is no `senderEmail`/`senderName` on this config — the quote sender comes from the org quote template |
 | `TurboQuote.listQuotes(options?)` | Paginated list with filters; includes totals/stats |
+| `TurboQuote.getQuoteSummary(options?)` | The quote list's summary cards (pipeline, win rate, monthly recurring…) for the list filters, in `summaryCurrency` |
+| `TurboQuote.listQuoteCreators()` | People and API keys who created the org's quotes — the ids for the `createdBy` filter |
 | `TurboQuote.createQuote(request)` | Create a new draft quote |
 | `TurboQuote.getQuote(id)` | Get quote details (statusInfo merged in) |
 | `TurboQuote.updateQuote(id, request)` | PATCH quote fields; pass explicit `null` to clear nullable fields |
-| `TurboQuote.deleteQuote(id)` | Delete a quote |
-| `TurboQuote.duplicateQuote(id)` | Clone a quote to a new draft |
+| `TurboQuote.deleteQuote(id)` | Delete a quote (a sent or accepted quote is refused — 409) |
+| `TurboQuote.duplicateQuote(id, { name }?)` | Clone a quote to a new draft |
 | `TurboQuote.sendQuote(id, request?)` | Email quote to customer; returns `{ quote, message }` |
 | `TurboQuote.sendQuoteWithDeliverable(id, request)` | Send with attached TurboDocx deliverable; returns `{ quote, message, documentId }` |
 | `TurboQuote.declineQuote(id, { reason })` | Mark as declined (reason required once sent; a draft's is not recorded) |
@@ -1743,6 +1806,7 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode`, `code`, and
 | `TurboQuote.downloadQuotePdf(id)` | Download rendered quote PDF as `ArrayBuffer` |
 | `TurboQuote.getQuoteNumberConfig()` | Admin-only: read the org's quote-number config `{ format, currentFloor }` |
 | `TurboQuote.updateQuoteNumberConfig(format)` | Admin-only: update the quote-number format; returns `{ format, currentFloor }` |
+| `TurboQuote.getNextQuoteNumber()` | The number the next quote will get (read only; any role that can create quotes) |
 | `TurboQuote.createAndSend(request)` | Convenience: create quote + add items + send in one call |
 
 ### TurboQuote — Line Items
@@ -1754,19 +1818,25 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode`, `code`, and
 | `TurboQuote.addBundleLineItems(quoteId, items)` | Add 1–50 bundle line items; each needs only `bundleId` + `bundleName` (the server expands the children) |
 | `TurboQuote.updateLineItem(quoteId, itemId, request)` | PATCH a single line item |
 | `TurboQuote.removeLineItem(quoteId, itemId)` | Delete a line item |
+| `TurboQuote.getQuoteLineItemImages(quoteId)` | Every custom line item's images (up to three, in order), keyed by line item ID |
+| `TurboQuote.getLineItemImages(quoteId, itemId)` | One custom line item's images, in order |
+| `TurboQuote.addLineItemImages(quoteId, itemId, images)` | Add images to a custom line item (PNG/JPEG, 2 MB each, three in all; draft quotes only) |
+| `TurboQuote.reorderLineItemImages(quoteId, itemId, imageIds)` | Set the image order, first to last |
+| `TurboQuote.removeLineItemImage(quoteId, itemId, imageId)` | Remove one image; returns the images left |
 
 ### TurboQuote — Products
 
 | Method | Description |
 |--------|-------------|
 | `TurboQuote.listProducts(options?)` | Paginated product catalog |
-| `TurboQuote.createProduct(request)` | Create a product (uses multipart when `images` array is provided — max 5 images, 2 MB each) |
+| `TurboQuote.createProduct(request)` | Create a product (uses multipart when `images` array is provided — max 3 images, 2 MB each) |
 | `TurboQuote.bulkCreateProducts(rows)` | Bulk-import products; each row needs `name`, `categoryId` (UUID), `listPrice`, `billingFrequency`. Returns a partial-success `BulkImportResult` |
 | `TurboQuote.getProduct(id)` | Get a single product |
-| `TurboQuote.updateProduct(id, request)` | PATCH a product; multipart when images included (max 5 images, 2 MB each) |
+| `TurboQuote.updateProduct(id, request)` | PATCH a product; multipart when images included (max 3 images, 2 MB each) |
 | `TurboQuote.deleteProduct(id)` | Delete a product |
 | `TurboQuote.duplicateProduct(id)` | Clone a product |
 | `TurboQuote.getProductPrimaryImages(productIds)` | Batch-fetch primary images; returns `{ [productId]: image \| null }` |
+| `TurboQuote.getProductQuoteImages(productIds)` | The images each product shows on a quote: up to three, in order |
 
 ### TurboQuote — Bundles
 
@@ -1803,12 +1873,14 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode`, `code`, and
 | `TurboQuote.getCompany(id)` | Get a single company |
 | `TurboQuote.updateCompany(id, request)` | PATCH a company |
 | `TurboQuote.deleteCompany(id)` | Delete a company |
+| `TurboQuote.getCompanyOpenQuotes(companyId)` | Open quotes (draft or sent) that block deleting the company: `{ results, totalRecords }` |
 | `TurboQuote.listCompanyContacts(companyId, options?)` | List contacts belonging to a company |
 | `TurboQuote.listContacts(options?)` | Paginated contact list across all companies |
 | `TurboQuote.createContact(request)` | Create a standalone contact |
 | `TurboQuote.bulkCreateContacts(rows)` | Bulk-import contacts; returns a partial-success `BulkImportResult` |
 | `TurboQuote.updateContact(id, request)` | PATCH a contact |
 | `TurboQuote.deleteContact(id)` | Delete a contact |
+| `TurboQuote.getContactOpenQuotes(contactId)` | Open quotes made out to the contact that block deleting them: `{ results, totalRecords }` |
 
 ### TurboQuote — Templates and Types
 
@@ -1866,7 +1938,9 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode`, `code`, and
 - **`termDays` defaults to 60** (not 30), maxes out at 3650, and `-1` means auto-renewal. `renewalPeriod` (`'weekly' | 'monthly' | 'quarterly' | 'annually'`) is **required when `termDays === -1`** and must be absent/`null` for any other `termDays` — sending it otherwise is a 400.
 - **`handleExpiredQuote` only accepts `action: 'void' | 'decline'`.** `'extend'` and `'resend'` do not exist in the API and return a 400. `reason` (max 190 chars) and `newValidUntil` (ISO date) are both required; the endpoint voids/declines the original and issues a duplicate carrying the new date — that duplicate *is* the "extend".
 - **Quote templates are auto-provisioned.** `getTemplate()` self-heals — it creates one from org branding when none exists — so `createTemplate()` on an established org returns 400 `TEMPLATE_ALREADY_EXISTS` and is effectively unreachable. Always do `getTemplate()` → `updateTemplate()`. `deleteTemplate()` is a reset-to-branding-defaults, not a permanent removal.
-- **Product images: max 5 per product, 2 MB each.** Exceeding either returns 400 `MAX_IMAGES_EXCEEDED`.
+- **Product images: max 3 per product, 2 MB each** (custom line items: the same). Exceeding either returns 400 `MAX_IMAGES_EXCEEDED`. A product that already has more keeps them until one is added; a duplicate copies the first three.
+- **Some deletes are refused.** A **sent** quote can't be deleted — void it (409 `CANNOT_DELETE_SENT_QUOTE`); an accepted one neither (409 `CANNOT_DELETE_ACCEPTED_QUOTE`). A company with open quotes (409 `CompanyHasOpenQuotes`), a company's last contact (409 `LastContact`), a contact on open quotes (409 `ContactHasOpenQuotes`) and the default price book (400 `PriceBookIsDefault`) are refused too. Check the open-quotes calls before deleting a company or contact.
+- **List sorting is opt-in.** Every list takes `sortBy` / `sortDirection`; leave them out and the list keeps its usual order (quotes: newest created first). `"expired"` is a `statuses` filter value, not a stored status — an expired quote still reads `draft` or `sent`.
 - **`createCompany` requires at least one contact.** Pass a `contacts` array with at least one entry or the backend returns 400.
 - **No `getContact` or `getType` methods.** The backend has no `GET /v1/contacts/:id` or `GET /v1/types/:id` routes — this is intentional, not an SDK gap.
 - **Bulk creates are partial-success, not transactional.** `bulkCreateProducts`/`bulkCreatePriceBooks`/`bulkCreateBundles`/`bulkCreateCompanies`/`bulkCreateContacts`/`bulkCreateTypes` never throw on a bad row — read `result.failed` (`[{ row, reason }]`, `row` 1-indexed) and `result.adjusted`; earlier rows are not rolled back. Cap is 500 rows/request (over → 400). Admin + contributor keys only.

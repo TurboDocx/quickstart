@@ -1629,6 +1629,66 @@ update.setClosingMessage("Thanks for your business!");
 tq.updateTemplate(template.getId(), update);
 ```
 
+### Sorting, filters and the list summary
+
+Every list takes `sortBy` / `sortDirection` (`asc` | `desc`); leave them out for the order the
+list always had. Sort columns: quotes `updatedOn` · `createdOn` · `total` · `validUntil` · `quoteNumber`;
+products `name` · `listPrice` · `createdOn`; price books `name` · `discountPercent` · `overrideCount` ·
+`validFrom` · `validTo` · `createdOn`; bundles `name` · `itemCount` · `totalListPrice` · `totalFinalPrice` ·
+`createdOn`; companies `name` · `contactCount` · `lastActivityDate`; contacts `name` · `createdOn`;
+types `name` · `usageCount`.
+
+The quote list also filters by several companies (`companyIds`) and currencies (`currencies`), by
+`expired` in `statuses` (a draft or sent quote past its Valid until day, UTC, or whose signature
+expired), by creator (`createdBy`, ids from the creators call; `createdByApiKeys` for API-key quotes)
+and by Valid until (`validUntilWindow` = `thisWeek` | `thisMonth` | `past`, `validUntilFrom` /
+`validUntilTo`). Each quote carries `isExpired` and `lineItemCount`; the response adds
+`statusCounts` (per tab) and `summary` (pipeline, win rate, monthly recurring, in `summaryCurrency`).
+In the other lists, each price book carries `overrideCount` (products with their own price), each
+bundle `itemCount` and `billingTotals` (its price per billing type, e.g. `one-time` and `monthly`),
+and each company `contactCount`.
+
+```java
+ListQuotesOptions options = new ListQuotesOptions();
+options.setStatuses(Arrays.asList("sent", "expired"));
+options.setCurrencies(Arrays.asList("USD", "EUR"));
+options.setValidUntilWindow("thisMonth");
+options.setSortBy("validUntil");
+options.setSortDirection("asc");
+QuoteListResponse page = tq.listQuotes(options);
+System.out.println(page.getStatusCounts().getExpired() + " " + page.getSummary().getWinRate().getPercent());
+
+List<Quote.QuoteCreator> creators = tq.listQuoteCreators();   // ids for createdBy
+NextQuoteNumber next = tq.getNextQuoteNumber();               // read only
+Quote copy = tq.duplicateQuote(quote.getId(), "Q4 renewal");   // name is optional
+```
+
+`duplicateQuote`, `duplicateProduct`, `duplicatePriceBook` and `duplicateBundle` have a `(id, name)`
+overload (otherwise "Copy of …"). `ListProductsOptions` / `ListBundlesOptions` take several values with
+`setBillingFrequencies` / `setCurrencies`; `listCompanyContacts` takes `ListCompanyContactsOptions` for
+the sort. Companies take an optional `email` (`setEmail(null)` clears it on update);
+`UpdatePriceBookRequest.setResetProductPricing(true)` puts every product back on the book's discount.
+
+### Custom line item images
+
+A custom line item (one with no catalog product) can show up to three images on the quote (PNG or
+JPEG, 2 MB each; draft quotes only). Catalog products use `getProductQuoteImages(productIds)`.
+
+```java
+List<LineItemImage> images = tq.addLineItemImages(quote.getId(), itemId,
+        new byte[][]{Files.readAllBytes(Paths.get("diagram.png"))});
+tq.reorderLineItemImages(quote.getId(), itemId, Arrays.asList(images.get(1).getId(), images.get(0).getId()));
+tq.removeLineItemImage(quote.getId(), itemId, images.get(0).getId());
+Map<String, List<LineItemImage>> byItem = tq.getQuoteLineItemImages(quote.getId());
+```
+
+**Deletes the API refuses.** `deleteQuote` on a **sent** quote is a 409 `ConflictException` with code
+`CANNOT_DELETE_SENT_QUOTE` — void it instead; an accepted quote is a 409 `CANNOT_DELETE_ACCEPTED_QUOTE`.
+`deleteCompany` is a 409 `CompanyHasOpenQuotes` while the company has open quotes (draft or
+sent), and `deleteContact` is a 409 `LastContact` (the company's only contact) or `ContactHasOpenQuotes`.
+`deletePriceBook` on the org's default price book is a 400 `ValidationException` `PriceBookIsDefault`. Branch on
+`e.getCode()`; `getCompanyOpenQuotes` / `getContactOpenQuotes` list the open quotes that block a delete.
+
 ### TurboQuote error handling
 
 ```java
@@ -1743,11 +1803,13 @@ All seven subtypes are **nested classes** on `com.turbodocx.TurboDocxException` 
 | `WebhookSignatureVerifier.verify(rawBody, sigHeader, tsHeader, secret)` | Static utility; verifies inbound deliveries |
 | `new TurboQuoteClient.Builder()...build().turboQuote()` | Construct a `TurboQuote` instance (no `senderEmail` required) |
 | `tq.listQuotes(options)` | List quotes with optional filters (status, search, pagination) |
+| `tq.getQuoteSummary(options)` | The quote list's summary cards (pipeline, win rate, monthly recurring…) for the list filters, in `summaryCurrency` |
+| `tq.listQuoteCreators()` | People and API keys who created the org's quotes — the ids for the `createdBy` filter |
 | `tq.createQuote(req)` | Create a new quote in draft status |
 | `tq.getQuote(id)` | Get quote by ID (statusInfo merged into response) |
 | `tq.updateQuote(id, req)` | PATCH quote fields; explicitly `null` fields are cleared |
-| `tq.deleteQuote(id)` | Delete a quote |
-| `tq.duplicateQuote(id)` | Duplicate a quote |
+| `tq.deleteQuote(id)` | Delete a quote (a sent or accepted quote is refused — 409) |
+| `tq.duplicateQuote(id[, name])` | Duplicate a quote |
 | `tq.applyPriceBook(quoteId, priceBookId)` | Apply pricebook to a quote; returns updatedCount + skippedCount |
 | `tq.removePriceBook(quoteId)` | Remove applied pricebook from a quote |
 | `tq.downloadQuotePdf(id)` | Download quote as PDF; returns raw `byte[]` |
@@ -1761,14 +1823,20 @@ All seven subtypes are **nested classes** on `com.turbodocx.TurboDocxException` 
 | `tq.addBundleLineItems(quoteId, items)` | Add 1–50 bundle line items; each needs only `bundleId` + `bundleName` (the server expands the children) |
 | `tq.updateLineItem(quoteId, itemId, req)` | Update a line item |
 | `tq.removeLineItem(quoteId, itemId)` | Remove a line item |
+| `tq.getQuoteLineItemImages(quoteId)` | Every custom line item's images (up to three, in order), keyed by line item ID |
+| `tq.getLineItemImages(quoteId, itemId)` | One custom line item's images, in order |
+| `tq.addLineItemImages(quoteId, itemId, images)` | Add images to a custom line item (PNG/JPEG, 2 MB each, three in all; draft quotes only) |
+| `tq.reorderLineItemImages(quoteId, itemId, imageIds)` | Set the image order, first to last |
+| `tq.removeLineItemImage(quoteId, itemId, imageId)` | Remove one image; returns the images left |
 | `tq.listProducts(options)` | List products in the catalog |
-| `tq.createProduct(req)` | Create a product; `categoryId` required (supports image upload via multipart — max 5 images, 2 MB each) |
+| `tq.createProduct(req)` | Create a product; `categoryId` required (supports image upload via multipart — max 3 images, 2 MB each) |
 | `tq.bulkCreateProducts(rows)` | Bulk-import products; each row needs `name`, `categoryId` (UUID), `listPrice`, `billingFrequency`. Returns a partial-success `BulkImportResult` |
 | `tq.getProduct(id)` | Get product by ID |
-| `tq.updateProduct(id, req)` | Update a product (max 5 images, 2 MB each) |
+| `tq.updateProduct(id, req)` | Update a product (max 3 images, 2 MB each) |
 | `tq.deleteProduct(id)` | Delete a product |
 | `tq.duplicateProduct(id)` | Duplicate a product |
 | `tq.getProductPrimaryImages(productIds)` | Batch-fetch primary images for product IDs |
+| `tq.getProductQuoteImages(productIds)` | The images each product shows on a quote: up to three, in order |
 | `tq.listPriceBooks(options)` | List pricebooks |
 | `tq.createPriceBook(req)` | Create a pricebook |
 | `tq.bulkCreatePriceBooks(rows)` | Bulk-import price books; returns a partial-success `BulkImportResult` |
@@ -1790,12 +1858,14 @@ All seven subtypes are **nested classes** on `com.turbodocx.TurboDocxException` 
 | `tq.getCompany(id)` | Get company by ID |
 | `tq.updateCompany(id, req)` | Update a company |
 | `tq.deleteCompany(id)` | Delete a company |
+| `tq.getCompanyOpenQuotes(companyId)` | Open quotes (draft or sent) that block deleting the company: `{ results, totalRecords }` |
 | `tq.listCompanyContacts(companyId, options)` | List contacts belonging to a company |
 | `tq.listContacts(options)` | List contacts |
 | `tq.createContact(req)` | Create a contact |
 | `tq.bulkCreateContacts(rows)` | Bulk-import contacts; returns a partial-success `BulkImportResult` |
 | `tq.updateContact(id, req)` | Update a contact |
 | `tq.deleteContact(id)` | Delete a contact |
+| `tq.getContactOpenQuotes(contactId)` | Open quotes made out to the contact that block deleting them: `{ results, totalRecords }` |
 | `tq.listTemplates(options)` | List quote templates |
 | `tq.getTemplate()` | Get the org's singleton quote template. Self-heals: auto-creates one from org branding if none exists, so it always returns a template |
 | `tq.getTemplateById(id)` | Get a specific quote template by ID |
@@ -1810,6 +1880,7 @@ All seven subtypes are **nested classes** on `com.turbodocx.TurboDocxException` 
 | `tq.createAndSend(req)` | Convenience: create quote + add line items + add bundles + send in one call |
 | `tq.getQuoteNumberConfig()` | Admin: get the org's quote-number config (`format` + `currentFloor`) |
 | `tq.updateQuoteNumberConfig(format)` | Admin: replace the quote-number format; returns updated `{ format, currentFloor }` |
+| `tq.getNextQuoteNumber()` | The number the next quote will get (read only; any role that can create quotes) |
 
 ## Gotchas
 
@@ -1846,7 +1917,9 @@ All seven subtypes are **nested classes** on `com.turbodocx.TurboDocxException` 
 - **`termDays` defaults to 60** (not 30), maxes out at 3650, and `-1` means auto-renewal. `renewalPeriod` (the `RenewalPeriod` enum: `WEEKLY` / `MONTHLY` / `QUARTERLY` / `ANNUALLY`) is **required when `termDays` is -1** and must be null for any other `termDays` — setting it otherwise is a 400.
 - **`handleExpiredQuote` only accepts `action` `"void"` or `"decline"`.** `"extend"` and `"resend"` do not exist in the API and return a 400. `reason` (max 190 chars) and `newValidUntil` (ISO date) are both required — neither is optional; the endpoint voids/declines the original and issues a duplicate carrying the new date, and that duplicate *is* the "extend".
 - **Quote templates are auto-provisioned.** `getTemplate()` self-heals — it creates one from org branding when none exists — so `createTemplate()` on an established org throws 400 `TEMPLATE_ALREADY_EXISTS` and is effectively unreachable. Always do `getTemplate()` → `updateTemplate()`. `deleteTemplate()` is a reset-to-branding-defaults, not a permanent removal.
-- **Product images: max 5 per product, 2 MB each.** Exceeding either returns 400 `MAX_IMAGES_EXCEEDED`.
+- **Product images: max 3 per product, 2 MB each** (custom line items: the same). Exceeding either returns 400 `MAX_IMAGES_EXCEEDED`. A product that already has more keeps them until one is added; a duplicate copies the first three.
+- **Some deletes are refused.** A **sent** quote can't be deleted — void it (409 `CANNOT_DELETE_SENT_QUOTE`); an accepted one neither (409 `CANNOT_DELETE_ACCEPTED_QUOTE`). A company with open quotes (409 `CompanyHasOpenQuotes`), a company's last contact (409 `LastContact`), a contact on open quotes (409 `ContactHasOpenQuotes`) and the default price book (400 `PriceBookIsDefault`) are refused too. Check the open-quotes calls before deleting a company or contact.
+- **List sorting is opt-in.** Every list takes `sortBy` / `sortDirection`; leave them out and the list keeps its usual order (quotes: newest created first). `"expired"` is a `statuses` filter value, not a stored status — an expired quote still reads `draft` or `sent`.
 - **Bulk creates are partial-success, not transactional.** `bulkCreateProducts`/`bulkCreatePriceBooks`/`bulkCreateBundles`/`bulkCreateCompanies`/`bulkCreateContacts`/`bulkCreateTypes` never throw on a bad row — read `result.getFailed()` (`List<BulkImportRowIssue>` with 1-indexed `getRow()` + `getReason()`) and `result.getAdjusted()`; earlier rows are not rolled back. Cap is 500 rows/request (over → `ValidationException` 400). Admin + contributor keys only.
 - **Bulk product rows take `categoryId`, never a category name.** The row schema is strict and rejects unknown keys. Resolve or create the category with `listTypes()` / `createType()` first and pass its UUID. Required per row: `name`, `categoryId`, `listPrice`, `billingFrequency`.
 

@@ -3,7 +3,7 @@ name: turbodocx-sdk
 description: Install TurboDocx SDK and generate integration code for TurboSign (digital signatures), Deliverable (template-based document generation), TurboPartner (partner management), TurboWebhooks (signature event subscriptions), and/or TurboQuote (sales quotes and proposals). Use when the user wants to add e-signatures, document signing, generate documents from templates with variable substitution, partner organization management, signature webhooks, build quotes/proposals/CPQ with products and price books, or any TurboDocx/TurboSign/TurboPartner/Deliverable/TurboWebhooks/TurboQuote functionality to their project. Supports JavaScript, TypeScript, Python, Go, PHP, Java, and Ruby.
 metadata:
   author: TurboDocx
-  version: "1.10.0"
+  version: "1.11.0"
 license: MIT
 ---
 
@@ -227,6 +227,8 @@ Create working route handlers / endpoint code for the selected product(s). The l
 - `addLineItems()` endpoint — add product line items (single object or array, max 50) to a quote. `productId`, `productName`, `unitPrice`, and `billingFrequency` are **all required** on every item — `productId` must be present but may be `null` for a custom, non-catalog item
 - `sendQuote()` endpoint — send a quote for review; returns `{ quote, message }`. Optionally accepts the same reminder/expiration schedule fields as signature send, with one difference: the expiry is pinned to the quote's `validUntil` (so `expireAfter` is ignored; `expirationEnabled` still toggles it per-quote)
 - `downloadQuotePdf()` endpoint — stream the quote PDF (raw bytes per language)
+- If the user is building a quote list or dashboard, use `listQuotes()` with `sortBy` / `sortDirection` and the list filters (`statuses` — including `"expired"` — `companyIds`, `currencies`, `createdBy` from `listQuoteCreators()`, `validUntilWindow` / `validUntilFrom` / `validUntilTo`). The response carries `statusCounts` and `summary`; `getQuoteSummary()` returns the summary alone. Don't fetch everything and sort or filter client-side.
+- If the user deletes quotes, companies or contacts, handle the refusals: a **sent** quote can't be deleted (void it instead), and a company or contact with open quotes can't be either — check `getCompanyOpenQuotes()` / `getContactOpenQuotes()` first and surface the 409 (conflict error class, `code` = `CANNOT_DELETE_SENT_QUOTE` / `CompanyHasOpenQuotes` / `ContactHasOpenQuotes` / `LastContact`).
 - If the user is building a catalog, also scaffold `createProduct()` / `createBundle()` / `createPriceBook()` + `applyPriceBook()`. TurboQuote configures with `apiKey` + `orgId` only — no `senderEmail`, because the quote sender comes from the org's quote template (Quote Settings), not from the client config. Sending a quote still emails the recipient; a template with no sender email makes `sendQuote()` fail with `400 SenderEmailRequired`.
 
 Once the basics are scaffolded, point the user at the language reference (`references/<language>.md`) for the full set of available operations — there are many more than the starter set (org/user/API-key management, audit logs, etc.) and the agent should mention which additional operations exist for the user's selected product so they know what to ask for next.

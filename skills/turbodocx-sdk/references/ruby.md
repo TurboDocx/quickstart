@@ -1256,6 +1256,66 @@ TurboDocxSdk::TurboQuote.update_template(template["id"],
 )
 ```
 
+### Sorting, filters and the list summary
+
+Every list takes `sortBy` / `sortDirection` (`asc` | `desc`); leave them out for the order the
+list always had. Sort columns: quotes `updatedOn` · `createdOn` · `total` · `validUntil` · `quoteNumber`;
+products `name` · `listPrice` · `createdOn`; price books `name` · `discountPercent` · `overrideCount` ·
+`validFrom` · `validTo` · `createdOn`; bundles `name` · `itemCount` · `totalListPrice` · `totalFinalPrice` ·
+`createdOn`; companies `name` · `contactCount` · `lastActivityDate`; contacts `name` · `createdOn`;
+types `name` · `usageCount`.
+
+The quote list also filters by several companies (`companyIds`) and currencies (`currencies`), by
+`expired` in `statuses` (a draft or sent quote past its Valid until day, UTC, or whose signature
+expired), by creator (`createdBy`, ids from the creators call; `createdByApiKeys` for API-key quotes)
+and by Valid until (`validUntilWindow` = `thisWeek` | `thisMonth` | `past`, `validUntilFrom` /
+`validUntilTo`). Each quote carries `isExpired` and `lineItemCount`; the response adds
+`statusCounts` (per tab) and `summary` (pipeline, win rate, monthly recurring, in `summaryCurrency`).
+In the other lists, each price book carries `overrideCount` (products with their own price), each
+bundle `itemCount` and `billingTotals` (its price per billing type, e.g. `one-time` and `monthly`),
+and each company `contactCount`.
+
+```ruby
+page = TurboDocxSdk::TurboQuote.list_quotes(
+  "statuses" => %w[sent expired],
+  "currencies" => %w[USD EUR],
+  "validUntilWindow" => "thisMonth",
+  "sortBy" => "validUntil",
+  "sortDirection" => "asc",
+  "summaryCurrency" => "USD"
+)
+puts page["statusCounts"]["expired"], page["summary"]["winRate"]["percent"]
+
+creators = TurboDocxSdk::TurboQuote.list_quote_creators          # ids for createdBy
+summary = TurboDocxSdk::TurboQuote.get_quote_summary("createdBy" => [creators.first["id"]])
+next_number = TurboDocxSdk::TurboQuote.get_next_quote_number     # read only
+
+copy = TurboDocxSdk::TurboQuote.duplicate_quote(quote["id"], name: "Q4 renewal") # name is optional
+```
+
+`duplicate_quote`, `duplicate_product`, `duplicate_price_book` and `duplicate_bundle` take an optional
+`name:` (otherwise "Copy of …"). Companies take an optional `"email"`; `update_price_book(id, "resetProductPricing" => true)`
+puts every product back on the book's discount.
+
+### Custom line item images
+
+A custom line item (one with no catalog product) can show up to three images on the quote (PNG or
+JPEG, 2 MB each; draft quotes only). Catalog products use `get_product_quote_images(product_ids)`.
+
+```ruby
+images = TurboDocxSdk::TurboQuote.add_line_item_images(quote["id"], item_id, ["./diagram.png"]) # paths or IO objects
+TurboDocxSdk::TurboQuote.reorder_line_item_images(quote["id"], item_id, images.map { |i| i["id"] }.reverse)
+TurboDocxSdk::TurboQuote.remove_line_item_image(quote["id"], item_id, images.first["id"])
+by_item = TurboDocxSdk::TurboQuote.get_quote_line_item_images(quote["id"]) # { line_item_id => [image, ...] }
+```
+
+**Deletes the API refuses.** `delete_quote` on a **sent** quote is a 409 `ConflictError` with code
+`CANNOT_DELETE_SENT_QUOTE` — void it instead; an accepted quote is a 409 `CANNOT_DELETE_ACCEPTED_QUOTE`.
+`delete_company` is a 409 `CompanyHasOpenQuotes` while the company has open quotes (draft or
+sent), and `delete_contact` is a 409 `LastContact` (the company's only contact) or `ContactHasOpenQuotes`.
+`delete_price_book` on the org's default price book is a 400 `ValidationError` `PriceBookIsDefault`. Branch on
+`e.code`; `get_company_open_quotes` / `get_contact_open_quotes` list the open quotes that block a delete.
+
 ### TurboQuote error handling
 
 ```ruby
@@ -1437,10 +1497,12 @@ The error classes are **not** nested under a sub-module (e.g. not `TurboDocxSdk:
 |--------|-------------|
 | `TurboDocxSdk::TurboQuote.configure(api_key:, org_id:)` | Set credentials (no sender_email — the quote sender comes from the org quote template) |
 | `list_quotes(options)` | Paginated list with filters/stats |
+| `get_quote_summary(options=)` | The quote list's summary cards (pipeline, win rate, monthly recurring…) for the list filters, in `summaryCurrency` |
+| `list_quote_creators()` | People and API keys who created the org's quotes — the ids for the `createdBy` filter |
 | `create_quote(request)` | Create a new draft quote |
 | `get_quote(id)` | Get quote details (`statusInfo` and `preparedBy` merged in — `preparedBy` is on this single-quote fetch only) |
 | `update_quote(id, request)` | PATCH quote fields; explicit `nil` clears nullable fields |
-| `delete_quote(id)` / `duplicate_quote(id)` | Delete / clone a quote |
+| `delete_quote(id)` / `duplicate_quote(id, name: nil)` | Delete / clone a quote (a sent or accepted quote can't be deleted — 409) |
 | `send_quote(id, request=nil)` | Email quote; returns `{ "quote", "message" }` |
 | `send_quote_with_deliverable(id, request)` | Send with attached deliverable; returns `{ quote, message, documentId }` |
 | `decline_quote(id, request)` / `void_quote(id, request)` | Decline a quote (a draft's decline reason is not recorded) / void a sent quote (reason always required) |
@@ -1449,6 +1511,7 @@ The error classes are **not** nested under a sub-module (e.g. not `TurboDocxSdk:
 | `download_quote_pdf(id)` | Download rendered quote PDF as raw bytes |
 | `get_quote_number_config` | Admin: read `{ format, currentFloor }` |
 | `update_quote_number_config(format)` | Admin: update the quote-number format; returns `{ format, currentFloor }` |
+| `get_next_quote_number()` | The number the next quote will get (read only; any role that can create quotes) |
 | `create_and_send(request)` | Convenience: create + add items + send in one call |
 
 ### TurboQuote — Line Items
@@ -1460,16 +1523,22 @@ The error classes are **not** nested under a sub-module (e.g. not `TurboDocxSdk:
 | `add_bundle_line_items(quote_id, items)` | Add 1–50 bundle line items; each needs only `"bundleId"` + `"bundleName"` (the server expands the children) |
 | `update_line_item(quote_id, item_id, request)` | Update a line item |
 | `remove_line_item(quote_id, item_id)` | Remove a line item |
+| `get_quote_line_item_images(quote_id)` | Every custom line item's images (up to three, in order), keyed by line item ID |
+| `get_line_item_images(quote_id, item_id)` | One custom line item's images, in order |
+| `add_line_item_images(quote_id, item_id, images)` | Add images to a custom line item (PNG/JPEG, 2 MB each, three in all; draft quotes only) |
+| `reorder_line_item_images(quote_id, item_id, image_ids)` | Set the image order, first to last |
+| `remove_line_item_image(quote_id, item_id, image_id)` | Remove one image; returns the images left |
 
 ### TurboQuote — Products
 
 | Method | Description |
 |--------|-------------|
 | `list_products(options)` | Paginated product catalog |
-| `create_product(request)` | Create a product; `"categoryId"` required (max 5 images, 2 MB each) |
+| `create_product(request)` | Create a product; `"categoryId"` required (max 3 images, 2 MB each) |
 | `bulk_create_products(rows)` | Bulk-import products; each row needs `"name"`, `"categoryId"` (UUID), `"listPrice"`, `"billingFrequency"`. Returns a partial-success `BulkImportResult` hash |
 | `get_product(id)` / `update_product(id, request)` / `delete_product(id)` / `duplicate_product(id)` | Product CRUD |
 | `get_product_primary_images(product_ids)` | Batch-fetch primary images |
+| `get_product_quote_images(product_ids)` | The images each product shows on a quote: up to three, in order |
 
 ### TurboQuote — Bundles
 
@@ -1498,11 +1567,13 @@ The error classes are **not** nested under a sub-module (e.g. not `TurboDocxSdk:
 | `create_company(request)` | Create a company (`contacts` array with ≥ 1 entry required) |
 | `bulk_create_companies(rows)` | Bulk-import companies; returns a partial-success `BulkImportResult` hash |
 | `get_company(id)` / `update_company(id, request)` / `delete_company(id)` | Company CRUD |
+| `get_company_open_quotes(company_id)` | Open quotes (draft or sent) that block deleting the company: `{ results, totalRecords }` |
 | `list_company_contacts(company_id, options)` | List a company's contacts |
 | `list_contacts(options)` | Paginated contact list |
 | `create_contact(request)` | Create a standalone contact |
 | `bulk_create_contacts(rows)` | Bulk-import contacts; returns a partial-success `BulkImportResult` hash |
 | `update_contact(id, request)` / `delete_contact(id)` | Contact update/delete |
+| `get_contact_open_quotes(contact_id)` | Open quotes made out to the contact that block deleting them: `{ results, totalRecords }` |
 
 ### TurboQuote — Templates and Types
 
@@ -1547,7 +1618,9 @@ The error classes are **not** nested under a sub-module (e.g. not `TurboDocxSdk:
 - **`termDays` defaults to 60** (not 30), maxes out at 3650, and `-1` means auto-renewal. `renewalPeriod` (`"weekly" | "monthly" | "quarterly" | "annually"`) is **required when `termDays` is -1** and must be absent/`nil` for any other `termDays` — sending it otherwise is a 400.
 - **`handle_expired_quote` only accepts `"action" => "void"` or `"decline"`.** `"extend"` and `"resend"` do not exist in the API and return a 400. `"reason"` (max 190 chars) and `"newValidUntil"` (ISO date) are both required; the endpoint voids/declines the original and issues a duplicate carrying the new date — that duplicate *is* the "extend".
 - **Quote templates are auto-provisioned.** `get_template` self-heals — it creates one from org branding when none exists — so `create_template` on an established org raises 400 `TEMPLATE_ALREADY_EXISTS` and is effectively unreachable. Always do `get_template` → `update_template`. `delete_template` is a reset-to-branding-defaults, not a permanent removal.
-- **Product images: max 5 per product, 2 MB each.** Exceeding either returns 400 `MAX_IMAGES_EXCEEDED`.
+- **Product images: max 3 per product, 2 MB each** (custom line items: the same). Exceeding either returns 400 `MAX_IMAGES_EXCEEDED`. A product that already has more keeps them until one is added; a duplicate copies the first three.
+- **Some deletes are refused.** A **sent** quote can't be deleted — void it (409 `CANNOT_DELETE_SENT_QUOTE`); an accepted one neither (409 `CANNOT_DELETE_ACCEPTED_QUOTE`). A company with open quotes (409 `CompanyHasOpenQuotes`), a company's last contact (409 `LastContact`), a contact on open quotes (409 `ContactHasOpenQuotes`) and the default price book (400 `PriceBookIsDefault`) are refused too. Check the open-quotes calls before deleting a company or contact.
+- **List sorting is opt-in.** Every list takes `sortBy` / `sortDirection`; leave them out and the list keeps its usual order (quotes: newest created first). `"expired"` is a `statuses` filter value, not a stored status — an expired quote still reads `draft` or `sent`.
 - **`get_quote_number_config` / `update_quote_number_config` are admin-only** — non-admin callers get `TurboDocxSdk::AuthorizationError`. `update_quote_number_config` requires the full 8-field format hash with camelCase keys; `padWidth`/`startNumber` are integers.
 - **Bulk creates are partial-success, not transactional.** `bulk_create_products`/`bulk_create_price_books`/`bulk_create_bundles`/`bulk_create_companies`/`bulk_create_contacts`/`bulk_create_types` never raise on a bad row — read `report["failed"]` (`[{ "row", "reason" }]`, `row` 1-indexed) and `report["adjusted"]`; earlier rows are not rolled back. Cap is 500 rows/request (over → `ValidationError` 400). Admin + contributor keys only. Row-hash keys stay camelCase.
 - **Bulk product rows take `"categoryId"`, never `"categoryName"`.** The row schema is strict and rejects unknown keys, so a `"categoryName"` field 400s the row. Resolve or create the category with `list_types` / `create_type` first and pass its UUID. Required per row: `"name"`, `"categoryId"`, `"listPrice"`, `"billingFrequency"`.
