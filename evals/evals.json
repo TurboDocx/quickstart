@@ -1451,7 +1451,7 @@
     {
       "id": 24,
       "prompt": "Add TurboQuote to my Express app so I can create a sales quote, add product line items, and send it to a customer for review. I want an endpoint that takes a company/contact + a list of products and returns the sent quote.",
-      "expected_output": "Creates a TurboQuote config (apiKey + orgId, NO senderEmail), a route/handler that creates a quote, adds product line items, and sends it for review (plus optionally downloads the quote PDF), wires it into the app, and adds .env with TURBODOCX_API_KEY + TURBODOCX_ORG_ID only \u2014 no sender email, no partner vars. Uses only real TurboQuote methods (JavaScript/TypeScript naming); no workflow/approval calls.",
+      "expected_output": "Creates a TurboQuote config (apiKey + orgId, NO senderEmail), a route/handler that creates a quote, adds product line items, and sends it for review (plus optionally downloads the quote PDF), wires it into the app, and adds .env with TURBODOCX_API_KEY + TURBODOCX_ORG_ID only \u2014 no sender email, no partner vars. Uses only real TurboQuote methods (JavaScript/TypeScript naming); nothing outside the SDK.",
       "files": [
         "package.json",
         "tsconfig.json",
@@ -1505,9 +1505,9 @@
           "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY"
         },
         {
-          "name": "no-workflow-approval",
+          "name": "no-invented-methods",
           "type": "file_not_contains",
-          "description": "Code does NOT reference workflow/approval methods (createWorkflow, approveQuote, etc.) \u2014 these are not part of the TurboQuote SDK"
+          "description": "Code does NOT call methods that are not part of the TurboQuote SDK (no invented workflow methods such as createWorkflow)"
         },
         {
           "name": "gitignore-has-env",
@@ -1519,7 +1519,7 @@
     {
       "id": 25,
       "prompt": "Add TurboQuote support to my FastAPI app. I need an endpoint that creates a quote for a company and contact, adds line items for some products, and sends the quote.",
-      "expected_output": "Creates a TurboQuote config (apiKey + orgId, NO senderEmail), a route/handler that creates a quote, adds product line items, and sends it for review (plus optionally downloads the quote PDF), wires it into the app, and adds .env with TURBODOCX_API_KEY + TURBODOCX_ORG_ID only \u2014 no sender email, no partner vars. Uses only real TurboQuote methods (Python (snake_case) naming); no workflow/approval calls.",
+      "expected_output": "Creates a TurboQuote config (apiKey + orgId, NO senderEmail), a route/handler that creates a quote, adds product line items, and sends it for review (plus optionally downloads the quote PDF), wires it into the app, and adds .env with TURBODOCX_API_KEY + TURBODOCX_ORG_ID only \u2014 no sender email, no partner vars. Uses only real TurboQuote methods (Python (snake_case) naming); nothing outside the SDK.",
       "files": [
         "pyproject.toml",
         "app/main.py",
@@ -1572,9 +1572,9 @@
           "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY"
         },
         {
-          "name": "no-workflow-approval",
+          "name": "no-invented-methods",
           "type": "file_not_contains",
-          "description": "Code does NOT reference workflow/approval methods (createWorkflow, approveQuote, etc.) \u2014 these are not part of the TurboQuote SDK"
+          "description": "Code does NOT call methods that are not part of the TurboQuote SDK (no invented workflow methods such as createWorkflow)"
         },
         {
           "name": "gitignore-has-env",
@@ -1586,7 +1586,7 @@
     {
       "id": 26,
       "prompt": "Wire up TurboQuote in my Laravel app: a controller endpoint that creates a quote, adds product line items, and sends it for review.",
-      "expected_output": "Creates a TurboQuote config (apiKey + orgId, NO senderEmail), a route/handler that creates a quote, adds product line items, and sends it for review (plus optionally downloads the quote PDF), wires it into the app, and adds .env with TURBODOCX_API_KEY + TURBODOCX_ORG_ID only \u2014 no sender email, no partner vars. Uses only real TurboQuote methods (PHP naming); no workflow/approval calls.",
+      "expected_output": "Creates a TurboQuote config (apiKey + orgId, NO senderEmail), a route/handler that creates a quote, adds product line items, and sends it for review (plus optionally downloads the quote PDF), wires it into the app, and adds .env with TURBODOCX_API_KEY + TURBODOCX_ORG_ID only \u2014 no sender email, no partner vars. Uses only real TurboQuote methods (PHP naming); nothing outside the SDK.",
       "files": [
         "composer.json",
         "routes/api.php",
@@ -1642,9 +1642,9 @@
           "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY"
         },
         {
-          "name": "no-workflow-approval",
+          "name": "no-invented-methods",
           "type": "file_not_contains",
-          "description": "Code does NOT reference workflow/approval methods (createWorkflow, approveQuote, etc.) \u2014 these are not part of the TurboQuote SDK"
+          "description": "Code does NOT call methods that are not part of the TurboQuote SDK (no invented workflow methods such as createWorkflow)"
         },
         {
           "name": "gitignore-has-env",
@@ -1656,7 +1656,7 @@
     {
       "id": 27,
       "prompt": "Add TurboQuote to my Go service (net/http). I want a handler that creates a quote for a company/contact, adds line items, and sends it.",
-      "expected_output": "Creates a TurboQuote config (apiKey + orgId, NO senderEmail), a route/handler that creates a quote, adds product line items, and sends it for review (plus optionally downloads the quote PDF), wires it into the app, and adds .env with TURBODOCX_API_KEY + TURBODOCX_ORG_ID only \u2014 no sender email, no partner vars. Uses only real TurboQuote methods (Go (PascalCase exported) naming); no workflow/approval calls.",
+      "expected_output": "Creates a TurboQuote config (apiKey + orgId, NO senderEmail), a route/handler that creates a quote, adds product line items, and sends it for review (plus optionally downloads the quote PDF), wires it into the app, and adds .env with TURBODOCX_API_KEY + TURBODOCX_ORG_ID only \u2014 no sender email, no partner vars. Uses only real TurboQuote methods (Go (PascalCase exported) naming); nothing outside the SDK.",
       "files": [
         "go.mod",
         "cmd/server/main.go",
@@ -1709,9 +1709,9 @@
           "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY"
         },
         {
-          "name": "no-workflow-approval",
+          "name": "no-invented-methods",
           "type": "file_not_contains",
-          "description": "Code does NOT reference workflow/approval methods (createWorkflow, approveQuote, etc.) \u2014 these are not part of the TurboQuote SDK"
+          "description": "Code does NOT call methods that are not part of the TurboQuote SDK (no invented workflow methods such as createWorkflow)"
         },
         {
           "name": "gitignore-has-env",
@@ -1723,7 +1723,7 @@
     {
       "id": 28,
       "prompt": "Hook up TurboQuote in my Spring Boot app: a REST controller that creates a quote, adds product line items, and sends it for review.",
-      "expected_output": "Creates a TurboQuote config (apiKey + orgId, NO senderEmail), a route/handler that creates a quote, adds product line items, and sends it for review (plus optionally downloads the quote PDF), wires it into the app, and adds .env with TURBODOCX_API_KEY + TURBODOCX_ORG_ID only \u2014 no sender email, no partner vars. Uses only real TurboQuote methods (Java (camelCase) naming); no workflow/approval calls.",
+      "expected_output": "Creates a TurboQuote config (apiKey + orgId, NO senderEmail), a route/handler that creates a quote, adds product line items, and sends it for review (plus optionally downloads the quote PDF), wires it into the app, and adds .env with TURBODOCX_API_KEY + TURBODOCX_ORG_ID only \u2014 no sender email, no partner vars. Uses only real TurboQuote methods (Java (camelCase) naming); nothing outside the SDK.",
       "files": [
         "pom.xml",
         "src/main/java/com/example/app/Application.java",
@@ -1777,9 +1777,9 @@
           "description": ".env does NOT contain TURBODOCX_PARTNER_API_KEY"
         },
         {
-          "name": "no-workflow-approval",
+          "name": "no-invented-methods",
           "type": "file_not_contains",
-          "description": "Code does NOT reference workflow/approval methods (createWorkflow, approveQuote, etc.) \u2014 these are not part of the TurboQuote SDK"
+          "description": "Code does NOT call methods that are not part of the TurboQuote SDK (no invented workflow methods such as createWorkflow)"
         },
         {
           "name": "gitignore-has-env",
