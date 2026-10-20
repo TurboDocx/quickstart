@@ -1528,7 +1528,7 @@ const byItem = await TurboQuote.getQuoteLineItemImages(quote.id); // { [lineItem
 
 **Deletes the API refuses.** `deleteQuote` on a **sent** quote is a 409 `ConflictError` with code
 `CANNOT_DELETE_SENT_QUOTE` — void it instead; an accepted quote is a 409 `CANNOT_DELETE_ACCEPTED_QUOTE`.
-`deleteCompany` is a 409 `CompanyHasOpenQuotes` while the company has open quotes (draft, pending approval or
+`deleteCompany` is a 409 `CompanyHasOpenQuotes` while the company has open quotes (draft or
 sent), and `deleteContact` is a 409 `LastContact` (the company's only contact) or `ContactHasOpenQuotes`.
 `deletePriceBook` on the org's default price book is a 400 `ValidationError` `PriceBookIsDefault`. Branch on
 `err.code`; `getCompanyOpenQuotes` / `getContactOpenQuotes` list the open quotes that block a delete.
@@ -1873,7 +1873,7 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode`, `code`, and
 | `TurboQuote.getCompany(id)` | Get a single company |
 | `TurboQuote.updateCompany(id, request)` | PATCH a company |
 | `TurboQuote.deleteCompany(id)` | Delete a company |
-| `TurboQuote.getCompanyOpenQuotes(companyId)` | Open quotes (draft, pending approval, sent) that block deleting the company: `{ results, totalRecords }` |
+| `TurboQuote.getCompanyOpenQuotes(companyId)` | Open quotes (draft or sent) that block deleting the company: `{ results, totalRecords }` |
 | `TurboQuote.listCompanyContacts(companyId, options?)` | List contacts belonging to a company |
 | `TurboQuote.listContacts(options?)` | Paginated contact list across all companies |
 | `TurboQuote.createContact(request)` | Create a standalone contact |

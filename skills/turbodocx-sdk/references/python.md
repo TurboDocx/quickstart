@@ -1409,7 +1409,7 @@ by_item = await TurboQuote.get_quote_line_item_images(quote["id"])  # {line_item
 
 **Deletes the API refuses.** `delete_quote` on a **sent** quote is a 409 `ConflictError` with code
 `CANNOT_DELETE_SENT_QUOTE` — void it instead; an accepted quote is a 409 `CANNOT_DELETE_ACCEPTED_QUOTE`.
-`delete_company` is a 409 `CompanyHasOpenQuotes` while the company has open quotes (draft, pending approval or
+`delete_company` is a 409 `CompanyHasOpenQuotes` while the company has open quotes (draft or
 sent), and `delete_contact` is a 409 `LastContact` (the company's only contact) or `ContactHasOpenQuotes`.
 `delete_price_book` on the org's default price book is a 400 `ValidationError` `PriceBookIsDefault`. Branch on
 `err.code`; `get_company_open_quotes` / `get_contact_open_quotes` list the open quotes that block a delete.
@@ -1693,7 +1693,7 @@ The exception attributes are `e.status_code` (int or `None`) and `e.code` (str) 
 | `TurboQuote.get_company(id)` | Get company by ID |
 | `TurboQuote.update_company(id, request)` | Update company |
 | `TurboQuote.delete_company(id)` | Delete company |
-| `TurboQuote.get_company_open_quotes(company_id)` | Open quotes (draft, pending approval, sent) that block deleting the company: `{ results, totalRecords }` |
+| `TurboQuote.get_company_open_quotes(company_id)` | Open quotes (draft or sent) that block deleting the company: `{ results, totalRecords }` |
 | `TurboQuote.list_company_contacts(company_id, options=)` | List contacts for a company |
 | `TurboQuote.list_contacts(options=)` | List contacts |
 | `TurboQuote.create_contact(request)` | Create contact |

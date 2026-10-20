@@ -1774,7 +1774,7 @@ byItem, err := qc.GetQuoteLineItemImages(ctx, quote.ID) // map[lineItemID][]Line
 
 **Deletes the API refuses.** `DeleteQuote` on a **sent** quote is a 409 `*ConflictError` with code
 `CANNOT_DELETE_SENT_QUOTE` — void it instead; an accepted quote is a 409 `CANNOT_DELETE_ACCEPTED_QUOTE`.
-`DeleteCompany` is a 409 `CompanyHasOpenQuotes` while the company has open quotes (draft, pending approval or
+`DeleteCompany` is a 409 `CompanyHasOpenQuotes` while the company has open quotes (draft or
 sent), and `DeleteContact` is a 409 `LastContact` (the company's only contact) or `ContactHasOpenQuotes`.
 `DeletePriceBook` on the org's default price book is a 400 `*ValidationError` `PriceBookIsDefault`. Branch on
 `err.Code`; `GetCompanyOpenQuotes` / `GetContactOpenQuotes` list the open quotes that block a delete.
@@ -1957,7 +1957,7 @@ Every typed error embeds `turbodocx.TurboDocxError`, so `Code` (string), `Messag
 | `qc.GetCompany(ctx, id)` | Get a company by ID |
 | `qc.UpdateCompany(ctx, id, req)` | Update a company |
 | `qc.DeleteCompany(ctx, id)` | Delete a company |
-| `qc.GetCompanyOpenQuotes(ctx, companyID)` | Open quotes (draft, pending approval, sent) that block deleting the company: `{ results, totalRecords }` |
+| `qc.GetCompanyOpenQuotes(ctx, companyID)` | Open quotes (draft or sent) that block deleting the company: `{ results, totalRecords }` |
 | `qc.ListCompanyContacts(ctx, companyID, opts)` | List contacts for a specific company |
 | `qc.ListContacts(ctx, opts)` | Paginated contact list |
 | `qc.CreateContact(ctx, req)` | Create a contact |

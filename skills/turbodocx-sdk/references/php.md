@@ -1684,7 +1684,7 @@ $byItem = TurboQuote::getQuoteLineItemImages($quote->id); // [lineItemId => Line
 
 **Deletes the API refuses.** `deleteQuote()` on a **sent** quote is a 409 `ConflictException` with code
 `CANNOT_DELETE_SENT_QUOTE` — void it instead; an accepted quote is a 409 `CANNOT_DELETE_ACCEPTED_QUOTE`.
-`deleteCompany()` is a 409 `CompanyHasOpenQuotes` while the company has open quotes (draft, pending approval or
+`deleteCompany()` is a 409 `CompanyHasOpenQuotes` while the company has open quotes (draft or
 sent), and `deleteContact()` is a 409 `LastContact` (the company's only contact) or `ContactHasOpenQuotes`.
 `deletePriceBook()` on the org's default price book is a 400 `ValidationException` `PriceBookIsDefault`. Branch on
 `$e->errorCode`; `getCompanyOpenQuotes()` / `getContactOpenQuotes()` list the open quotes that block a delete.
@@ -1975,7 +1975,7 @@ otherwise the class default — `VALIDATION_ERROR`, `AUTHENTICATION_ERROR`, `AUT
 | `TurboQuote::getCompany($id)` | Get company by ID |
 | `TurboQuote::updateCompany($id, $request)` | Update a company |
 | `TurboQuote::deleteCompany($id)` | Delete a company |
-| `TurboQuote::getCompanyOpenQuotes($companyId)` | Open quotes (draft, pending approval, sent) that block deleting the company: `{ results, totalRecords }` |
+| `TurboQuote::getCompanyOpenQuotes($companyId)` | Open quotes (draft or sent) that block deleting the company: `{ results, totalRecords }` |
 | `TurboQuote::listCompanyContacts($companyId, $request?)` | List contacts for a company |
 | **TurboQuote — Contacts** | |
 | `TurboQuote::listContacts($request?)` | List contacts |
