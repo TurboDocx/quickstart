@@ -76,6 +76,8 @@ if err != nil {
 fmt.Printf("Document ID: %s\n", result.DocumentID)
 ```
 
+**`FileName`** (optional, with `File`) sets the stored document file name: up to 255 characters, no extension needed (`"Acme NDA"` is fine). It is sent as a form field; the uploaded part itself is named `document.<ext>`, and an empty `FileName` stores that name. `CreateSignatureReviewLinkRequest` and `CreateEmbeddedSignatureRequest` have it too.
+
 ### Choosing field placement
 
 1. **A template set up in TurboDocx, sent by signer role** (recommended for any document sent more than once). Set it up once in the TurboDocx UI: upload the PDF as a template, add each signer as a role, drag their fields onto the page, save the signature setup. Code then sends by `role` with no field positions at all (next section).
@@ -117,6 +119,22 @@ fmt.Println(result.DocumentID)
 ```
 
 `GetTemplateSignatureSetup(ctx, templateID)` returns `*turbodocx.TemplateSignatureSetup{TemplateID, Roles []TemplateSignatureRole}`; each role has `Key`, `Label`, `Order`, `HasSavedSigner`, `DefaultName`, `DefaultEmail` (set only when `HasSavedSigner`), and `FieldCount`. `Key` is the value for `Recipient.Role`.
+
+On a template with no saved signature setup `GetTemplateSignatureSetup` returns a 404 with code `SignatureSetupNotFound`:
+
+```go
+setup, err := client.TurboSign.GetTemplateSignatureSetup(ctx, templateID)
+if err != nil {
+    var nfErr *turbodocx.NotFoundError
+    if errors.As(err, &nfErr) && nfErr.Code == "SignatureSetupNotFound" {
+        // no saved setup: set the template up in TurboDocx, or send with explicit Fields
+    }
+    return err
+}
+for _, role := range setup.Roles {
+    fmt.Println(role.Key, role.Order)
+}
+```
 
 - Roles sign in the order saved on the template, so a recipient with a `Role` needs no `SigningOrder` (it is `omitempty`, 0 is left off the wire); recipients without a `Role` sign after them.
 - A role left out uses the template's saved signer. If it has none, the API returns a 400 naming the role. Pass a role that has a saved signer to send to someone else this time.
@@ -543,7 +561,7 @@ Returns `*turbodocx.CreateSigningURLResponse` — `URL`, `ExpiresAt` (`*string`)
 
 - **Provide exactly one selector.** `RecipientID` or `ExternalID`, not both and not neither, or the SDK returns a `*turbodocx.ValidationError` with code `RecipientSelectorInvalid` before the network call. `ExternalID` is your own key for the signer (an Airtable row, a CRM id), set on the recipient at `SendSignature` time.
 - **`IdentityAssertion` is only for `external_idv` recipients.** OTP, override, and no-verification recipients ignore it. `Provider`, `VerificationID`, `VerifiedAt`, `SubjectEmail` are required; `Method`, `MethodDetail` (required when `Method` is `"other"`), `AssuranceLevel`, `VerifiedName`, `EvidenceURL` (https) and `OverrideEmailMatching` (`bool`) are optional and left off the wire when empty.
-- **Request at click time, never store the URL.** For the bypass modes (`external_idv` / `override`) the link is single-use and expires minutes after issue (a `?sut=` redeem-once URL), so mint a fresh one each time. For `otp` and no-verification recipients `URL` is the reusable signing link (a `?token=` URL), so `ExpiresAt` is the **document's own expiry**, or nil when the document doesn't expire.
+- **Request at click time, never store the URL.** For the bypass modes (`external_idv` / `override`) the link is single-use and expires 5 minutes after issue (a `?sut=` redeem-once URL), so mint a fresh one each time. For `otp` and no-verification recipients `URL` is the reusable signing link (a `?token=` URL), so `ExpiresAt` is the **document's own expiry**, or nil when the document doesn't expire.
 - **`ReturnURL` must be https**, or the SDK returns a `*turbodocx.ValidationError` with code `InvalidReturnUrl`.
 
 ### CreateEmbeddedSignature
@@ -1070,12 +1088,18 @@ func (h *SignatureHandler) SendSignature(w http.ResponseWriter, r *http.Request)
         Fields:       fields,
     })
     if err != nil {
-        var tdxErr *turbodocx.TurboDocxError
-        if errors.As(err, &tdxErr) {
-            http.Error(w, tdxErr.Message, tdxErr.StatusCode)
-            return
+        // Match the concrete types: they embed TurboDocxError by value with no Unwrap, so
+        // errors.As against *turbodocx.TurboDocxError would not match them.
+        var valErr *turbodocx.ValidationError
+        var nf *turbodocx.NotFoundError
+        switch {
+        case errors.As(err, &valErr):
+            http.Error(w, valErr.Message, http.StatusBadRequest)
+        case errors.As(err, &nf):
+            http.Error(w, nf.Message, http.StatusNotFound)
+        default: // 401/403 mean our API key is wrong; 429/5xx are ours to retry
+            http.Error(w, "internal error", http.StatusInternalServerError)
         }
-        http.Error(w, "internal error", http.StatusInternalServerError)
         return
     }
 
@@ -1288,6 +1312,8 @@ stats, err := wh.GetWebhookStats(ctx, 30) // sliding window; pass 0 for backend 
 ### Verifying inbound webhook signatures (net/http)
 
 When TurboDocx POSTs to your receiver, verify the `X-TurboDocx-Signature` header before trusting the payload. The helper enforces a 5-minute timestamp tolerance and uses `hmac.Equal` for constant-time comparison.
+
+`VerifyWebhookSignature` returns `false` (no error, no panic) on bad or missing input, such as an empty header or secret or a malformed timestamp, so answer 401 on `false`.
 
 ```go
 package handlers
@@ -1737,15 +1763,13 @@ if err != nil {
     case errors.As(err, &netErr):  // connection failure
     }
 
-    // Or handle generically — every typed error embeds TurboDocxError.
-    var tdxErr *turbodocx.TurboDocxError
-    if errors.As(err, &tdxErr) {
-        fmt.Println(tdxErr.Code, tdxErr.StatusCode, tdxErr.Message)
-    }
+    // Don't use errors.As(err, &tdxErr) with tdxErr *turbodocx.TurboDocxError as a catch-all:
+    // the typed errors embed it by value with no Unwrap, so it matches only a status the SDK
+    // has no typed error for (e.g. a 5xx). Read Code/Message off the typed value you matched.
 }
 ```
 
-Every typed error embeds `turbodocx.TurboDocxError`, so `Code` (string), `Message` (string) and `StatusCode` (int) are available on all of them. **`Code` is always populated** — the API's code when it sends one, otherwise the class default: `VALIDATION_ERROR`, `AUTHENTICATION_ERROR`, `AUTHORIZATION_ERROR`, `NOT_FOUND`, `CONFLICT`, `RATE_LIMIT_EXCEEDED`, `NETWORK_ERROR`. Branch on it without a nil check.
+Every typed error embeds `turbodocx.TurboDocxError`, so `Code` (string), `Message` (string) and `StatusCode` (int) are available on all of them (`valErr.Code`). Because the embedding is by value with no `Unwrap`, `errors.As` against `*turbodocx.TurboDocxError` does **not** match the typed errors; match each concrete type as above. **`Code` is always populated** — the API's code when it sends one, otherwise the class default: `VALIDATION_ERROR`, `AUTHENTICATION_ERROR`, `AUTHORIZATION_ERROR`, `NOT_FOUND`, `CONFLICT`, `RATE_LIMIT_EXCEEDED`, `NETWORK_ERROR`. Branch on it without a nil check.
 
 ## Method Reference
 

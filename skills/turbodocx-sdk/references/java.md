@@ -77,6 +77,8 @@ SendSignatureResponse result = client.turboSign().sendSignature(
 System.out.println("Document ID: " + result.getDocumentId());
 ```
 
+**`.fileName(...)`** (optional, with `.file(byte[])`) sets the stored document file name: up to 255 characters, no extension needed (`"Acme NDA"` is fine). It is sent as a form field; the uploaded part itself is named `document.<ext>`, and a null or empty `fileName` stores that name. The `CreateSignatureReviewLinkRequest` and `CreateEmbeddedSignatureRequest` builders have it too.
+
 ### Choosing field placement
 
 1. **A template set up in TurboDocx, sent by signer role** (recommended for any document sent more than once). Set it up once in the TurboDocx UI: upload the PDF as a template, add each signer as a role, drag their fields onto the page, save the signature setup. Code then sends by `role` with no field positions at all (next section).
@@ -126,6 +128,19 @@ try {
 ```
 
 `getTemplateSignatureSetup(templateId)` returns a `TemplateSignatureSetup` (`getTemplateId()`, `getRoles()`); each `TemplateSignatureRole` has `getKey()`, `getLabel()`, `getOrder()`, `hasSavedSigner()`, `getDefaultName()`/`getDefaultEmail()` (null unless `hasSavedSigner()`), and `getFieldCount()`. `getKey()` is the value for the recipient's role.
+
+On a template with no saved signature setup `getTemplateSignatureSetup` throws a 404 with code `SignatureSetupNotFound`:
+
+```java
+try {
+    TemplateSignatureSetup setup = client.turboSign().getTemplateSignatureSetup(templateId);
+} catch (TurboDocxException.NotFoundException e) {
+    if ("SignatureSetupNotFound".equals(e.getCode())) {
+        // no saved setup: set the template up in TurboDocx, or send with explicit fields
+    }
+    throw e;
+}
+```
 
 - Roles sign in the order saved on the template, so a role recipient needs no signing order (`Recipient.getSigningOrder()` stays an `int` and returns 0 when unset; 0 is left out of the request); recipients without a role sign after them.
 - A role left out uses the template's saved signer. If it has none, the API returns a 400 naming the role. Pass a role that has a saved signer to send to someone else this time.
@@ -224,7 +239,7 @@ The link is `fieldKey` → `controllingFieldKey`: the two strings must match exa
 
 ```java
 DocumentStatusResponse status = client.turboSign().getStatus(documentId);
-System.out.println("Status: " + status.getStatus());     // e.g. "sent", "completed", "voided"
+System.out.println("Status: " + status.getStatus());     // e.g. "under_review", "completed", "voided"
 System.out.println("Expires: " + status.getExpiresAt()); // ISO timestamp, or null when expiration is off
 ```
 
@@ -488,7 +503,7 @@ CreateSigningUrlResponse link = client.turboSign().createSigningUrl(
 );
 ```
 
-Request it **at click time**. For the bypass modes (`external_idv` / `override`) the URL is **single-use** and expires minutes after issue (a `?sut=` link redeemed once when opened), so mint a fresh one each time. For no-verification and `otp` recipients the URL is the reusable signing link (`?token=`) that survives a refresh, and `getExpiresAt()` is the **document's own expiry**, or `null` when the document doesn't expire.
+Request it **at click time**. For the bypass modes (`external_idv` / `override`) the URL is **single-use** and expires 5 minutes after issue (a `?sut=` link redeemed once when opened), so mint a fresh one each time. For no-verification and `otp` recipients the URL is the reusable signing link (`?token=`) that survives a refresh, and `getExpiresAt()` is the **document's own expiry**, or `null` when the document doesn't expire.
 
 ### getEmbeddedSigningSettings
 
@@ -1219,6 +1234,8 @@ JsonObject stats = webhooks.getWebhookStats(30); // sliding window in days; pass
 ### Verifying inbound webhook signatures (Spring Boot)
 
 When TurboDocx POSTs to your receiver, verify the `X-TurboDocx-Signature` header before trusting the payload. Java has no free functions — the helper is exposed as `WebhookSignatureVerifier.verify(...)`, a static method on a final utility class. It enforces a 5-minute timestamp tolerance and uses `MessageDigest.isEqual` for constant-time comparison.
+
+`WebhookSignatureVerifier.verify(...)` returns `false` (it does not throw) on bad or missing input, such as a `null` body, a `null` or empty header or secret, or a malformed timestamp, so answer 401 on `false` without a try/catch.
 
 ```java
 package com.example.webhooks;

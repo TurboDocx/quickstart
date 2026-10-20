@@ -13,8 +13,10 @@ composer require vlucas/phpdotenv
 
 Load in your bootstrap/entry point:
 ```php
-$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
-$dotenv->load();
+// createUnsafeImmutable (not createImmutable) so getenv() sees the .env values too:
+// createImmutable fills only $_ENV / $_SERVER, and the snippets below read getenv().
+$dotenv = Dotenv\Dotenv::createUnsafeImmutable(__DIR__);
+$dotenv->safeLoad(); // no error when .env is absent (production uses real env vars)
 ```
 
 ## Imports
@@ -34,10 +36,10 @@ use TurboDocx\TurboSign;
 use TurboDocx\Config\HttpClientConfig;
 
 TurboSign::configure(new HttpClientConfig(
-    apiKey: $_ENV['TURBODOCX_API_KEY'],
-    orgId: $_ENV['TURBODOCX_ORG_ID'],
-    senderEmail: $_ENV['TURBODOCX_SENDER_EMAIL'],
-    senderName: $_ENV['TURBODOCX_SENDER_NAME'] ?? null,
+    apiKey: getenv('TURBODOCX_API_KEY') ?: null,
+    orgId: getenv('TURBODOCX_ORG_ID') ?: null,
+    senderEmail: getenv('TURBODOCX_SENDER_EMAIL') ?: null,
+    senderName: getenv('TURBODOCX_SENDER_NAME') ?: null,
 ));
 
 // Or auto-configure from environment
@@ -82,6 +84,8 @@ $result = TurboSign::sendSignature(
 
 echo "Document ID: {$result->documentId}\n";
 ```
+
+**`fileName:`** (optional, with `file:`) sets the stored document file name: up to 255 characters, no extension needed (`'Acme NDA'` is fine). It is sent as a form field; the uploaded part itself is named `document.<ext>`, and a null or empty `fileName` stores that name. `CreateSignatureReviewLinkRequest` and `CreateEmbeddedSignatureRequest` take it too.
 
 ### Choosing field placement
 
@@ -129,6 +133,21 @@ try {
 ```
 
 `TurboSign::getTemplateSignatureSetup($templateId)` returns a `TemplateSignatureSetup` with `templateId` and `roles` (`TemplateSignatureRole[]`: `key`, `label`, `order`, `hasSavedSigner`, `fieldCount`, `defaultName`/`defaultEmail` set only when `hasSavedSigner`). `key` is the value for `Recipient` `role`.
+
+On a template with no saved signature setup `getTemplateSignatureSetup` throws a 404 with code `SignatureSetupNotFound`:
+
+```php
+use TurboDocx\Exceptions\NotFoundException;
+
+try {
+    $setup = TurboSign::getTemplateSignatureSetup($templateId);
+} catch (NotFoundException $e) {
+    if ($e->errorCode === 'SignatureSetupNotFound') {
+        // no saved setup: set the template up in TurboDocx, or send with explicit fields
+    }
+    throw $e;
+}
+```
 
 - Roles sign in the order saved on the template, so a `Recipient` with a `role` needs no `signingOrder`; recipients without a `role` sign after them and still need a `signingOrder` (the constructor throws `ValidationException` when neither is given).
 - A role left out uses the template's saved signer. If it has none, the API returns a 400 naming the role. Pass a role that has a saved signer to send to someone else this time.
@@ -335,7 +354,7 @@ echo "Document ID: {$result->documentId}\n";
 echo "Preview URL: {$result->previewUrl}\n";  // open to review field placement
 // $result->recipients is an array of plain arrays: id / name / email / metadata.
 // There is no signUrl on them — use $result->previewUrl for the document-level preview.
-foreach ($result->recipients ?? [] as $recipient) {
+foreach ($result->recipients as $recipient) {
     echo "  {$recipient['name']} <{$recipient['email']}> id={$recipient['id']}\n";
 }
 ```
@@ -518,7 +537,7 @@ echo "Expires: " . ($link->expiresAt ?? '(none; the document does not expire)') 
 `CreateSigningUrlResponse` carries `url`, `expiresAt`, `recipientId`, `externalId`, `identityVerificationMode`, and `pendingChecks`. Semantics that matter:
 
 - **Exactly one selector** — pass `recipientId` **or** `externalId`, never both and never neither, or the SDK throws `ValidationException` (`RecipientSelectorInvalid`) before any HTTP call. `returnUrl`, when present, must be `https://`.
-- **Request at click time, never store.** For the **bypass modes** (`external_idv`, `override`) the URL is **single-use** and expires minutes after issue (a `?sut=` link the page redeems once); mint a fresh one each time. For `otp` / no-verification the `url` is the reusable `?token=` signing link, so `expiresAt` is the **document's own expiry**, or `null` when the document doesn't expire.
+- **Request at click time, never store.** For the **bypass modes** (`external_idv`, `override`) the URL is **single-use** and expires 5 minutes after issue (a `?sut=` link the page redeems once); mint a fresh one each time. For `otp` / no-verification the `url` is the reusable `?token=` signing link, so `expiresAt` is the **document's own expiry**, or `null` when the document doesn't expire.
 - `pendingChecks` lists the passcode step the signer clears on the page (`['email_otp']` / `['sms_otp']`); it is non-empty **only for `otp`** (including an `otp` the org default applied). With no verification, external_idv, or override it is `[]`.
 - **`identityAssertion` is for external_idv only** — pass it here when the recipient's mode is `external_idv` (see below).
 
@@ -650,8 +669,8 @@ use TurboDocx\Deliverable;
 use TurboDocx\Config\DeliverableConfig;
 
 Deliverable::configure(new DeliverableConfig(
-    apiKey: $_ENV['TURBODOCX_API_KEY'],
-    orgId: $_ENV['TURBODOCX_ORG_ID'],
+    apiKey: getenv('TURBODOCX_API_KEY') ?: null,
+    orgId: getenv('TURBODOCX_ORG_ID') ?: null,
 ));
 
 // Or auto-configure from environment
@@ -796,8 +815,8 @@ use TurboDocx\TurboPartner;
 use TurboDocx\Config\PartnerClientConfig;
 
 TurboPartner::configure(new PartnerClientConfig(
-    partnerApiKey: $_ENV['TURBODOCX_PARTNER_API_KEY'], // starts with TDXP-
-    partnerId: $_ENV['TURBODOCX_PARTNER_ID'],          // UUID
+    partnerApiKey: getenv('TURBODOCX_PARTNER_API_KEY') ?: '', // starts with TDXP-; '' fails closed
+    partnerId: getenv('TURBODOCX_PARTNER_ID') ?: '',          // UUID
 ));
 ```
 
@@ -1045,8 +1064,8 @@ use TurboDocx\TurboWebhooks;
 use TurboDocx\Config\HttpClientConfig;
 
 TurboWebhooks::configure(new HttpClientConfig(
-    apiKey: $_ENV['TURBODOCX_API_KEY'],   // admin TDX- key
-    orgId: $_ENV['TURBODOCX_ORG_ID'],
+    apiKey: getenv('TURBODOCX_API_KEY') ?: null,   // admin TDX- key
+    orgId: getenv('TURBODOCX_ORG_ID') ?: null,
     skipSenderValidation: true,           // webhooks don't send email
 ));
 ```
@@ -1198,6 +1217,8 @@ $stats = TurboWebhooks::getWebhookStats(days: 30);
 
 When TurboDocx POSTs to your receiver, verify the `X-TurboDocx-Signature` header before trusting the payload. The helper enforces a 5-minute timestamp tolerance and uses constant-time comparison.
 
+`verifyWebhookSignature` returns `false` (it does not throw, not even a `TypeError` for a non-string argument) on bad or missing input, so answer 401 on `false` without a try/catch.
+
 ```php
 use function TurboDocx\Utils\verifyWebhookSignature;
 
@@ -1205,7 +1226,7 @@ use function TurboDocx\Utils\verifyWebhookSignature;
 $rawBody         = file_get_contents('php://input');               // raw bytes — do NOT json_decode first
 $signatureHeader = $_SERVER['HTTP_X_TURBODOCX_SIGNATURE'] ?? '';
 $timestampHeader = $_SERVER['HTTP_X_TURBODOCX_TIMESTAMP'] ?? '';
-$secret          = $_ENV['TURBODOCX_WEBHOOK_SECRET'];              // the secret you saved from createWebhook
+$secret          = getenv('TURBODOCX_WEBHOOK_SECRET') ?: '';     // saved from createWebhook; unset => '' => fails closed
 
 if (!verifyWebhookSignature($rawBody, $signatureHeader, $timestampHeader, $secret)) {
     http_response_code(401);
@@ -1262,8 +1283,8 @@ use TurboDocx\TurboQuote;
 use TurboDocx\Config\QuoteClientConfig;
 
 TurboQuote::configure(new QuoteClientConfig(
-    apiKey: $_ENV['TURBODOCX_API_KEY'],   // admin TDX- key
-    orgId: $_ENV['TURBODOCX_ORG_ID'],     // strongly recommended; backend 401s without it
+    apiKey: getenv('TURBODOCX_API_KEY') ?: null,   // admin TDX- key
+    orgId: getenv('TURBODOCX_ORG_ID') ?: null,     // strongly recommended; the API returns 401 without it
     // baseUrl: 'https://api.turbodocx.com', // optional
 ));
 

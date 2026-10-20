@@ -76,6 +76,8 @@ result = await TurboSign.send_signature(
 print(f"Document ID: {result['documentId']}")
 ```
 
+**`file_name=`** (optional, with `file=`) sets the stored document file name: up to 255 characters, no extension needed (`"Acme NDA"` is fine). Empty or omitted: the uploaded part's name is stored. `create_signature_review_link` and `create_embedded_signature` take it too.
+
 ### Choosing field placement
 
 1. **A template set up in TurboDocx, sent by signer role** (recommended for any document sent more than once). Set it up once in the TurboDocx UI: upload the PDF as a template, add each signer as a role, drag their fields onto the page, save the signature setup. Code then sends by `role` with no field positions at all (next section).
@@ -114,6 +116,19 @@ except ValidationError as e:
 ```
 
 `get_template_signature_setup(template_id)` returns a dict `{"templateId", "roles"}`; each role has `key`, `label`, `order`, `hasSavedSigner`, `fieldCount`, plus `defaultName`/`defaultEmail` when `hasSavedSigner` is true. `key` is the value for a recipient's `"role"`. The keys stay camelCase.
+
+On a template with no saved signature setup `get_template_signature_setup` raises a 404 with code `SignatureSetupNotFound`:
+
+```python
+from turbodocx_sdk import NotFoundError
+
+try:
+    setup = await TurboSign.get_template_signature_setup(template_id)
+except NotFoundError as e:
+    if e.code == "SignatureSetupNotFound":
+        ...  # no saved setup: set the template up in TurboDocx, or send with explicit fields
+    raise
+```
 
 - Roles sign in the order saved on the template, so a recipient with a `role` needs no `signingOrder`; recipients without a `role` sign after them.
 - A role left out uses the template's saved signer. If it has none, the API returns a 400 naming the role. Pass a role that has a saved signer to send to someone else this time.
@@ -406,7 +421,7 @@ The response also carries `recipientId` and (when set) `externalId`. Select the 
 **The URL's lifetime depends on the recipient's mode:**
 
 - **No verification or `otp`**: the reusable signing link, which survives a refresh. `expiresAt` is the **document's own expiry**, or `None` when the document doesn't expire.
-- **`external_idv` or `override`**: a **single-use** link redeemed the moment it opens, expiring minutes after issue (`expiresAt` is that ISO timestamp). Mint a fresh one each time; do not reuse or store it.
+- **`external_idv` or `override`**: a **single-use** link redeemed the moment it opens, expiring 5 minutes after issue (`expiresAt` is that ISO timestamp). Mint a fresh one each time; do not reuse or store it.
 
 For an `external_idv` recipient, pass the assertion from your own provider. The first four keys are **required**; the rest are optional audit-trail context. All keys stay camelCase verbatim:
 
@@ -1078,6 +1093,8 @@ stats = await TurboWebhooks.get_webhook_stats(days=30)
 ### Verifying inbound webhook signatures
 
 When TurboDocx POSTs to your receiver, verify the `X-TurboDocx-Signature` header before trusting the payload. The helper enforces a 5-minute timestamp tolerance and uses `hmac.compare_digest` for constant-time comparison.
+
+`verify_webhook_signature` returns `False` (it does not raise) on bad or missing input, such as an absent or empty header, a wrong type or a non-ASCII timestamp, so answer 401 on `False` without a try/except. Every argument accepts `str` or bytes-like (`bytes`, `bytearray`, `memoryview`), so raw header bytes can be passed as-is.
 
 ```python
 import os
