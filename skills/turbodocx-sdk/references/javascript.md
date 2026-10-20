@@ -164,7 +164,7 @@ try {
 - Roles sign in the order saved on the template, so a recipient with a `role` needs no `signingOrder`; recipients without a `role` sign after them.
 - A role left out uses the template's saved signer. If it has none, the API returns a 400 naming the role. Pass a role that has a saved signer to send to someone else this time.
 - An unknown role returns a 400 (`ValidationError`, `code === 'UnknownSignerRole'`) whose message lists the template's roles.
-- `fields` is optional only when a recipient names a `role` (it is left out of the request when empty); any fields you pass are **added** to the template's (for example an extra witness signature). Without roles `fields` is required and must not be empty (400 `FieldsRequired`).
+- On a send, `fields` is optional only when a recipient names a `role` (it is left out of the request when empty); any fields you pass are **added** to the template's (for example an extra witness signature). On a send (`sendSignature`, `createEmbeddedSignature`) where no recipient names a role, an omitted or empty `fields` is a 400 `FieldsRequired` (SDK 0.8.0 sent the empty list and created a document with nothing to sign). A review link (`createSignatureReviewLink`) needs no fields: the SDK sends `[]` and you place them in the preview.
 - Roles only work for a PDF signature template. A Word template needs a deliverable generated first and sent with `deliverableId`.
 - `role` works the same way on `createSignatureReviewLink` and on `createEmbeddedSignature` recipients. A role left out falls back to its saved signer, who also gets an embed URL in the result, so match result entries to signers by email or role rather than by position.
 
@@ -538,7 +538,7 @@ Response: `{ documentId, recipients: EmbeddedSignatureRecipientResult[] }`, one 
 
 - **Turn-aware `status`.** `signingOrder` defaults to each recipient's array index + 1, so a two-signer call is sequential: only signer 1 comes back `'ready'` with an `embedUrl`, and the rest are `'pending'` with `embedUrl: null` (an earlier signer has not finished) or `'completed'` (already signed). Re-mint the next signer's URL with `createSigningUrl` once earlier signers finish (the just-in-time kiosk pattern). Give every recipient the same `signingOrder` if you want them all `'ready'` at once.
 - **`auth` is OTP-only.** `{ emailOtp: true }` maps to `{ mode: 'otp', channel: 'email' }`; `{ sms: { phoneNumber: '+13055551234' } }` maps to `{ mode: 'otp', channel: 'sms' }` and sets the recipient's `phone`. No `auth` means the org's `defaultChannel` applies. An `auth` channel that differs from a locked default (`allowChannelOverride === false`) makes the whole call fail with `AuthorizationError` code `OtpOverrideNotAllowed`. For `external_idv` / `override`, use `sendSignature` + `createSigningUrl` instead.
-- **The `fields` shorthand anchors by text.** Each key (`signature`, `date`, `initials`, `fullName`) takes the anchor text to replace, expanded to a full field with `placement: 'replace'` and a default size. Note `initials` emits the field type `'initial'` (there is no `'initials'` type). Pass a top-level `fields: Field[]` for full control; it **replaces** the per-recipient shorthand, it does not merge with it.
+- **The `fields` shorthand anchors by text.** Each key (`signature`, `date`, `initials`, `fullName`) takes the anchor text to replace, expanded to a full field with `placement: 'replace'` and a default size. Note `initials` emits the field type `'initial'` (there is no `'initials'` type). Pass a top-level `fields: Field[]` for full control; it **replaces** the per-recipient shorthand, it does not merge with it. An empty top-level `fields` counts as absent, so the shorthand still expands (0.8.0 sent the empty list and dropped it).
 - **`sendEmail` defaults to `false`** for this flow: the signing-link emails, the initial CC notice, the next signer's "your turn" email and the scheduled reminder and expiry-warning emails are suppressed. Passcode and completed-copy emails are still sent.
 
 ### Browser side: `@turbodocx/embed`
@@ -1051,7 +1051,7 @@ const stats = await TurboWebhooks.getWebhookStats({ days: 30 });
 
 ### Verifying inbound webhook signatures
 
-When TurboDocx POSTs to your receiver, verify the `X-TurboDocx-Signature` header before trusting the payload. The helper enforces a 5-minute timestamp tolerance and uses constant-time comparison.
+When TurboDocx POSTs to your receiver, verify the `X-TurboDocx-Signature` header before trusting the payload. The helper enforces a 5-minute timestamp tolerance and uses constant-time comparison. Override with `{ toleranceSeconds: N }` as the fifth argument: `0` disables the check (not recommended in production); a negative value, NaN, `Infinity` or a non-number such as `"300"` rejects every delivery. The `X-TurboDocx-Timestamp` header must be digits only.
 
 `verifyWebhookSignature` returns `false` (it does not throw) on bad or missing input, such as an absent header (`undefined`), a non-string value or a malformed timestamp, so answer 401 on `false` without a try/catch.
 
@@ -1830,7 +1830,7 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode`, `code`, and
 
 ## Gotchas
 
-- **TurboSign send 400 codes** (read with `err.code`; the message names the problem): `FieldsRequired` (no `fields` and no recipient `role`), `FieldPageOutOfRange` (a field's `page` is past the last page), `UnknownSignerRole`, `DuplicateSignerRole` (two recipients for one role), `SignerRoleUnfilled` (a role has no recipient and no saved signer), `TemplateHasNoSignerRoles` (`role` used on a template with no saved setup), `RoleRequiresTemplate` (`role` without `templateId`), `TemplateRolesNeedPdfTemplate` (roles on a non-PDF template). Surface the message to the user.
+- **TurboSign send 400 codes** (read with `err.code`; the message names the problem): `FieldsRequired` (a send, not a review link, with no or empty `fields` and no recipient `role`), `FieldPageOutOfRange` (a field's `page` is past the last page), `UnknownSignerRole`, `DuplicateSignerRole` (two recipients for one role), `SignerRoleUnfilled` (a role has no recipient and no saved signer), `TemplateHasNoSignerRoles` (`role` used on a template with no saved setup), `RoleRequiresTemplate` (`role` without `templateId`), `TemplateRolesNeedPdfTemplate` (roles on a non-PDF template). Surface the message to the user.
 - **`senderEmail` is required** for `TurboSign.configure()` — without it `ValidationError` is thrown. `senderName` is optional; when omitted it resolves to **your API key's name** (name your keys accordingly). An API-key send with no resolvable sender email is rejected with `400 SenderEmailRequired`.
 - **File input** to TurboSign accepts: `Buffer`, file-path `string`, browser `File`, remote URL (`fileLink`), `deliverableId`, or `templateId`. Magic-byte detection identifies PDF / DOCX / PPTX automatically.
 - **Template anchors** like `{signature1}` must literally exist in the document text for `template.anchor` field placement to work.
