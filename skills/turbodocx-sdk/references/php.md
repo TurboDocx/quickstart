@@ -491,6 +491,7 @@ use TurboDocx\Types\TemplateConfig;
 use TurboDocx\Types\FieldPlacement;
 use TurboDocx\Types\Requests\SendSignatureRequest;
 use TurboDocx\Types\Requests\CreateSigningUrlRequest;
+// use TurboDocx\Types\PageNavigation;   // only if you set pageNavigation below
 
 // 1) Prepare the document. No identityVerification here = the org's defaultChannel applies
 //    ('none' = no step-up).
@@ -526,6 +527,7 @@ $sent = TurboSign::sendSignature(new SendSignatureRequest(
 $link = TurboSign::createSigningUrl($sent->documentId, new CreateSigningUrlRequest(
     externalId: 'your_customer_123',
     returnUrl: 'https://app.yourcompany.com/signed',  // optional, https only
+    // pageNavigation: PageNavigation::COLLAPSED,      // optional: page thumbnails in the iframe: AUTO (default) | COLLAPSED | HIDDEN
 ));
 
 echo "Open for the signer: {$link->url}\n";
@@ -539,6 +541,7 @@ echo "Expires: " . ($link->expiresAt ?? '(none; the document does not expire)') 
 - **Exactly one selector** — pass `recipientId` **or** `externalId`, never both and never neither, or the SDK throws `ValidationException` (`RecipientSelectorInvalid`) before any HTTP call. `returnUrl`, when present, must be `https://`.
 - **Request at click time, never store.** For the **bypass modes** (`external_idv`, `override`) the URL is **single-use** and expires 5 minutes after issue (a `?sut=` link the page redeems once); mint a fresh one each time. For `otp` / no-verification the `url` is the reusable `?token=` signing link, so `expiresAt` is the **document's own expiry**, or `null` when the document doesn't expire.
 - `pendingChecks` lists the passcode step the signer clears on the page (`['email_otp']` / `['sms_otp']`); it is non-empty **only for `otp`** (including an `otp` the org default applied). With no verification, external_idv, or override it is `[]`.
+- **`pageNavigation` is optional; leave it out unless the user asks to change the page navigation.** It takes the `TurboDocx\Types\PageNavigation` enum (pass the case, not a string: the constructor is typed `?PageNavigation`, so `'hidden'` is a `TypeError`; only `CreateSigningUrlRequest::fromArray()` accepts the string value, and it throws `ValidationException` `InvalidPageNavigation` for anything else). It sets how the signing page shows its page thumbnails inside your iframe: `PageNavigation::AUTO` (the default) sizes it to the iframe width (the thumbnail rail is open at 1200px and wider, collapsed from 900px to 1199px, and a "Pages" button in the bottom bar under 900px), `PageNavigation::COLLAPSED` starts the rail collapsed at any width (the signer can still open it), and `PageNavigation::HIDDEN` shows no rail and no Pages button. It applies to that URL only: a later `createSigningUrl()` call without it resets to `AUTO`, so pass it on every mint. It has no effect when the URL is opened outside an iframe.
 - **`identityAssertion` is for external_idv only** — pass it here when the recipient's mode is `external_idv` (see below). Sending it for an OTP, override, or no-verification recipient is rejected with a 400 `IdentityModeConflict` error, not ignored.
 
 ### Identity verification modes
@@ -602,6 +605,7 @@ use TurboDocx\Types\Requests\CreateEmbeddedSignatureRequest;
 use TurboDocx\Types\Requests\EmbeddedSignatureRecipient;
 use TurboDocx\Types\Requests\EmbeddedRecipientAuth;
 use TurboDocx\Types\Requests\EmbeddedRecipientFields;
+// use TurboDocx\Types\PageNavigation;   // only if you set pageNavigation below
 
 try {
     $result = TurboSign::createEmbeddedSignature(new CreateEmbeddedSignatureRequest(
@@ -623,6 +627,7 @@ try {
         // your app shows the signing page. Passcode and completed-copy emails still go out.
         sendEmail: false,
         returnUrl: 'https://app.yourcompany.com/signed',
+        // pageNavigation: PageNavigation::HIDDEN,  // optional, passed to each embed URL: AUTO (default) | COLLAPSED | HIDDEN
     ));
 } catch (AuthorizationException $e) {
     if ($e->errorCode === 'OtpOverrideNotAllowed') {
@@ -643,6 +648,8 @@ foreach ($result->recipients as $r) {   // one entry per signer, in signing orde
 ```
 
 `CreateEmbeddedSignatureResponse` carries `documentId` and a `recipients` array; each `EmbeddedSignatureRecipientResult` has `recipientId`, `name`, `email`, `status`, `identityVerificationMode`, and `embedUrl`. It is **turn-aware**: with a sequential signing order the backend only mints a URL for the signer whose turn it is, so a later signer comes back `status: 'pending'` with `embedUrl: null` (re-mint with `createSigningUrl()` once earlier signers finish), and an already-signed one comes back `completed`. Any genuine error still throws. For a `ready` signer `identityVerificationMode` is the mode the backend resolved for the URL; for `pending` / `completed` no URL was minted, so it is the mode you **requested** via `auth` (`null` when you set none, even if the org's default channel will apply). `createSigningUrl()` reports the effective mode.
+
+`returnUrl` and `pageNavigation` are passed to each embed URL. `pageNavigation` is not saved on the document: when you re-mint a `pending` signer's URL with `createSigningUrl()`, pass the same `pageNavigation` again or that signer gets the default `AUTO` navigation.
 
 The `auth` shorthand expresses **OTP or no verification only** (`emailOtp` / `smsPhoneNumber`). No `auth` means the org's `defaultChannel` applies; an `auth` channel that differs from a locked default fails the whole call with `OtpOverrideNotAllowed`. For `external_idv` or `override`, use the `sendSignature()` + `createSigningUrl()` path above with `IdentityVerification::externalIdv()` / `::override()` on the `Recipient`.
 

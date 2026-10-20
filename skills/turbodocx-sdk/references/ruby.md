@@ -384,7 +384,7 @@ Embedded signing takes a signer from **your own app** straight to a TurboSign si
 
 Three methods cover the flow: `get_embedded_signing_settings` reads the org's gates, `create_signing_url` mints one recipient's URL **at click time**, and `create_embedded_signature` does the prepare-and-mint in a single call.
 
-> **KEY GOTCHA — keyword args are snake_case, request-hash keys stay camelCase.** `recipient_id:`, `external_id:`, `identity_assertion:`, `return_url:` follow Ruby convention (like `api_key:`), but the keys **inside** any hash you pass — the `identity_assertion:` hash (`provider`, `verificationId`, `verifiedAt`, `subjectEmail`) and a recipient's `identityVerification` hash (`mode`, `channel`, `overrideIdentityVerification`) — are forwarded to the API verbatim and must stay **camelCase**, exactly as everywhere else in this SDK.
+> **KEY GOTCHA — keyword args are snake_case, request-hash keys stay camelCase.** `recipient_id:`, `external_id:`, `identity_assertion:`, `return_url:`, `page_navigation:` follow Ruby convention (like `api_key:`), but the keys **inside** any hash you pass — the `identity_assertion:` hash (`provider`, `verificationId`, `verifiedAt`, `subjectEmail`) and a recipient's `identityVerification` hash (`mode`, `channel`, `overrideIdentityVerification`) — are forwarded to the API verbatim and must stay **camelCase**, exactly as everywhere else in this SDK.
 
 #### Identity modes
 
@@ -449,6 +449,7 @@ link = TurboDocxSdk::TurboSign.create_signing_url(
   sent["documentId"],
   external_id: "your_customer_123",              # XOR recipient_id: — exactly one
   return_url:  "https://app.example.com/signed"  # https only; where the signer returns after signing
+  # page_navigation: "collapsed"                 # optional: page thumbnails in the iframe: "auto" (default) | "collapsed" | "hidden"
 )
 
 puts link["url"]                       # embeddable signing URL — open in a tab, redirect, or iframe
@@ -484,6 +485,8 @@ The URL comes in **two flavors depending on the recipient's mode**, and this dri
 - **No verification or `otp`** → a **reusable** `?token=` link that survives a refresh; `expiresAt` is the **document's own expiry**, or `nil` when the document doesn't expire. For `otp` the page asks for the passcode first.
 - **`external_idv` or `override`** → a **single-use** `?sut=` link that is redeemed once when opened and expires 5 minutes after issue. Mint a fresh one each time; do **not** reuse or store it.
 
+`page_navigation:` is optional; leave it out unless the user asks to change the page navigation. It sets how the signing page shows its page thumbnails inside your iframe (sent as `pageNavigation`): `"auto"` (the default) sizes it to the iframe width (the thumbnail rail is open at 1200px and wider, collapsed from 900px to 1199px, and a "Pages" button in the bottom bar under 900px), `"collapsed"` starts the rail collapsed at any width (the signer can still open it), and `"hidden"` shows no rail and no Pages button. It applies to that URL only: a later `create_signing_url` call without it resets to `"auto"`, so pass it on every mint. It has no effect when the URL is opened outside an iframe.
+
 ### TurboSign.create_embedded_signature
 
 Prepare a document **and** mint a per-recipient embed URL in **one call** — the counterpart of a create-with-embed flow. It is a thin wrapper over `send_signature` + `create_signing_url`, so `sendEmail` defaults to **false** (the host app owns the signer UX). Recipients come back **in signing order**.
@@ -505,6 +508,8 @@ result = TurboDocxSdk::TurboSign.create_embedded_signature(
       fields: { signature: "{signature2}" } }
   ]
   # fields: [...]  # optional top-level full field objects; overrides the per-recipient shorthand
+  # returnUrl:      "https://app.example.com/signed",  # optional, https, passed to each embed URL
+  # pageNavigation: "hidden",                          # optional, passed to each embed URL: "auto" (default) | "collapsed" | "hidden"
 )
 rescue TurboDocxSdk::AuthorizationError => e
   if e.code == "OtpOverrideNotAllowed"
@@ -522,6 +527,7 @@ result["recipients"].each do |r|
 end
 ```
 
+- **`returnUrl:` and `pageNavigation:` are passed to each embed URL.** `pageNavigation` is not saved on the document: when you re-mint a `pending` signer with `create_signing_url`, pass the same `page_navigation:` again or that signer gets the default `"auto"` navigation.
 - **`identityVerificationMode` on a `pending` / `completed` signer** is the mode you **requested** via `auth:` (`nil` when you set none, even if the org's default channel will apply); for a `ready` signer it is what the backend resolved. `create_signing_url` reports the effective mode.
 - **No `auth:` means the org's `defaultChannel` applies.** An `auth:` channel that differs from a locked default fails the whole call with `OtpOverrideNotAllowed`.
 - **The `auth:` shorthand only produces OTP.** `auth: { emailOtp: true }` maps to `{ mode: "otp", channel: "email" }`; `auth: { sms: { phoneNumber: "..." } }` maps to `{ mode: "otp", channel: "sms" }` and sets the recipient's phone. `emailOtp` wins when both are set. `external_idv` and `override` are **not** reachable from this shorthand — use the two-call path (`send_signature` with an explicit `identityVerification` hash, then `create_signing_url`) for those.
@@ -1381,7 +1387,7 @@ The error classes are **not** nested under a sub-module (e.g. not `TurboDocxSdk:
 | `TurboDocxSdk::TurboSign.get_template_signature_setup(template_id)` | List a template's signer roles (`key`, `order`, `hasSavedSigner`, `fieldCount`) to send it with recipients' `role` |
 | `TurboDocxSdk::TurboSign.get_status(document_id)` | Get document-level status + expiresAt (no recipients) |
 | `TurboDocxSdk::TurboSign.get_embedded_signing_settings` | Read the org's embedded-signing gates (enabled, allowExternalIdv, allowIdentityOverride, defaultChannel, allowChannelOverride, allowedFrameAncestors) |
-| `TurboDocxSdk::TurboSign.create_signing_url(document_id, recipient_id:/external_id:, identity_assertion:, return_url:)` | Mint one recipient's embedded signing URL at click time (exactly one selector) |
+| `TurboDocxSdk::TurboSign.create_signing_url(document_id, recipient_id:/external_id:, identity_assertion:, return_url:, page_navigation:)` | Mint one recipient's embedded signing URL at click time (exactly one selector) |
 | `TurboDocxSdk::TurboSign.create_embedded_signature(request)` | Prepare a document and mint a per-recipient embed URL in one call (per-recipient `status`/`embedUrl`) |
 | `TurboDocxSdk::TurboSign.download(document_id)` | Download signed PDF as raw bytes |
 | `TurboDocxSdk::TurboSign.void_document(document_id, reason)` | Cancel a signature request (reason required) |

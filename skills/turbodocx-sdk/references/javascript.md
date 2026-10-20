@@ -457,6 +457,7 @@ const { documentId } = await TurboSign.sendSignature({
 const link = await TurboSign.createSigningUrl(documentId, {
   externalId: 'your_customer_123',                  // XOR recipientId
   returnUrl: 'https://app.yourcompany.com/signed',  // optional, https only
+  // pageNavigation: 'collapsed',                    // optional: page thumbnails in the iframe: 'auto' (default) | 'collapsed' | 'hidden'
 });
 
 console.log(link.url);                      // open / redirect / iframe this
@@ -489,6 +490,7 @@ Response: `{ url, expiresAt, recipientId, externalId?, identityVerificationMode,
 - **`identityAssertion` is only for `external_idv` recipients.** Sending it for an OTP, override, or no-verification recipient is rejected with a 400 `IdentityModeConflict` error, so pass it only when the recipient is `external_idv`. The four keys `provider`, `verificationId`, `verifiedAt`, `subjectEmail` are required; `method`, `methodDetail` (required when `method` is `'other'`), `assuranceLevel`, `verifiedName`, `evidenceUrl` (https) and `overrideEmailMatching` are optional audit-trail context and are left off the wire when unset.
 - **Request at click time, never store the URL.** For the bypass modes (`external_idv` / `override`) the link is single-use and expires 5 minutes after issue (a `?sut=` redeem-once URL), so mint a fresh one each time. For `otp` and no-verification recipients `url` is the reusable signing link (a `?token=` URL), so `expiresAt` is the **document's own expiry**, or `null` when the document doesn't expire.
 - **`returnUrl` must be https**, or the SDK throws `ValidationError` with code `InvalidReturnUrl`.
+- **`pageNavigation` is optional; leave it out unless the user asks to change the page navigation.** It sets how the signing page shows its page thumbnails inside your iframe (type `PageNavigationMode`): `'auto'` (the default) sizes it to the iframe width (the thumbnail rail is open at 1200px and wider, collapsed from 900px to 1199px, and a "Pages" button in the bottom bar under 900px), `'collapsed'` starts the rail collapsed at any width (the signer can still open it), and `'hidden'` shows no rail and no Pages button. It applies to that URL only: a later `createSigningUrl` call without it resets to `'auto'`, so pass it on every mint. It has no effect when the URL is opened outside an iframe.
 
 ### TurboSign.createEmbeddedSignature
 
@@ -520,6 +522,7 @@ try {
       },
     ],
     returnUrl: 'https://app.yourcompany.com/signed',  // optional, https, passed to each embed URL
+    // pageNavigation: 'hidden',                       // optional, passed to each embed URL: 'auto' (default) | 'collapsed' | 'hidden'
   });
 
   for (const r of recipients) {
@@ -537,6 +540,7 @@ try {
 Response: `{ documentId, recipients: EmbeddedSignatureRecipientResult[] }`, one result per signer **in signing order**, each `{ recipientId, name, email, embedUrl, status, identityVerificationMode }`. For a `'ready'` signer `identityVerificationMode` is the mode the backend resolved for the URL. For `'pending'` / `'completed'` no URL was minted, so it is the mode you **requested** via `auth`: `null` when you set none, even if the org's default channel will apply. `createSigningUrl` reports the effective mode once you mint the URL.
 
 - **Turn-aware `status`.** `signingOrder` defaults to each recipient's array index + 1, so a two-signer call is sequential: only signer 1 comes back `'ready'` with an `embedUrl`, and the rest are `'pending'` with `embedUrl: null` (an earlier signer has not finished) or `'completed'` (already signed). Re-mint the next signer's URL with `createSigningUrl` once earlier signers finish (the just-in-time kiosk pattern). Give every recipient the same `signingOrder` if you want them all `'ready'` at once.
+- **`pageNavigation` is passed to each embed URL, like `returnUrl`.** It is not saved on the document: when you re-mint a `'pending'` signer's URL with `createSigningUrl`, pass the same `pageNavigation` again or that signer gets the default `'auto'` navigation.
 - **`auth` is OTP-only.** `{ emailOtp: true }` maps to `{ mode: 'otp', channel: 'email' }`; `{ sms: { phoneNumber: '+13055551234' } }` maps to `{ mode: 'otp', channel: 'sms' }` and sets the recipient's `phone`. No `auth` means the org's `defaultChannel` applies. An `auth` channel that differs from a locked default (`allowChannelOverride === false`) makes the whole call fail with `AuthorizationError` code `OtpOverrideNotAllowed`. For `external_idv` / `override`, use `sendSignature` + `createSigningUrl` instead.
 - **The `fields` shorthand anchors by text.** Each key (`signature`, `date`, `initials`, `fullName`) takes the anchor text to replace, expanded to a full field with `placement: 'replace'` and a default size. Note `initials` emits the field type `'initial'` (there is no `'initials'` type). Pass a top-level `fields: Field[]` for full control; it **replaces** the per-recipient shorthand, it does not merge with it. An empty top-level `fields` counts as absent, so the shorthand still expands (0.8.0 sent the empty list and dropped it).
 - **`sendEmail` defaults to `false`** for this flow: the signing-link emails, the initial CC notice, the next signer's "your turn" email and the scheduled reminder and expiry-warning emails are suppressed. Passcode and completed-copy emails are still sent.

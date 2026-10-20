@@ -3568,6 +3568,179 @@
           "description": ".env file contains TURBODOCX_API_KEY and TURBODOCX_ORG_ID"
         }
       ]
+    },
+    {
+      "id": 72,
+      "prompt": "Our Express (TypeScript) app frames TurboSign in a narrow side panel. Add an endpoint that creates the signature request for one signer and returns the embed URL, and hide the page thumbnails / Pages button inside the iframe because the panel is too small for them.",
+      "expected_output": "Endpoint calling TurboSign.createEmbeddedSignature with pageNavigation: 'hidden' (typed PageNavigationMode if typed at all) and returning recipients[].embedUrl. No string other than 'auto' | 'collapsed' | 'hidden'; no invented prop on the browser widget.",
+      "files": [
+        "package.json",
+        "tsconfig.json",
+        "src/index.ts",
+        "package-lock.json"
+      ],
+      "assertions": [
+        {
+          "name": "uses-createEmbeddedSignature",
+          "type": "file_contains",
+          "description": "Server calls TurboSign.createEmbeddedSignature"
+        },
+        {
+          "name": "page-navigation-hidden",
+          "type": "file_contains",
+          "description": "The createEmbeddedSignature request passes pageNavigation: 'hidden' (camelCase key, string value 'hidden'), not a made-up key like hideThumbnails / showPages / navigation"
+        },
+        {
+          "name": "no-widget-prop",
+          "type": "file_not_contains",
+          "description": "Code does NOT try to hide the navigation with a prop or query parameter on the browser widget or the embed URL; the setting is passed server-side when the URL is minted"
+        },
+        {
+          "name": "surfaces-embed-url",
+          "type": "file_contains",
+          "description": "Response returns the recipient's embedUrl for the app to frame"
+        }
+      ]
+    },
+    {
+      "id": 73,
+      "prompt": "In my FastAPI app we already send documents with send_signature and our own external_id. Add an endpoint that mints the embedded signing URL when the customer clicks Sign, and start the page thumbnail rail collapsed in the iframe so the document gets more room.",
+      "expected_output": "Endpoint awaiting TurboSign.create_signing_url(document_id, external_id=..., page_navigation=\"collapsed\") and returning the url.",
+      "files": [
+        "pyproject.toml",
+        "app/main.py",
+        "app/routers/__init__.py"
+      ],
+      "assertions": [
+        {
+          "name": "uses-create-signing-url",
+          "type": "file_contains",
+          "description": "Endpoint awaits TurboSign.create_signing_url with exactly one selector (external_id)"
+        },
+        {
+          "name": "page-navigation-collapsed-snake",
+          "type": "file_contains",
+          "description": "The call passes page_navigation=\"collapsed\" (snake_case keyword), NOT pageNavigation= as a kwarg"
+        },
+        {
+          "name": "returns-url",
+          "type": "file_contains",
+          "description": "Response returns the url field from the create_signing_url response"
+        }
+      ]
+    },
+    {
+      "id": 74,
+      "prompt": "Go net/http service: mint an embedded TurboSign signing URL for a recipient by our customer ID when they click Sign, and hide the page navigation rail in the iframe. Two signers sign in order, so the second signer's URL is minted later the same way.",
+      "expected_output": "CreateSigningURL with ExternalID and PageNavigation: turbodocx.PageNavigationHidden on every mint (including the later second signer), error checked.",
+      "files": [
+        "go.mod",
+        "cmd/server/main.go",
+        "internal/handlers/.gitkeep"
+      ],
+      "assertions": [
+        {
+          "name": "page-navigation-constant",
+          "type": "file_contains",
+          "description": "CreateSigningURLRequest sets PageNavigation: turbodocx.PageNavigationHidden (the typed constant; a raw \"hidden\" string literal converted to turbodocx.PageNavigationMode is also acceptable, an invented field name is not)"
+        },
+        {
+          "name": "every-mint-sets-it",
+          "type": "file_contains",
+          "description": "Every CreateSigningURL call in the generated code (including the one used for the second signer) sets PageNavigation, since the setting applies per URL and an omitted value resets to auto"
+        },
+        {
+          "name": "handles-error-return",
+          "type": "file_contains",
+          "description": "The (result, error) return of CreateSigningURL is checked"
+        }
+      ]
+    },
+    {
+      "id": 75,
+      "prompt": "Laravel app: add a controller action that creates an embedded TurboSign signature request for a single signer with email OTP and returns the embed URL. Our iframe is small, so the page thumbnail rail should start collapsed.",
+      "expected_output": "TurboSign::createEmbeddedSignature(new CreateEmbeddedSignatureRequest(..., pageNavigation: PageNavigation::COLLAPSED)) with use TurboDocx\\Types\\PageNavigation; returns the embedUrl.",
+      "files": [
+        "composer.json",
+        "routes/api.php",
+        "routes/web.php",
+        "app/Http/Controllers/Controller.php",
+        "app/Providers/AppServiceProvider.php",
+        "bootstrap/app.php"
+      ],
+      "assertions": [
+        {
+          "name": "uses-createEmbeddedSignature",
+          "type": "file_contains",
+          "description": "Controller calls TurboSign::createEmbeddedSignature with a CreateEmbeddedSignatureRequest"
+        },
+        {
+          "name": "page-navigation-enum",
+          "type": "file_contains",
+          "description": "The request passes pageNavigation: PageNavigation::COLLAPSED and imports TurboDocx\\Types\\PageNavigation; it does NOT pass the string 'collapsed' to the typed constructor (a TypeError under strict types)"
+        },
+        {
+          "name": "email-otp",
+          "type": "file_contains",
+          "description": "The recipient sets auth: new EmbeddedRecipientAuth(emailOtp: true)"
+        }
+      ]
+    },
+    {
+      "id": 76,
+      "prompt": "Spring Boot service: add an endpoint that mints an embedded TurboSign signing URL for an existing document by recipient ID, with no page thumbnail navigation at all inside our iframe.",
+      "expected_output": "createSigningUrl(documentId, new CreateSigningUrlRequest.Builder().recipientId(...).pageNavigation(PageNavigation.HIDDEN).build()) with PageNavigation imported from com.turbodocx.models.",
+      "files": [
+        "pom.xml",
+        "src/main/java/com/example/app/Application.java",
+        "src/main/java/com/example/app/HealthController.java",
+        "src/main/resources/application.properties"
+      ],
+      "assertions": [
+        {
+          "name": "uses-create-signing-url",
+          "type": "file_contains",
+          "description": "Endpoint calls client.turboSign().createSigningUrl with a CreateSigningUrlRequest.Builder selecting by recipientId"
+        },
+        {
+          "name": "page-navigation-builder",
+          "type": "file_contains",
+          "description": "The builder calls .pageNavigation(PageNavigation.HIDDEN) using the com.turbodocx.models.PageNavigation enum (imported directly or via com.turbodocx.models.*), not a string"
+        },
+        {
+          "name": "returns-url",
+          "type": "file_contains",
+          "description": "Response returns link.getUrl()"
+        }
+      ]
+    },
+    {
+      "id": 77,
+      "prompt": "Rails app: add a controller action that mints the embedded TurboSign signing URL for a recipient by our external id when they click Sign, and hide the page navigation rail inside the iframe.",
+      "expected_output": "TurboDocxSdk::TurboSign.create_signing_url(document_id, external_id: ..., page_navigation: \"hidden\") returning link[\"url\"].",
+      "files": [
+        "Gemfile",
+        "config/application.rb",
+        "config/routes.rb",
+        "app/controllers/application_controller.rb"
+      ],
+      "assertions": [
+        {
+          "name": "uses-create-signing-url",
+          "type": "file_contains",
+          "description": "Action calls TurboDocxSdk::TurboSign.create_signing_url with external_id:"
+        },
+        {
+          "name": "page-navigation-keyword",
+          "type": "file_contains",
+          "description": "The call passes the snake_case keyword page_navigation: \"hidden\" (create_signing_url does not accept pageNavigation: as a keyword)"
+        },
+        {
+          "name": "route-wired",
+          "type": "file_contains",
+          "description": "config/routes.rb was modified to add the new route"
+        }
+      ]
     }
   ]
 }
