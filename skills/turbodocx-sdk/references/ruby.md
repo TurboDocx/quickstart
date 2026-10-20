@@ -106,6 +106,8 @@ result["recipients"].each { |r| puts "#{r['name']} <#{r['email']}> #{r['id']}" }
 
 Fields support either coordinate-based placement (`page` + `x`/`y`/`width`/`height`) or anchor-based placement via `template: { anchor: "{signature1}", placement: "replace", size: { width: 100, height: 30 } }`. The anchor text must literally exist in the document.
 
+**`fileName:`** (optional, with `file:`) sets the stored document file name: up to 255 characters, no extension needed (`"Acme NDA"` is fine). Empty or omitted: the uploaded part's name is stored. `create_signature_review_link` and `create_embedded_signature` take it too.
+
 ### Choosing field placement
 
 1. **A template set up in TurboDocx, sent by signer role** (recommended for any document sent more than once). Set it up once in the TurboDocx UI: upload the PDF as a template, add each signer as a role, drag their fields onto the page, save the signature setup. Code then sends by `role` with no field positions at all (next section).
@@ -142,6 +144,18 @@ end
 ```
 
 `get_template_signature_setup(template_id)` returns a Hash with `"templateId"` and `"roles"`; each role has `"key"`, `"label"`, `"order"`, `"hasSavedSigner"`, `"fieldCount"`, plus `"defaultName"`/`"defaultEmail"` when `"hasSavedSigner"` is true. `"key"` is the value for a recipient's `role`.
+
+On a template with no saved signature setup `get_template_signature_setup` raises a 404 with code `SignatureSetupNotFound`:
+
+```ruby
+begin
+  setup = TurboDocxSdk::TurboSign.get_template_signature_setup(template_id)
+rescue TurboDocxSdk::NotFoundError => e
+  # no saved setup: set the template up in TurboDocx, or send with explicit fields
+  warn "No signature setup: #{e.message}" if e.code == "SignatureSetupNotFound"
+  raise
+end
+```
 
 - Roles sign in the order saved on the template, so a recipient with a `role` needs no `signingOrder`; recipients without a `role` sign after them.
 - A role left out uses the template's saved signer. If it has none, the API returns a 400 naming the role. Pass a role that has a saved signer to send to someone else this time.
@@ -468,7 +482,7 @@ link = TurboDocxSdk::TurboSign.create_signing_url(
 The URL comes in **two flavors depending on the recipient's mode**, and this drives whether you may reuse it:
 
 - **No verification or `otp`** → a **reusable** `?token=` link that survives a refresh; `expiresAt` is the **document's own expiry**, or `nil` when the document doesn't expire. For `otp` the page asks for the passcode first.
-- **`external_idv` or `override`** → a **single-use** `?sut=` link that is redeemed once when opened and expires minutes after issue. Mint a fresh one each time; do **not** reuse or store it.
+- **`external_idv` or `override`** → a **single-use** `?sut=` link that is redeemed once when opened and expires 5 minutes after issue. Mint a fresh one each time; do **not** reuse or store it.
 
 ### TurboSign.create_embedded_signature
 
@@ -893,6 +907,8 @@ puts stats["eventBreakdown"]
 ### Verifying inbound webhook signatures
 
 Webhook deliveries are signed with HMAC-SHA256 over `"#{timestamp}.#{raw_body}"`. Verify the `X-TurboDocx-Signature` header with the free module function `TurboDocxSdk.verify_webhook_signature` **before** trusting the payload. Read the **raw body bytes** — a parse-then-reserialize breaks the HMAC.
+
+`verify_webhook_signature` returns `false` (it does not raise) on bad or missing input, such as a `nil` or empty header or secret or a malformed timestamp, so answer 401 on `false` without a `rescue`.
 
 ```ruby
 # In a Rack / Rails webhook receiver:

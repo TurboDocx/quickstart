@@ -2,6 +2,8 @@
 
 ## Install
 
+Requires **Node.js 18+** (`engines.node` in the SDK's `package.json`).
+
 ```bash
 # npm
 npm install @turbodocx/sdk
@@ -75,7 +77,7 @@ console.log(review.previewUrl);  // string — open this URL to review the docum
 console.log(review.status);      // string
 ```
 
-Response: `{ success, documentId, status, previewUrl?, recipients?, message }`.
+Response: `{ success, documentId, status, previewUrl?, recipients, message }` (`recipients` is always present on a successful response).
 
 ### TurboSign.sendSignature
 
@@ -96,11 +98,13 @@ const result = await TurboSign.sendSignature({
 });
 
 console.log(result.documentId);   // string
-console.log(result.status);       // string — e.g., 'sent'
+console.log(result.status);       // string — e.g., 'under_review'
 console.log(result.recipients);   // ReviewRecipient[] with { id, name, email, metadata? }
 ```
 
 Fields support either coordinate-based (`page` + `x` / `y` / `width` / `height`) or anchor-based placement via `template: { anchor: '{TagName}', placement: 'replace', size: {...} }`.
+
+**`fileName`** (optional, with an uploaded `file`) sets the stored document file name: up to 255 characters, no extension needed (`'Acme NDA'` is fine). It applies whatever the `file` input is (Buffer, path string or browser `File`). Empty or omitted: the uploaded part's name is stored. `createSignatureReviewLink` and `createEmbeddedSignature` take it too.
 
 ### Choosing field placement
 
@@ -141,6 +145,21 @@ try {
 ```
 
 `getTemplateSignatureSetup(templateId)` returns `{ templateId, roles: TemplateSignatureRole[] }`; each role is `{ key, label, order, hasSavedSigner, defaultName?, defaultEmail?, fieldCount }`, and `key` is the value for `recipients[].role`.
+
+On a template with no saved signature setup `getTemplateSignatureSetup` returns a 404 with code `SignatureSetupNotFound`:
+
+```typescript
+import { NotFoundError } from '@turbodocx/sdk';
+
+try {
+  const { roles } = await TurboSign.getTemplateSignatureSetup(templateId);
+} catch (err) {
+  if (err instanceof NotFoundError && err.code === 'SignatureSetupNotFound') {
+    // no saved setup: set the template up in TurboDocx, or send with explicit fields
+  }
+  throw err;
+}
+```
 
 - Roles sign in the order saved on the template, so a recipient with a `role` needs no `signingOrder`; recipients without a `role` sign after them.
 - A role left out uses the template's saved signer. If it has none, the API returns a 400 naming the role. Pass a role that has a saved signer to send to someone else this time.
@@ -218,7 +237,7 @@ The link is `fieldKey` → `controllingFieldKey`: the two strings must match exa
 
 ```typescript
 const status = await TurboSign.getStatus(documentId);
-console.log(status.status);    // e.g., 'under_review', 'completed', 'voided', 'sent'
+console.log(status.status);    // e.g., 'under_review', 'completed', 'voided', 'expired'
 console.log(status.expiresAt); // ISO timestamp, or null when expiration is off
 ```
 
@@ -468,7 +487,7 @@ Response: `{ url, expiresAt, recipientId, externalId?, identityVerificationMode,
 
 - **Provide exactly one selector.** `recipientId` or `externalId`, not both and not neither, or the SDK throws `ValidationError` with code `RecipientSelectorInvalid`. `externalId` is your own key for the signer (an Airtable row, a CRM id), set on the recipient at `sendSignature` time; it is not part of the one-call `createEmbeddedSignature` path.
 - **`identityAssertion` is only for `external_idv` recipients.** OTP, override, and no-verification recipients ignore it. The four keys `provider`, `verificationId`, `verifiedAt`, `subjectEmail` are required; `method`, `methodDetail` (required when `method` is `'other'`), `assuranceLevel`, `verifiedName`, `evidenceUrl` (https) and `overrideEmailMatching` are optional audit-trail context and are left off the wire when unset.
-- **Request at click time, never store the URL.** For the bypass modes (`external_idv` / `override`) the link is single-use and expires minutes after issue (a `?sut=` redeem-once URL), so mint a fresh one each time. For `otp` and no-verification recipients `url` is the reusable signing link (a `?token=` URL), so `expiresAt` is the **document's own expiry**, or `null` when the document doesn't expire.
+- **Request at click time, never store the URL.** For the bypass modes (`external_idv` / `override`) the link is single-use and expires 5 minutes after issue (a `?sut=` redeem-once URL), so mint a fresh one each time. For `otp` and no-verification recipients `url` is the reusable signing link (a `?token=` URL), so `expiresAt` is the **document's own expiry**, or `null` when the document doesn't expire.
 - **`returnUrl` must be https**, or the SDK throws `ValidationError` with code `InvalidReturnUrl`.
 
 ### TurboSign.createEmbeddedSignature
@@ -1033,6 +1052,8 @@ const stats = await TurboWebhooks.getWebhookStats({ days: 30 });
 ### Verifying inbound webhook signatures
 
 When TurboDocx POSTs to your receiver, verify the `X-TurboDocx-Signature` header before trusting the payload. The helper enforces a 5-minute timestamp tolerance and uses constant-time comparison.
+
+`verifyWebhookSignature` returns `false` (it does not throw) on bad or missing input, such as an absent header (`undefined`), a non-string value or a malformed timestamp, so answer 401 on `false` without a try/catch.
 
 ```typescript
 import express from 'express';

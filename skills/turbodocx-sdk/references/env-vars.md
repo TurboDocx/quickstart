@@ -74,6 +74,6 @@ The SDK resolves configuration in this order (first found wins):
 | JavaScript | `dotenv` | `import 'dotenv/config'` (at entry point) |
 | Python | `python-dotenv` | `from dotenv import load_dotenv; load_dotenv()` |
 | Go | `github.com/joho/godotenv` | `godotenv.Load()` (in main) |
-| PHP | `vlucas/phpdotenv` | `Dotenv\Dotenv::createImmutable(__DIR__)->load()` |
+| PHP | `vlucas/phpdotenv` | `Dotenv\Dotenv::createUnsafeImmutable(__DIR__)->load()` (the unsafe variant also fills `getenv()`, which the PHP snippets read; `createImmutable` fills only `$_ENV`/`$_SERVER`) |
 | Java (Spring) | Built-in | `application.properties` with `${TURBODOCX_API_KEY}` |
 | Java (plain) | `io.github.cdimascio:dotenv-java` | `Dotenv.load()` |
