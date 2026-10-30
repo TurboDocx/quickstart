@@ -1643,7 +1643,7 @@ The quote list also filters by several companies (`companyIds`) and currencies (
 expired), by creator (`createdBy`, ids from the creators call; `createdByApiKeys` for API-key quotes)
 and by Valid until (`validUntilWindow` = `thisWeek` | `thisMonth` | `past`, `validUntilFrom` /
 `validUntilTo`). Each quote carries `isExpired` and `lineItemCount`; the response adds
-`statusCounts` (per tab) and `summary` (pipeline, win rate, monthly recurring, in `summaryCurrency`).
+`statusCounts` (per tab) and `summary` (pipeline, win rate, monthly recurring; amounts in `summaryCurrency`, counts across every currency).
 In the other lists, each price book carries `overrideCount` (products with their own price), each
 bundle `itemCount` and `billingTotals` (its price per billing type, e.g. `one-time` and `monthly`),
 and each company `contactCount`.
@@ -1803,7 +1803,7 @@ All seven subtypes are **nested classes** on `com.turbodocx.TurboDocxException` 
 | `WebhookSignatureVerifier.verify(rawBody, sigHeader, tsHeader, secret)` | Static utility; verifies inbound deliveries |
 | `new TurboQuoteClient.Builder()...build().turboQuote()` | Construct a `TurboQuote` instance (no `senderEmail` required) |
 | `tq.listQuotes(options)` | List quotes with optional filters (status, search, pagination) |
-| `tq.getQuoteSummary(options)` | The quote list's summary cards (pipeline, win rate, monthly recurring…) for the list filters, in `summaryCurrency` |
+| `tq.getQuoteSummary(options)` | The quote list's summary cards (pipeline, win rate, monthly recurring…) for the list filters; amounts in `summaryCurrency`, counts across every currency |
 | `tq.listQuoteCreators()` | People and API keys who created the org's quotes — the ids for the `createdBy` filter |
 | `tq.createQuote(req)` | Create a new quote in draft status |
 | `tq.getQuote(id)` | Get quote by ID (statusInfo merged into response) |

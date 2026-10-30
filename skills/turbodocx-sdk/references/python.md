@@ -1367,7 +1367,7 @@ The quote list also filters by several companies (`companyIds`) and currencies (
 expired), by creator (`createdBy`, ids from the creators call; `createdByApiKeys` for API-key quotes)
 and by Valid until (`validUntilWindow` = `thisWeek` | `thisMonth` | `past`, `validUntilFrom` /
 `validUntilTo`). Each quote carries `isExpired` and `lineItemCount`; the response adds
-`statusCounts` (per tab) and `summary` (pipeline, win rate, monthly recurring, in `summaryCurrency`).
+`statusCounts` (per tab) and `summary` (pipeline, win rate, monthly recurring; amounts in `summaryCurrency`, counts across every currency).
 In the other lists, each price book carries `overrideCount` (products with their own price), each
 bundle `itemCount` and `billingTotals` (its price per billing type, e.g. `one-time` and `monthly`),
 and each company `contactCount`.
@@ -1634,7 +1634,7 @@ The exception attributes are `e.status_code` (int or `None`) and `e.code` (str) 
 | `verify_webhook_signature(raw_body, sig_header, ts_header, secret, ...)` | Free function; verifies inbound deliveries |
 | `TurboQuote.configure(api_key, org_id, base_url=...)` | Configure the quote client (no sender_email needed) |
 | `TurboQuote.list_quotes(options=)` | List quotes with pagination and filters |
-| `TurboQuote.get_quote_summary(options=)` | The quote list's summary cards (pipeline, win rate, monthly recurring…) for the list filters, in `summaryCurrency` |
+| `TurboQuote.get_quote_summary(options=)` | The quote list's summary cards (pipeline, win rate, monthly recurring…) for the list filters; amounts in `summaryCurrency`, counts across every currency |
 | `TurboQuote.list_quote_creators()` | People and API keys who created the org's quotes — the ids for the `createdBy` filter |
 | `TurboQuote.create_quote(request)` | Create a new quote |
 | `TurboQuote.get_quote(id)` | Get quote by ID (statusInfo merged in) |

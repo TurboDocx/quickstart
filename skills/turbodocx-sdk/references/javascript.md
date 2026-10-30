@@ -1486,7 +1486,7 @@ The quote list also filters by several companies (`companyIds`) and currencies (
 expired), by creator (`createdBy`, ids from the creators call; `createdByApiKeys` for API-key quotes)
 and by Valid until (`validUntilWindow` = `thisWeek` | `thisMonth` | `past`, `validUntilFrom` /
 `validUntilTo`). Each quote carries `isExpired` and `lineItemCount`; the response adds
-`statusCounts` (per tab) and `summary` (pipeline, win rate, monthly recurring, in `summaryCurrency`).
+`statusCounts` (per tab) and `summary` (pipeline, win rate, monthly recurring; amounts in `summaryCurrency`, counts across every currency).
 In the other lists, each price book carries `overrideCount` (products with their own price), each
 bundle `itemCount` and `billingTotals` (its price per billing type, e.g. `one-time` and `monthly`),
 and each company `contactCount`.
@@ -1789,7 +1789,7 @@ All TurboDocx errors extend `TurboDocxError` and carry `statusCode`, `code`, and
 |--------|-------------|
 | `TurboQuote.configure(config)` | Set apiKey (or accessToken), orgId, baseUrl. There is no `senderEmail`/`senderName` on this config — the quote sender comes from the org quote template |
 | `TurboQuote.listQuotes(options?)` | Paginated list with filters; includes totals/stats |
-| `TurboQuote.getQuoteSummary(options?)` | The quote list's summary cards (pipeline, win rate, monthly recurring…) for the list filters, in `summaryCurrency` |
+| `TurboQuote.getQuoteSummary(options?)` | The quote list's summary cards (pipeline, win rate, monthly recurring…) for the list filters; amounts in `summaryCurrency`, counts across every currency |
 | `TurboQuote.listQuoteCreators()` | People and API keys who created the org's quotes — the ids for the `createdBy` filter |
 | `TurboQuote.createQuote(request)` | Create a new draft quote |
 | `TurboQuote.getQuote(id)` | Get quote details (statusInfo merged in) |

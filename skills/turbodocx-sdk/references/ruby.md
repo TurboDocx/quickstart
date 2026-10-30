@@ -1270,7 +1270,7 @@ The quote list also filters by several companies (`companyIds`) and currencies (
 expired), by creator (`createdBy`, ids from the creators call; `createdByApiKeys` for API-key quotes)
 and by Valid until (`validUntilWindow` = `thisWeek` | `thisMonth` | `past`, `validUntilFrom` /
 `validUntilTo`). Each quote carries `isExpired` and `lineItemCount`; the response adds
-`statusCounts` (per tab) and `summary` (pipeline, win rate, monthly recurring, in `summaryCurrency`).
+`statusCounts` (per tab) and `summary` (pipeline, win rate, monthly recurring; amounts in `summaryCurrency`, counts across every currency).
 In the other lists, each price book carries `overrideCount` (products with their own price), each
 bundle `itemCount` and `billingTotals` (its price per billing type, e.g. `one-time` and `monthly`),
 and each company `contactCount`.
@@ -1497,7 +1497,7 @@ The error classes are **not** nested under a sub-module (e.g. not `TurboDocxSdk:
 |--------|-------------|
 | `TurboDocxSdk::TurboQuote.configure(api_key:, org_id:)` | Set credentials (no sender_email — the quote sender comes from the org quote template) |
 | `list_quotes(options)` | Paginated list with filters/stats |
-| `get_quote_summary(options=)` | The quote list's summary cards (pipeline, win rate, monthly recurring…) for the list filters, in `summaryCurrency` |
+| `get_quote_summary(options=)` | The quote list's summary cards (pipeline, win rate, monthly recurring…) for the list filters; amounts in `summaryCurrency`, counts across every currency |
 | `list_quote_creators()` | People and API keys who created the org's quotes — the ids for the `createdBy` filter |
 | `create_quote(request)` | Create a new draft quote |
 | `get_quote(id)` | Get quote details (`statusInfo` and `preparedBy` merged in — `preparedBy` is on this single-quote fetch only) |

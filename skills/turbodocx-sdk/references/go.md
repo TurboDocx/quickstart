@@ -1728,7 +1728,7 @@ The quote list also filters by several companies (`companyIds`) and currencies (
 expired), by creator (`createdBy`, ids from the creators call; `createdByApiKeys` for API-key quotes)
 and by Valid until (`validUntilWindow` = `thisWeek` | `thisMonth` | `past`, `validUntilFrom` /
 `validUntilTo`). Each quote carries `isExpired` and `lineItemCount`; the response adds
-`statusCounts` (per tab) and `summary` (pipeline, win rate, monthly recurring, in `summaryCurrency`).
+`statusCounts` (per tab) and `summary` (pipeline, win rate, monthly recurring; amounts in `summaryCurrency`, counts across every currency).
 In the other lists, each price book carries `overrideCount` (products with their own price), each
 bundle `itemCount` and `billingTotals` (its price per billing type, e.g. `one-time` and `monthly`),
 and each company `contactCount`.
@@ -1898,7 +1898,7 @@ Every typed error embeds `turbodocx.TurboDocxError`, so `Code` (string), `Messag
 | `turbodocx.VerifyWebhookSignature(rawBody, sigHeader, tsHeader, secret, opts)` | Free function; verifies inbound deliveries |
 | `turbodocx.NewQuoteClient(cfg)` | Construct a TurboQuote client (no SenderEmail required) |
 | `qc.ListQuotes(ctx, opts)` | Paginated quote list with filters |
-| `qc.GetQuoteSummary(ctx, opts)` | The quote list's summary cards (pipeline, win rate, monthly recurring…) for the list filters, in `summaryCurrency` |
+| `qc.GetQuoteSummary(ctx, opts)` | The quote list's summary cards (pipeline, win rate, monthly recurring…) for the list filters; amounts in `summaryCurrency`, counts across every currency |
 | `qc.ListQuoteCreators(ctx)` | People and API keys who created the org's quotes — the ids for the `createdBy` filter |
 | `qc.CreateQuote(ctx, req)` | Create a new quote (status: draft) |
 | `qc.GetQuote(ctx, id)` | Get quote + merged `statusInfo` and `preparedBy` (single-quote fetch only) |
