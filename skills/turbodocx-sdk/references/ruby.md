@@ -143,7 +143,7 @@ rescue TurboDocxSdk::ValidationError => e
 end
 ```
 
-`get_template_signature_setup(template_id)` returns a Hash with `"templateId"` and `"roles"`; each role has `"key"`, `"label"`, `"order"`, `"hasSavedSigner"`, `"fieldCount"`, plus `"defaultName"`/`"defaultEmail"` when `"hasSavedSigner"` is true. `"key"` is the value for a recipient's `role`.
+`get_template_signature_setup(template_id)` returns a Hash with `"templateId"` and `"roles"`; each role has `"key"`, `"label"`, `"order"`, `"hasSavedSigner"`, `"fieldCount"`, plus `"defaultName"`/`"defaultEmail"` when `"hasSavedSigner"` is true. `"key"` is the value for a recipient's `role`. The Hash also has `"anchors"` (the setup's anchored fields, see below), and each role has `"anchoredFieldCount"`.
 
 On a template with no saved signature setup `get_template_signature_setup` raises a 404 with code `SignatureSetupNotFound`:
 
@@ -163,6 +163,55 @@ end
 - On a send, `fields` is optional only when a recipient names a `role` (it is left out of the request when empty); any fields you pass are **added** to the template's (for example an extra witness signature). On a send (`send_signature`, `create_embedded_signature`) where no recipient names a role, an omitted or empty `fields` is a 400 `FieldsRequired` (SDK 0.8.0 sent the empty list and created a document with nothing to sign). A review link (`create_signature_review_link`) needs no fields: the SDK sends `[]` and you place them in the preview.
 - Roles only work for a PDF signature template. A Word template needs a deliverable generated first and sent with `deliverableId`.
 - `role` works the same way on `create_signature_review_link` and `create_embedded_signature`. A role left out falls back to its saved signer, who also gets an embed URL in the result, so match result entries to signers by email or role rather than by position.
+
+### Anchored fields on the template setup
+
+An **anchored field** is a field on the template's saved signature setup that is tied to a tag such as `{ClientSign}` for one signer role and placed wherever that tag appears in the generated document. Use it when the layout moves with the content (a Word template generated into a deliverable, where coordinates drift), so the template carries the fields and your code does not measure anything. The add and remove calls are not in SDK 0.9.0 or earlier.
+
+Three different moments, do not mix them up:
+
+1. **Setup time (once per template):** `add_template_signature_anchor` and `remove_template_signature_anchor` edit the saved setup. They need an **administrator or contributor** API key; a key with a lower role is refused.
+2. **Role send:** a recipient that names a `role` brings that role's anchored fields with it. No flag and no `fields` are needed.
+3. **Send without roles:** pass `templateId:` or `deliverableId:`, `fields` that carry a template anchor, and `applySignatureSetup: true`. Each field whose tag and type match an anchored field of the setup is treated as that field: it fits its tag, and a tag missing from the document is **skipped** instead of failing the send. The flag only has an effect with `templateId:` or `deliverableId:`. It is not for a file upload (the API rejects a file together with a template, so there is no setup to apply), and `create_embedded_signature` does not take it.
+
+```ruby
+# 1. Setup time (administrator or contributor key)
+begin
+  added = TurboDocxSdk::TurboSign.add_template_signature_anchor(
+    templateId: template_id,
+    roleKey: "client",          # a role key from get_template_signature_setup
+    type: "signature",          # or "initial", "date", "text", ...
+    anchor: "{ClientSign}",
+    size: { width: 150, height: 40 } # optional, also offset, placement, defaultValue, isReadonly
+  )
+rescue TurboDocxSdk::ConflictError => e
+  # e.code: "AnchorOwnedByOtherRole" or "AnchorTagHasField"
+  raise
+end
+
+setup = TurboDocxSdk::TurboSign.get_template_signature_setup(template_id)
+setup["anchors"].each do |a| # "fieldId", "roleKey", "type", "anchor", "placement", "offset"?, "size"?, "notFound"
+  puts "#{a["roleKey"]} #{a["anchor"]} #{a["notFound"]}"
+end
+# each role in setup["roles"] has "anchoredFieldCount"
+
+TurboDocxSdk::TurboSign.remove_template_signature_anchor(template_id, added["fieldId"])
+
+# 3. Send without roles, using the setup's anchored fields
+TurboDocxSdk::TurboSign.send_signature(
+  deliverableId: deliverable_id, # or templateId:; not with a file upload
+  documentName: "Services Agreement - Acme",
+  recipients: [{ name: "Jane Doe", email: "jane@client.com", signingOrder: 1 }],
+  fields: [{ type: "signature", recipientEmail: "jane@client.com", template: { anchor: "{ClientSign}" } }],
+  applySignatureSetup: true      # also on create_signature_review_link
+)
+```
+
+- A tag belongs to one role and holds one field. Another role's tag, or a second field on a tag, is a 409 `TurboDocxSdk::ConflictError` (read `e.code`) with code `AnchorOwnedByOtherRole` or `AnchorTagHasField`. Re-adding the same field is idempotent.
+- An unknown role or field id is a 404 `TurboDocxSdk::NotFoundError` with code `SignerRoleNotFound` / `SetupFieldNotFound`; a template with no saved setup is `SignatureSetupNotFound`. A read-only field with no default value (its own or its role's) is a 400 `ReadonlyFieldNoDefaultValue`. A locked template answers 423 `TemplateLocked`.
+- On a template with no signer yet, role key `signer_1` creates the first signer.
+- The request keys are camelCase like every other Ruby call (`templateId:`, `roleKey:`, `defaultValue:`, `isReadonly:`), and the results are Hashes with string keys: add returns `"fieldId"`, `"signatureSetup"`, `"tagBecameSignatureField"` (true when the tag was not a signature field before), remove returns `"signatureSetup"`. An explicit `applySignatureSetup: false` is sent as is; leave the key out for the default.
+- The anchor is one tag in single braces with no spaces (`{ClientSign}`), and `placement` is `replace`, `before`, `after`, `above` or `below`. In `get_template_signature_setup`, `notFound` true means the template has no variable (Word/PowerPoint) or text (PDF) with that tag yet.
 
 ### Optional fields
 
@@ -1379,6 +1428,8 @@ The error classes are **not** nested under a sub-module (e.g. not `TurboDocxSdk:
 | `TurboDocxSdk::TurboSign.create_signature_review_link(request)` | Prepare a document and get a preview URL (no emails sent) |
 | `TurboDocxSdk::TurboSign.send_signature(request)` | Prepare a document and immediately email recipients |
 | `TurboDocxSdk::TurboSign.get_template_signature_setup(template_id)` | List a template's signer roles (`key`, `order`, `hasSavedSigner`, `fieldCount`) to send it with recipients' `role` |
+| `TurboDocxSdk::TurboSign.add_template_signature_anchor(templateId:, roleKey:, type:, anchor:, ...)` | Add an anchored field (a tag such as `{ClientSign}` for one role) to the template's saved signature setup (admin or contributor key) |
+| `TurboDocxSdk::TurboSign.remove_template_signature_anchor(template_id, field_id)` | Remove an anchored field from the saved setup |
 | `TurboDocxSdk::TurboSign.get_status(document_id)` | Get document-level status + expiresAt (no recipients) |
 | `TurboDocxSdk::TurboSign.get_embedded_signing_settings` | Read the org's embedded-signing gates (enabled, allowExternalIdv, allowIdentityOverride, defaultChannel, allowChannelOverride, allowedFrameAncestors) |
 | `TurboDocxSdk::TurboSign.create_signing_url(document_id, recipient_id:/external_id:, identity_assertion:, return_url:)` | Mint one recipient's embedded signing URL at click time (exactly one selector) |

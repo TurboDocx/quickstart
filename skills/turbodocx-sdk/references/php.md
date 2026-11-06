@@ -132,7 +132,7 @@ try {
 }
 ```
 
-`TurboSign::getTemplateSignatureSetup($templateId)` returns a `TemplateSignatureSetup` with `templateId` and `roles` (`TemplateSignatureRole[]`: `key`, `label`, `order`, `hasSavedSigner`, `fieldCount`, `defaultName`/`defaultEmail` set only when `hasSavedSigner`). `key` is the value for `Recipient` `role`.
+`TurboSign::getTemplateSignatureSetup($templateId)` returns a `TemplateSignatureSetup` with `templateId` and `roles` (`TemplateSignatureRole[]`: `key`, `label`, `order`, `hasSavedSigner`, `fieldCount`, `defaultName`/`defaultEmail` set only when `hasSavedSigner`). `key` is the value for `Recipient` `role`. The setup also has `anchors` (`TemplateSignatureAnchor[]`, see below), and each role has `anchoredFieldCount`.
 
 On a template with no saved signature setup `getTemplateSignatureSetup` throws a 404 with code `SignatureSetupNotFound`:
 
@@ -155,6 +155,68 @@ try {
 - On a send, `fields` is optional only when a recipient names a `role` (it is left out of the request when empty); any fields you pass are **added** to the template's (for example an extra witness signature). On a send (`sendSignature()`, `createEmbeddedSignature()`) where no recipient names a role, an omitted or empty `fields` is a 400 `FieldsRequired` (SDK 0.8.0 sent the empty list and created a document with nothing to sign). A review link (`createSignatureReviewLink()`) needs no fields: the SDK sends `[]` and you place them in the preview.
 - Roles only work for a PDF signature template. A Word template needs a deliverable generated first and sent with `deliverableId`.
 - `role` works the same way on `createSignatureReviewLink()` (`Recipient`) and `createEmbeddedSignature()` (`EmbeddedSignatureRecipient`). A role left out falls back to its saved signer, who also gets an embed URL in the result, so match result entries to signers by email or role rather than by position.
+
+### Anchored fields on the template setup
+
+An **anchored field** is a field on the template's saved signature setup that is tied to a tag such as `{ClientSign}` for one signer role and placed wherever that tag appears in the generated document. Use it when the layout moves with the content (a Word template generated into a deliverable, where coordinates drift), so the template carries the fields and your code does not measure anything. The add and remove calls are not in SDK 0.9.0 or earlier.
+
+Three different moments, do not mix them up:
+
+1. **Setup time (once per template):** `TurboSign::addTemplateSignatureAnchor()` and `TurboSign::removeTemplateSignatureAnchor()` edit the saved setup. They need an **administrator or contributor** API key; a key with a lower role is refused.
+2. **Role send:** a recipient that names a `role` brings that role's anchored fields with it. No flag and no `fields` are needed.
+3. **Send without roles:** pass `templateId` or `deliverableId`, `fields` that carry a template anchor, and `applySignatureSetup: true` on `SendSignatureRequest` or `CreateSignatureReviewLinkRequest`. Each field whose tag and type match an anchored field of the setup is treated as that field: it fits its tag, and a tag missing from the document is **skipped** instead of failing the send. The flag only has an effect with `templateId` or `deliverableId`. It is not for a file upload (the API rejects a file together with a template, so there is no setup to apply), and `createEmbeddedSignature()` does not take it.
+
+```php
+use TurboDocx\TurboSign;
+use TurboDocx\Exceptions\ConflictException;
+use TurboDocx\Types\Field;
+use TurboDocx\Types\Recipient;
+use TurboDocx\Types\SignatureFieldType;
+use TurboDocx\Types\TemplateConfig;
+use TurboDocx\Types\Requests\AddTemplateSignatureAnchorRequest;
+use TurboDocx\Types\Requests\SendSignatureRequest;
+
+// 1. Setup time (administrator or contributor key)
+try {
+    $added = TurboSign::addTemplateSignatureAnchor(new AddTemplateSignatureAnchorRequest(
+        templateId: $templateId,
+        roleKey: 'client',                 // a role key from getTemplateSignatureSetup
+        type: SignatureFieldType::SIGNATURE,
+        anchor: '{ClientSign}',
+        size: ['width' => 150, 'height' => 40], // optional, also offset, placement, defaultValue, isReadonly
+    ));
+} catch (ConflictException $e) {
+    // $e->errorCode: 'AnchorOwnedByOtherRole' or 'AnchorTagHasField'
+    throw $e;
+}
+
+$setup = TurboSign::getTemplateSignatureSetup($templateId);
+foreach ($setup->anchors as $anchor) { // TemplateSignatureAnchor: fieldId, roleKey, type, anchor, placement, offset, size, notFound
+    echo "{$anchor->roleKey} {$anchor->anchor}\n";
+}
+// each TemplateSignatureRole in $setup->roles has anchoredFieldCount
+
+TurboSign::removeTemplateSignatureAnchor($templateId, $added->fieldId);
+
+// 3. Send without roles, using the setup's anchored fields
+TurboSign::sendSignature(new SendSignatureRequest(
+    deliverableId: $deliverableId,     // or templateId; not with a file upload
+    documentName: 'Services Agreement - Acme',
+    recipients: [new Recipient('Jane Doe', 'jane@client.com', 1)],
+    fields: [new Field(
+        type: SignatureFieldType::SIGNATURE,
+        recipientEmail: 'jane@client.com',
+        template: new TemplateConfig(anchor: '{ClientSign}'),
+    )],
+    applySignatureSetup: true,         // also on CreateSignatureReviewLinkRequest
+));
+```
+
+- A tag belongs to one role and holds one field. Another role's tag, or a second field on a tag, is a 409 `ConflictException` (read `$e->errorCode`) with code `AnchorOwnedByOtherRole` or `AnchorTagHasField`. Re-adding the same field is idempotent.
+- An unknown role or field id is a 404 `NotFoundException` with code `SignerRoleNotFound` / `SetupFieldNotFound`; a template with no saved setup is `SignatureSetupNotFound`. A read-only field with no default value (its own or its role's) is a 400 `ReadonlyFieldNoDefaultValue`. A locked template answers 423 `TemplateLocked`.
+- On a template with no signer yet, role key `signer_1` creates the first signer.
+- The result has `$added->fieldId`, `$added->signatureSetup` (the saved setup as stored, an array) and `$added->tagBecameSignatureField` (true when the tag was not a signature field before). `size` and `offset` are arrays, `placement` is a `FieldPlacement`, `type` a `SignatureFieldType`.
+- The anchor is one tag in single braces with no spaces (`{ClientSign}`), and `placement` is `replace`, `before`, `after`, `above` or `below`. In `getTemplateSignatureSetup()`, `notFound` true means the template has no variable (Word/PowerPoint) or text (PDF) with that tag yet.
 
 ### Optional fields
 
@@ -1796,6 +1858,8 @@ otherwise the class default — `VALIDATION_ERROR`, `AUTHENTICATION_ERROR`, `AUT
 | `TurboSign::sendSignature($request)` | Send document for e-signature |
 | `TurboSign::createSignatureReviewLink($request)` | Preview without emails |
 | `TurboSign::getTemplateSignatureSetup($templateId)` | List a template's signer roles (`key`, `order`, `hasSavedSigner`, `fieldCount`) to send it with `Recipient` `role` |
+| `TurboSign::addTemplateSignatureAnchor(new AddTemplateSignatureAnchorRequest(...))` | Add an anchored field (a tag such as `{ClientSign}` for one role) to the template's saved signature setup (admin or contributor key) |
+| `TurboSign::removeTemplateSignatureAnchor($templateId, $fieldId)` | Remove an anchored field from the saved setup |
 | `TurboSign::getStatus($documentId)` | Get document status (returns `DocumentStatusResponse` — `status` + `expiresAt`) |
 | `TurboSign::download($documentId)` | Download signed PDF as string |
 | `TurboSign::void($documentId, $reason)` | Cancel a signature request (reason required) |
