@@ -150,7 +150,7 @@ An **anchored field** is a field on the template's saved signature setup that is
 Three different moments, do not mix them up:
 
 1. **Setup time (once per template):** `AddTemplateSignatureAnchor` and `RemoveTemplateSignatureAnchor` edit the saved setup. They need an **administrator or contributor** API key; a key with a lower role is refused.
-2. **Role send:** a recipient that names a `Role` brings that role's anchored fields with it. No flag and no `Fields` are needed.
+2. **Role send:** a recipient that names a `Role` brings that role's anchored fields with it (roles need a PDF signature template, as above; a deliverable uses the next case). No flag and no `Fields` are needed.
 3. **Send without roles:** pass `TemplateID` or `DeliverableID`, `Fields` that carry a template anchor, and `ApplySignatureSetup: turbodocx.BoolPtr(true)` (a `*bool`, so nil leaves it out and an explicit false is sent). Each field whose tag and type match an anchored field of the setup is treated as that field: it fits its tag, and a tag missing from the document is **skipped** instead of failing the send. The flag only has an effect with `TemplateID` or `DeliverableID`. It is not for a file upload (the API rejects a file together with a template, so there is no setup to apply), and `CreateEmbeddedSignature` does not take it.
 
 ```go
