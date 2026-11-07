@@ -127,7 +127,7 @@ try {
 }
 ```
 
-`getTemplateSignatureSetup(templateId)` returns a `TemplateSignatureSetup` (`getTemplateId()`, `getRoles()`); each `TemplateSignatureRole` has `getKey()`, `getLabel()`, `getOrder()`, `hasSavedSigner()`, `getDefaultName()`/`getDefaultEmail()` (null unless `hasSavedSigner()`), and `getFieldCount()`. `getKey()` is the value for the recipient's role.
+`getTemplateSignatureSetup(templateId)` returns a `TemplateSignatureSetup` (`getTemplateId()`, `getRoles()`); each `TemplateSignatureRole` has `getKey()`, `getLabel()`, `getOrder()`, `hasSavedSigner()`, `getDefaultName()`/`getDefaultEmail()` (null unless `hasSavedSigner()`), and `getFieldCount()`. `getKey()` is the value for the recipient's role. The setup also has `getAnchors()` (`List<TemplateSignatureAnchor>`, see below), and each role has `getAnchoredFieldCount()`.
 
 On a template with no saved signature setup `getTemplateSignatureSetup` throws a 404 with code `SignatureSetupNotFound`:
 
@@ -149,6 +149,72 @@ try {
 - Roles only work for a PDF signature template. A Word template needs a deliverable generated first and sent with `deliverableId`.
 - Use `new Recipient.Builder().role("client").name(...).email(...)` when the role recipient also needs a phone or external id.
 - `role` works the same way on `createSignatureReviewLink` and, via `new EmbeddedSignatureRecipient.Builder().role(...)`, on `createEmbeddedSignature`. A role left out falls back to its saved signer, who also gets an embed URL in the result, so match result entries to signers by email or role rather than by position.
+
+### Anchored fields on the template setup
+
+An **anchored field** is a field on the template's saved signature setup that is tied to a tag such as `{ClientSign}` for one signer role and placed wherever that tag appears in the generated document. Use it when the layout moves with the content (a Word template generated into a deliverable, where coordinates drift), so the template carries the fields and your code does not measure anything. The add and remove calls are not in SDK 0.9.0 or earlier.
+
+Three different moments, do not mix them up:
+
+1. **Setup time (once per template):** `addTemplateSignatureAnchor` and `removeTemplateSignatureAnchor` edit the saved setup. They need an **administrator or contributor** API key; a key with a lower role is refused.
+2. **Role send:** a recipient that names a role (`Recipient.withRole(...)`) brings that role's anchored fields with it (roles need a PDF signature template, as above; a deliverable uses the next case). No flag and no `fields` are needed for the role's saved fields; anchor fields you add yourself follow step 3.
+3. **Your own anchor fields, with or without roles:** pass `templateId` or `deliverableId`, `fields` that carry a template anchor, and `.applySignatureSetup(true)` on the `SendSignatureRequest` or `CreateSignatureReviewLinkRequest` builder. Each field whose tag and type match an anchored field of the setup is treated as that field: it fits its tag, centred on it, and a tag missing from the document is **skipped** instead of failing the send. Without the flag, your own anchor fields keep the standard placement and a tag missing from the document fails the send. The flag only has an effect with `templateId` or `deliverableId`. It is not for a file upload (the API rejects a file together with a template, so there is no setup to apply), and `createEmbeddedSignature` does not take it.
+
+```java
+import com.turbodocx.TurboDocxException;
+import com.turbodocx.models.*;
+
+// 1. Setup time (administrator or contributor key)
+AddTemplateSignatureAnchorResponse added;
+try {
+    added = client.turboSign().addTemplateSignatureAnchor(
+        new AddTemplateSignatureAnchorRequest.Builder()
+            .templateId(templateId)
+            .roleKey("client")            // a role key from getTemplateSignatureSetup
+            .type("signature")            // or "initial", "date", "text", ...
+            .anchor("{ClientSign}")
+            .size(new Field.Size(150, 40)) // optional, also offset, placement, defaultValue, isReadonly
+            .build()
+    );
+} catch (TurboDocxException.ConflictException e) {
+    switch (String.valueOf(e.getCode())) {
+        case "AnchorOwnedByOtherRole" -> System.err.println("{ClientSign} already belongs to another signer role");
+        case "AnchorTagHasField" -> System.err.println("{ClientSign} already holds a different field");
+        default -> throw e;
+    }
+}
+
+TemplateSignatureSetup setup = client.turboSign().getTemplateSignatureSetup(templateId);
+for (TemplateSignatureAnchor a : setup.getAnchors()) { // getFieldId(), getRoleKey(), getType(), getAnchor(), getPlacement(), getOffset(), getSize(), isNotFound()
+    System.out.println(a.getRoleKey() + " " + a.getAnchor() + " " + a.isNotFound());
+}
+// each TemplateSignatureRole has getAnchoredFieldCount()
+
+client.turboSign().removeTemplateSignatureAnchor(templateId, added.getFieldId());
+
+// 3. Your own anchor fields, here on a send without roles
+client.turboSign().sendSignature(
+    new SendSignatureRequest.Builder()
+        .deliverableId(deliverableId)     // or templateId; not with .file(...)
+        .documentName("Services Agreement - Acme")
+        .recipients(Arrays.asList(new Recipient("Jane Doe", "jane@client.com", 1)))
+        .fields(Arrays.asList(
+            new Field.Builder()
+                .type("signature")
+                .recipientEmail("jane@client.com")
+                .template(new Field.TemplateAnchor.Builder().anchor("{ClientSign}").build())
+                .build()
+        ))
+        .applySignatureSetup(true)        // also on CreateSignatureReviewLinkRequest.Builder
+        .build()
+);
+```
+
+- A tag belongs to one role and holds one field. Another role's tag, or a second field on a tag, is a 409 `TurboDocxException.ConflictException` (read `e.getCode()`) with code `AnchorOwnedByOtherRole` or `AnchorTagHasField`. Re-adding the same field is idempotent.
+- An unknown role or field id is a 404 `TurboDocxException.NotFoundException` with code `SignerRoleNotFound` / `SetupFieldNotFound`; a template with no saved setup is `SignatureSetupNotFound`. A read-only field with no default value (its own or its role's) is a 400 `ReadonlyFieldNoDefaultValue`. A locked template answers 423 `TemplateLocked`.
+- On a template with no signer yet, role key `signer_1` creates the first signer.
+- `AddTemplateSignatureAnchorResponse` has `getFieldId()`, `getSignatureSetup()` (the saved setup as stored, a `Map<String, Object>`) and `isTagBecameSignatureField()` (true when the tag was not a signature field before). The builder takes `.size(new Field.Size(w, h))`, `.offset(Field.Offset)`, `.placement(String)`, `.defaultValue(String)`, `.isReadonly(Boolean)`.
+- The anchor is one tag in single braces with no spaces (`{ClientSign}`), and `placement` is `replace`, `before`, `after`, `above` or `below`. In `getTemplateSignatureSetup`, `isNotFound()` true means the template has no variable (Word/PowerPoint) or text (PDF) with that tag yet.
 
 ### Optional fields
 
@@ -1685,6 +1751,8 @@ All seven subtypes are **nested classes** on `com.turbodocx.TurboDocxException` 
 | `client.turboSign().sendSignature(req)` | Send document for e-signature |
 | `client.turboSign().createSignatureReviewLink(req)` | Preview without emails |
 | `client.turboSign().getTemplateSignatureSetup(templateId)` | List a template's signer roles (`getKey()`, `getOrder()`, `hasSavedSigner()`, `getFieldCount()`) to send it with `Recipient.withRole(...)` |
+| `client.turboSign().addTemplateSignatureAnchor(new AddTemplateSignatureAnchorRequest.Builder()...build())` | Add an anchored field (a tag such as `{ClientSign}` for one role) to the template's saved signature setup (admin or contributor key) |
+| `client.turboSign().removeTemplateSignatureAnchor(templateId, fieldId)` | Remove an anchored field from the saved setup |
 | `client.turboSign().getStatus(id)` | Get document-level status + expiresAt (no recipients) |
 | `client.turboSign().download(id)` | Download signed PDF as byte[] |
 | `client.turboSign().voidDocument(id, reason)` | Cancel a signature request (`reason` required) |

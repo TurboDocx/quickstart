@@ -3568,6 +3568,230 @@
           "description": ".env file contains TURBODOCX_API_KEY and TURBODOCX_ORG_ID"
         }
       ]
+    },
+    {
+      "id": 78,
+      "prompt": "Our Word contract template in TurboDocx has {ClientSign} and {ClientDate} tags, and the template already has a 'client' signer role. Write a one-off setup script for my Express/TypeScript project that turns those two tags into the client's signature and date fields on the template's saved signature setup, then prints which anchored fields the setup has and whether each tag was found in the template.",
+      "expected_output": "Installs @turbodocx/sdk, configures env vars, and adds a TypeScript script that calls TurboSign.addTemplateSignatureAnchor twice (roleKey 'client', type 'signature' / 'date', anchor '{ClientSign}' / '{ClientDate}'), then TurboSign.getTemplateSignatureSetup and prints anchors with notFound plus each role's anchoredFieldCount. Handles ConflictError (AnchorOwnedByOtherRole / AnchorTagHasField) and notes that an administrator or contributor API key is needed.",
+      "files": [
+        "package.json",
+        "tsconfig.json",
+        "src/index.ts",
+        "package-lock.json"
+      ],
+      "assertions": [
+        {
+          "name": "uses-add-template-signature-anchor",
+          "type": "file_contains",
+          "description": "Script calls TurboSign.addTemplateSignatureAnchor with templateId, roleKey 'client', type and anchor (not sendSignature fields, and not a hand-rolled HTTP call)"
+        },
+        {
+          "name": "adds-both-tags",
+          "type": "file_contains",
+          "description": "Both '{ClientSign}' (type 'signature') and '{ClientDate}' (type 'date') are added as anchors, in single braces"
+        },
+        {
+          "name": "reads-anchors-not-found",
+          "type": "file_contains",
+          "description": "Script calls getTemplateSignatureSetup and reads its anchors array and each anchor's notFound flag (optionally roles[].anchoredFieldCount)"
+        },
+        {
+          "name": "handles-conflict",
+          "type": "file_contains",
+          "description": "Catches ConflictError (409) and checks err.code for AnchorOwnedByOtherRole or AnchorTagHasField"
+        },
+        {
+          "name": "mentions-admin-or-contributor-key",
+          "type": "output_contains",
+          "description": "The response tells the user the anchor calls need an administrator or contributor API key"
+        }
+      ]
+    },
+    {
+      "id": 79,
+      "prompt": "In our FastAPI app we generate a TurboDocx deliverable from a Word template and then send it for signature. The template's signature setup already has an anchored signature field on {ClientSign}, but some generated contracts drop that section and the send then fails. We don't use signer roles. Write the endpoint that sends the deliverable to a client so the field fits the tag and a missing tag doesn't break the send.",
+      "expected_output": "Adds an async FastAPI endpoint that awaits TurboSign.send_signature(deliverable_id=..., recipients=[{name, email, signingOrder}], fields=[{type: 'signature', recipientEmail, template: {anchor: '{ClientSign}'}}], apply_signature_setup=True). Does not upload a file.",
+      "files": [
+        "pyproject.toml",
+        "app/main.py",
+        "app/routers/__init__.py"
+      ],
+      "assertions": [
+        {
+          "name": "awaits-send-signature",
+          "type": "file_contains",
+          "description": "Endpoint awaits TurboSign.send_signature (the SDK is async)"
+        },
+        {
+          "name": "sends-deliverable-id",
+          "type": "file_contains",
+          "description": "Send passes deliverable_id (not a file upload or file_link)"
+        },
+        {
+          "name": "apply-signature-setup-true",
+          "type": "file_contains",
+          "description": "Send passes apply_signature_setup=True (snake_case keyword, not applySignatureSetup)"
+        },
+        {
+          "name": "field-by-template-anchor",
+          "type": "file_contains",
+          "description": "fields contains a field with \"template\": {\"anchor\": \"{ClientSign}\"} for the recipient"
+        },
+        {
+          "name": "no-role-on-recipients",
+          "type": "file_not_contains",
+          "description": "Recipients do not carry a \"role\" key (the user said they don't use signer roles)"
+        }
+      ]
+    },
+    {
+      "id": 80,
+      "prompt": "Add a Gin handler to our Go service that creates a TurboSign review link (no emails) for an existing TurboDocx template, with the client's signature field placed by the {ClientSign} anchor that is saved on the template's signature setup, so a tag missing from the document is skipped. We send without signer roles.",
+      "expected_output": "Adds a handler calling client.TurboSign.CreateSignatureReviewLink(ctx, &turbodocx.CreateSignatureReviewLinkRequest{TemplateID: ..., Recipients: ..., Fields: [{Type: 'signature', Template: &turbodocx.TemplateAnchor{Anchor: '{ClientSign}'}}], ApplySignatureSetup: turbodocx.BoolPtr(true)}), checks the error and returns previewUrl. Wires the route.",
+      "files": [
+        "go.mod",
+        "main.go",
+        "internal/handlers/.gitkeep",
+        "internal/config/.gitkeep"
+      ],
+      "assertions": [
+        {
+          "name": "uses-create-review-link",
+          "type": "file_contains",
+          "description": "Handler calls client.TurboSign.CreateSignatureReviewLink with the request's context"
+        },
+        {
+          "name": "template-id-set",
+          "type": "file_contains",
+          "description": "Request sets TemplateID (not File)"
+        },
+        {
+          "name": "apply-signature-setup-boolptr",
+          "type": "file_contains",
+          "description": "Request sets ApplySignatureSetup: turbodocx.BoolPtr(true) (a *bool, not a bare true)"
+        },
+        {
+          "name": "field-template-anchor",
+          "type": "file_contains",
+          "description": "Fields include a turbodocx.TemplateAnchor with Anchor \"{ClientSign}\""
+        },
+        {
+          "name": "handles-error-return",
+          "type": "file_contains",
+          "description": "The returned error is checked, not discarded"
+        },
+        {
+          "name": "route-wired",
+          "type": "file_contains",
+          "description": "The handler is registered on the Gin router"
+        }
+      ]
+    },
+    {
+      "id": 81,
+      "prompt": "Write a Laravel artisan command that sets up signature fields on a TurboDocx template from code: {ClientSign} for the 'client' role and {VendorSign} for the 'vendor' role. If a tag already belongs to another role or already has a field, print a clear message instead of crashing.",
+      "expected_output": "Adds an artisan command calling TurboSign::addTemplateSignatureAnchor(new AddTemplateSignatureAnchorRequest(templateId:, roleKey:, type: SignatureFieldType::SIGNATURE, anchor:)) once per role, catching ConflictException and reading $e->errorCode for AnchorOwnedByOtherRole / AnchorTagHasField. Notes the administrator or contributor key requirement.",
+      "files": [
+        "composer.json",
+        "routes/web.php",
+        "app/Http/Controllers/.gitkeep"
+      ],
+      "assertions": [
+        {
+          "name": "uses-add-anchor-request",
+          "type": "file_contains",
+          "description": "Command calls TurboSign::addTemplateSignatureAnchor with a new AddTemplateSignatureAnchorRequest(...) using named args templateId, roleKey, type, anchor"
+        },
+        {
+          "name": "signature-field-type-enum",
+          "type": "file_contains",
+          "description": "type is SignatureFieldType::SIGNATURE (the enum), not a bare string"
+        },
+        {
+          "name": "both-roles",
+          "type": "file_contains",
+          "description": "Adds '{ClientSign}' for roleKey 'client' and '{VendorSign}' for roleKey 'vendor'"
+        },
+        {
+          "name": "catches-conflict-exception",
+          "type": "file_contains",
+          "description": "Catches TurboDocx\\Exceptions\\ConflictException and reads $e->errorCode (not $e->getCode()) for AnchorOwnedByOtherRole / AnchorTagHasField"
+        },
+        {
+          "name": "command-file-created",
+          "type": "file_exists",
+          "description": "An artisan command class exists under app/Console/Commands/"
+        }
+      ]
+    },
+    {
+      "id": 82,
+      "prompt": "In our Spring Boot admin service, add two REST endpoints for a TurboDocx template's signature setup: one that lists the anchored signature fields (which role and tag each one is, and whether the tag was found in the template), and one that deletes an anchored field by its id.",
+      "expected_output": "Adds a controller that calls client.turboSign().getTemplateSignatureSetup(templateId) and maps getAnchors() (getFieldId(), getRoleKey(), getAnchor(), getType(), isNotFound()), and one that calls client.turboSign().removeTemplateSignatureAnchor(templateId, fieldId). Handles TurboDocxException.NotFoundException (SetupFieldNotFound / SignatureSetupNotFound) as a 404.",
+      "files": [
+        "pom.xml",
+        "src/main/java/com/example/demo/DemoApplication.java"
+      ],
+      "assertions": [
+        {
+          "name": "lists-get-anchors",
+          "type": "file_contains",
+          "description": "Controller calls getTemplateSignatureSetup(templateId) and reads getAnchors(), including isNotFound()"
+        },
+        {
+          "name": "uses-remove-anchor",
+          "type": "file_contains",
+          "description": "Delete endpoint calls client.turboSign().removeTemplateSignatureAnchor(templateId, fieldId)"
+        },
+        {
+          "name": "handles-not-found",
+          "type": "file_contains",
+          "description": "Catches TurboDocxException.NotFoundException (nested class, not a com.turbodocx.exceptions package) and returns 404"
+        },
+        {
+          "name": "dependency-added",
+          "type": "file_contains",
+          "description": "pom.xml includes the com.turbodocx sdk dependency"
+        }
+      ]
+    },
+    {
+      "id": 83,
+      "prompt": "Our Rails app sends a generated TurboDocx deliverable for signature without signer roles. The Word template behind it has its signature field saved as an anchored field on {ClientSign}. Add a service object that sends the deliverable to a client and makes the send use the template's anchored field, so a missing tag is skipped rather than failing.",
+      "expected_output": "Adds a service object calling TurboDocxSdk::TurboSign.send_signature(deliverableId:, documentName:, recipients: [{ name:, email:, signingOrder: 1 }], fields: [{ type: 'signature', recipientEmail:, template: { anchor: '{ClientSign}' } }], applySignatureSetup: true).",
+      "files": [
+        "Gemfile",
+        "config/application.rb",
+        "config/routes.rb",
+        "app/controllers/application_controller.rb"
+      ],
+      "assertions": [
+        {
+          "name": "uses-send-signature",
+          "type": "file_contains",
+          "description": "Service calls TurboDocxSdk::TurboSign.send_signature"
+        },
+        {
+          "name": "deliverable-id-camelcase",
+          "type": "file_contains",
+          "description": "Passes deliverableId: (camelCase key, as the Ruby SDK expects), not a file upload"
+        },
+        {
+          "name": "apply-signature-setup-camelcase",
+          "type": "file_contains",
+          "description": "Passes applySignatureSetup: true (camelCase key, not apply_signature_setup)"
+        },
+        {
+          "name": "field-template-anchor",
+          "type": "file_contains",
+          "description": "fields includes a field with template: { anchor: \"{ClientSign}\" }"
+        },
+        {
+          "name": "no-role-on-recipients",
+          "type": "file_not_contains",
+          "description": "Recipients do not carry a role key"
+        }
+      ]
     }
   ]
 }

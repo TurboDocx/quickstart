@@ -115,7 +115,7 @@ except ValidationError as e:
     raise
 ```
 
-`get_template_signature_setup(template_id)` returns a dict `{"templateId", "roles"}`; each role has `key`, `label`, `order`, `hasSavedSigner`, `fieldCount`, plus `defaultName`/`defaultEmail` when `hasSavedSigner` is true. `key` is the value for a recipient's `"role"`. The keys stay camelCase.
+`get_template_signature_setup(template_id)` returns a dict `{"templateId", "roles"}`; each role has `key`, `label`, `order`, `hasSavedSigner`, `fieldCount`, plus `defaultName`/`defaultEmail` when `hasSavedSigner` is true. `key` is the value for a recipient's `"role"`. The keys stay camelCase. The dict also has `"anchors"` (the setup's anchored fields, see below), and each role has `"anchoredFieldCount"`.
 
 On a template with no saved signature setup `get_template_signature_setup` raises a 404 with code `SignatureSetupNotFound`:
 
@@ -136,6 +136,56 @@ except NotFoundError as e:
 - On a send, `fields` is optional only when a recipient names a `role` (it is left out of the request when empty); any fields you pass are **added** to the template's (for example an extra witness signature). On a send (`send_signature()`, `create_embedded_signature()`) where no recipient names a role, an omitted or empty `fields` is a 400 `FieldsRequired` (SDK 0.8.0 sent the empty list and created a document with nothing to sign). A review link (`create_signature_review_link()`) needs no fields: the SDK sends `[]` and you place them in the preview.
 - Roles only work for a PDF signature template. A Word template needs a deliverable generated first and sent with `deliverableId`.
 - `role` works the same way on `create_signature_review_link()` and on `create_embedded_signature()` recipients. A role left out falls back to its saved signer, who also gets an embed URL in the result, so match result entries to signers by email or role rather than by position.
+
+### Anchored fields on the template setup
+
+An **anchored field** is a field on the template's saved signature setup that is tied to a tag such as `{ClientSign}` for one signer role and placed wherever that tag appears in the generated document. Use it when the layout moves with the content (a Word template generated into a deliverable, where coordinates drift), so the template carries the fields and your code does not measure anything. The add and remove calls are not in SDK 0.9.0 or earlier.
+
+Three different moments, do not mix them up:
+
+1. **Setup time (once per template):** `add_template_signature_anchor()` and `remove_template_signature_anchor()` edit the saved setup. They need an **administrator or contributor** API key; a key with a lower role is refused.
+2. **Role send:** a recipient that names a `"role"` brings that role's anchored fields with it (roles need a PDF signature template, as above; a deliverable uses the next case). No flag and no `fields` are needed for the role's saved fields; anchor fields you add yourself follow step 3.
+3. **Your own anchor fields, with or without roles:** pass `template_id` or `deliverable_id`, `fields` that carry a template anchor, and `apply_signature_setup=True`. Each field whose tag and type match an anchored field of the setup is treated as that field: it fits its tag, centred on it, and a tag missing from the document is **skipped** instead of failing the send. Without the flag, your own anchor fields keep the standard placement and a tag missing from the document fails the send. The flag only has an effect with `template_id` or `deliverable_id`. It is not for a file upload (the API rejects a file together with a template, so there is no setup to apply), and `create_embedded_signature()` does not take it.
+
+```python
+from turbodocx_sdk import TurboSign, ConflictError
+
+# 1. Setup time (administrator or contributor key)
+try:
+    added = await TurboSign.add_template_signature_anchor(
+        template_id,
+        "client",           # role_key, from get_template_signature_setup
+        "signature",        # type: or "initial", "date", "text", ...
+        "{ClientSign}",     # anchor
+        size={"width": 150, "height": 40},  # keyword-only, also offset, placement, default_value, is_readonly
+    )
+    field_id = added["fieldId"]
+except ConflictError as e:
+    if e.code in ("AnchorOwnedByOtherRole", "AnchorTagHasField"):
+        ...
+    raise
+
+setup = await TurboSign.get_template_signature_setup(template_id)
+# setup["anchors"]: [{"fieldId", "roleKey", "type", "anchor", "placement", "size"?, "offset"?, "notFound"}]
+# each role in setup["roles"] has "anchoredFieldCount"
+
+await TurboSign.remove_template_signature_anchor(template_id, field_id)
+
+# 3. Your own anchor fields, here on a send without roles
+await TurboSign.send_signature(
+    deliverable_id=deliverable_id,   # or template_id; not with a file upload
+    document_name="Services Agreement - Acme",
+    recipients=[{"name": "Jane Doe", "email": "jane@client.com", "signingOrder": 1}],
+    fields=[{"type": "signature", "recipientEmail": "jane@client.com", "template": {"anchor": "{ClientSign}"}}],
+    apply_signature_setup=True,      # also on create_signature_review_link()
+)
+```
+
+- A tag belongs to one role and holds one field. Another role's tag, or a second field on a tag, is a 409 `ConflictError` with code `AnchorOwnedByOtherRole` or `AnchorTagHasField`. Re-adding the same field is idempotent.
+- An unknown role or field id is a 404 `NotFoundError` with code `SignerRoleNotFound` / `SetupFieldNotFound`; a template with no saved setup is `SignatureSetupNotFound`. A read-only field with no default value (its own or its role's) is a 400 `ReadonlyFieldNoDefaultValue`. A locked template answers 423 `TemplateLocked`.
+- On a template with no signer yet, role key `signer_1` creates the first signer.
+- The methods are async (`await` them) and return dicts with camelCase keys: add returns `{"fieldId", "signatureSetup", "tagBecameSignatureField"}` (true when the tag was not a signature field before), remove returns `{"signatureSetup"}`. `None` leaves `apply_signature_setup` out; an explicit `False` is sent.
+- The anchor is one tag in single braces with no spaces (`{ClientSign}`), and `placement` is `replace`, `before`, `after`, `above` or `below`. In `get_template_signature_setup()`, `notFound` true means the template has no variable (Word/PowerPoint) or text (PDF) with that tag yet.
 
 ### Optional fields
 
@@ -1515,6 +1565,8 @@ The exception attributes are `e.status_code` (int or `None`) and `e.code` (str) 
 | `TurboSign.send_signature(...)` | Send document for e-signature |
 | `TurboSign.create_signature_review_link(...)` | Preview without sending emails |
 | `TurboSign.get_template_signature_setup(template_id)` | List a template's signer roles (`key`, `order`, `hasSavedSigner`, `fieldCount`) to send it with a recipient's `"role"` |
+| `TurboSign.add_template_signature_anchor(template_id, role_key, type, anchor, *, size=None, offset=None, placement=None, default_value=None, is_readonly=None)` | Add an anchored field (a tag such as `{ClientSign}` for one role) to the template's saved signature setup (admin or contributor key) |
+| `TurboSign.remove_template_signature_anchor(template_id, field_id)` | Remove an anchored field from the saved setup |
 | `TurboSign.get_status(document_id)` | Get document-level status + expiresAt (no recipients) |
 | `TurboSign.download(document_id)` | Download signed PDF as bytes |
 | `TurboSign.void_document(document_id, reason)` | Cancel a signature request (reason required) |
