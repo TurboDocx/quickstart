@@ -1137,6 +1137,8 @@ TurboWebhooks::configure(new HttpClientConfig(
 ));
 ```
 
+Configure it once at boot, not inside a controller action. In Laravel, make this call in a service provider's `boot()` (for example `AppServiceProvider`), reading the values from `config/services.php`, so the receiver and the admin endpoint share one configured client.
+
 The webhook routes require the organization administrator role. A non-admin TDX- key will return `AuthorizationException` (HTTP 403).
 
 ## TurboWebhooks Events
