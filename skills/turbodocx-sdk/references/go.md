@@ -164,8 +164,11 @@ added, err := client.TurboSign.AddTemplateSignatureAnchor(ctx, &turbodocx.AddTem
 })
 if err != nil {
     var conflict *turbodocx.ConflictError
-    if errors.As(err, &conflict) {
-        // conflict.Code: "AnchorOwnedByOtherRole" or "AnchorTagHasField"
+    if errors.As(err, &conflict) && conflict.Code == "AnchorOwnedByOtherRole" {
+        return fmt.Errorf("{ClientSign} already belongs to another signer role: %w", err)
+    }
+    if errors.As(err, &conflict) && conflict.Code == "AnchorTagHasField" {
+        return fmt.Errorf("{ClientSign} already holds a different field: %w", err)
     }
     return err
 }

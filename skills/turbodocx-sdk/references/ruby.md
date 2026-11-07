@@ -185,8 +185,11 @@ begin
     size: { width: 150, height: 40 } # optional, also offset, placement, defaultValue, isReadonly
   )
 rescue TurboDocxSdk::ConflictError => e
-  # e.code: "AnchorOwnedByOtherRole" or "AnchorTagHasField"
-  raise
+  case e.code
+  when "AnchorOwnedByOtherRole" then warn "{ClientSign} already belongs to another signer role"
+  when "AnchorTagHasField" then warn "{ClientSign} already holds a different field"
+  else raise
+  end
 end
 
 setup = TurboDocxSdk::TurboSign.get_template_signature_setup(template_id)

@@ -191,10 +191,13 @@ try {
     size: { width: 150, height: 40 }, // optional, also offset, placement, defaultValue, isReadonly
   });
 } catch (err) {
-  if (err instanceof ConflictError) {
-    // err.code: 'AnchorOwnedByOtherRole' | 'AnchorTagHasField'
+  if (err instanceof ConflictError && err.code === 'AnchorOwnedByOtherRole') {
+    console.error('{ClientSign} already belongs to another signer role');
+  } else if (err instanceof ConflictError && err.code === 'AnchorTagHasField') {
+    console.error('{ClientSign} already holds a different field');
+  } else {
+    throw err;
   }
-  throw err;
 }
 
 const { roles, anchors } = await TurboSign.getTemplateSignatureSetup(templateId);

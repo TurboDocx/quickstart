@@ -186,8 +186,11 @@ try {
         size: ['width' => 150, 'height' => 40], // optional, also offset, placement, defaultValue, isReadonly
     ));
 } catch (ConflictException $e) {
-    // $e->errorCode: 'AnchorOwnedByOtherRole' or 'AnchorTagHasField'
-    throw $e;
+    match ($e->errorCode) {
+        'AnchorOwnedByOtherRole' => error_log('{ClientSign} already belongs to another signer role'),
+        'AnchorTagHasField' => error_log('{ClientSign} already holds a different field'),
+        default => throw $e,
+    };
 }
 
 $setup = TurboSign::getTemplateSignatureSetup($templateId);

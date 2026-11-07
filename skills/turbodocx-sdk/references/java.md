@@ -177,8 +177,11 @@ try {
             .build()
     );
 } catch (TurboDocxException.ConflictException e) {
-    // e.getCode(): "AnchorOwnedByOtherRole" or "AnchorTagHasField"
-    throw e;
+    switch (String.valueOf(e.getCode())) {
+        case "AnchorOwnedByOtherRole" -> System.err.println("{ClientSign} already belongs to another signer role");
+        case "AnchorTagHasField" -> System.err.println("{ClientSign} already holds a different field");
+        default -> throw e;
+    }
 }
 
 TemplateSignatureSetup setup = client.turboSign().getTemplateSignatureSetup(templateId);
