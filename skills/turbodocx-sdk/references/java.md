@@ -157,8 +157,8 @@ An **anchored field** is a field on the template's saved signature setup that is
 Three different moments, do not mix them up:
 
 1. **Setup time (once per template):** `addTemplateSignatureAnchor` and `removeTemplateSignatureAnchor` edit the saved setup. They need an **administrator or contributor** API key; a key with a lower role is refused.
-2. **Role send:** a recipient that names a role (`Recipient.withRole(...)`) brings that role's anchored fields with it (roles need a PDF signature template, as above; a deliverable uses the next case). No flag and no `fields` are needed.
-3. **Send without roles:** pass `templateId` or `deliverableId`, `fields` that carry a template anchor, and `.applySignatureSetup(true)` on the `SendSignatureRequest` or `CreateSignatureReviewLinkRequest` builder. Each field whose tag and type match an anchored field of the setup is treated as that field: it fits its tag, and a tag missing from the document is **skipped** instead of failing the send. The flag only has an effect with `templateId` or `deliverableId`. It is not for a file upload (the API rejects a file together with a template, so there is no setup to apply), and `createEmbeddedSignature` does not take it.
+2. **Role send:** a recipient that names a role (`Recipient.withRole(...)`) brings that role's anchored fields with it (roles need a PDF signature template, as above; a deliverable uses the next case). No flag and no `fields` are needed for the role's saved fields; anchor fields you add yourself follow step 3.
+3. **Your own anchor fields, with or without roles:** pass `templateId` or `deliverableId`, `fields` that carry a template anchor, and `.applySignatureSetup(true)` on the `SendSignatureRequest` or `CreateSignatureReviewLinkRequest` builder. Each field whose tag and type match an anchored field of the setup is treated as that field: it fits its tag, centred on it, and a tag missing from the document is **skipped** instead of failing the send. Without the flag, your own anchor fields keep the standard placement and a tag missing from the document fails the send. The flag only has an effect with `templateId` or `deliverableId`. It is not for a file upload (the API rejects a file together with a template, so there is no setup to apply), and `createEmbeddedSignature` does not take it.
 
 ```java
 import com.turbodocx.TurboDocxException;
@@ -189,7 +189,7 @@ for (TemplateSignatureAnchor a : setup.getAnchors()) { // getFieldId(), getRoleK
 
 client.turboSign().removeTemplateSignatureAnchor(templateId, added.getFieldId());
 
-// 3. Send without roles, using the setup's anchored fields
+// 3. Your own anchor fields, here on a send without roles
 client.turboSign().sendSignature(
     new SendSignatureRequest.Builder()
         .deliverableId(deliverableId)     // or templateId; not with .file(...)
