@@ -118,7 +118,7 @@ if err != nil {
 fmt.Println(result.DocumentID)
 ```
 
-`GetTemplateSignatureSetup(ctx, templateID)` returns `*turbodocx.TemplateSignatureSetup{TemplateID, Roles []TemplateSignatureRole}`; each role has `Key`, `Label`, `Order`, `HasSavedSigner`, `DefaultName`, `DefaultEmail` (set only when `HasSavedSigner`), and `FieldCount`. `Key` is the value for `Recipient.Role`.
+`GetTemplateSignatureSetup(ctx, templateID)` returns `*turbodocx.TemplateSignatureSetup{TemplateID, Roles []TemplateSignatureRole}`; each role has `Key`, `Label`, `Order`, `HasSavedSigner`, `DefaultName`, `DefaultEmail` (set only when `HasSavedSigner`), and `FieldCount`. `Key` is the value for `Recipient.Role`. The setup also has `Anchors []TemplateSignatureAnchor` (see below), and each role has `AnchoredFieldCount`. From an older backend that does not send them, `Anchors` is nil and `AnchoredFieldCount` 0.
 
 On a template with no saved signature setup `GetTemplateSignatureSetup` returns a 404 with code `SignatureSetupNotFound`:
 
@@ -140,8 +140,105 @@ for _, role := range setup.Roles {
 - A role left out uses the template's saved signer. If it has none, the API returns a 400 naming the role. Pass a role that has a saved signer to send to someone else this time.
 - An unknown role returns a 400 (`*turbodocx.ValidationError` with `Code` `"UnknownSignerRole"`) whose message lists the template's roles.
 - On a send, `Fields` is optional only when a recipient names a `role` (it is left out of the request when empty); any fields you pass are **added** to the template's (for example an extra witness signature). On a send (`SendSignature`, `CreateEmbeddedSignature`) where no recipient names a role, an omitted or empty `Fields` is a 400 `FieldsRequired` (SDK 0.8.0 sent the empty list and created a document with nothing to sign). A review link (`CreateSignatureReviewLink`) needs no fields: the SDK sends an empty list and you place them in the preview.
-- Roles only work for a PDF signature template. A Word template needs a deliverable generated first and sent with `deliverableId`.
+- A role send by `TemplateID` needs a PDF signature template; the `TemplateID` of a Word or PowerPoint template is a 400 `TemplateRolesNeedPdfTemplate`. For a Word or PowerPoint template, generate a deliverable and send it with `DeliverableID` and roles: it brings each role's anchored fields (see "Anchored fields on the template setup" below for which saved fields each kind of send brings).
 - `Role` works the same way on `CreateSignatureReviewLink` and on `EmbeddedSignatureRecipient` for `CreateEmbeddedSignature`. A role left out falls back to its saved signer, who also gets an embed URL in the result, so match result entries to signers by email or role rather than by position.
+
+### Anchored fields on the template setup
+
+An **anchored field** is a field on the template's saved signature setup that is tied to a tag such as `{ClientSign}` for one signer role and placed wherever that tag appears in the generated document. Use it when the layout moves with the content (a Word template generated into a deliverable, where coordinates drift), so the template carries the fields and your code does not measure anything. The add and remove calls are not in SDK 0.9.0 or earlier. The SDK's runnable example is [`packages/go-sdk/examples/turbosign_anchored_fields.go`](https://github.com/TurboDocx/SDK/blob/main/packages/go-sdk/examples/turbosign_anchored_fields.go).
+
+Three different moments, do not mix them up:
+
+1. **Setup time (once per template):** `AddTemplateSignatureAnchor` and `RemoveTemplateSignatureAnchor` edit the saved setup. They need an **administrator or contributor** API key; a key with a lower role is refused. Making a tag a signature field clears the template's own value for that variable, so **generate the deliverable after the tag became a signature field**: one generated before has the variable's value in place of the tag, and the field has nothing to anchor to.
+2. **Role send:** a recipient that names a `Role` adds that role's saved fields, with no flag. Which saved fields depends on what you send:
+
+   | What you send | Saved fields it brings |
+   |---|---|
+   | `TemplateID` of a PDF template | placed and anchored |
+   | `DeliverableID` of a deliverable generated from a PDF template | placed only |
+   | `DeliverableID` of a deliverable generated from a Word or PowerPoint template | anchored only (found by their tags in the deliverable) |
+   | `TemplateID` of a Word or PowerPoint template | refused (400 `TemplateRolesNeedPdfTemplate`) |
+
+   Fields you pass yourself are sent too, alongside the saved ones; anchor fields you add yourself follow step 3.
+3. **Your own anchor fields, with or without roles:** pass `TemplateID` or `DeliverableID`, `Fields` that carry a `Template: &turbodocx.TemplateAnchor{Anchor: ...}`, and `ApplySignatureSetup: turbodocx.BoolPtr(true)` (a `*bool`, so nil leaves it out and an explicit false is sent) on `SendSignatureRequest` or `CreateSignatureReviewLinkRequest`. Each field whose tag (case-insensitive) and type match an anchored field of the saved setup is marked as that setup's field:
+   - a tag missing from the document is **skipped** instead of failing the send, but the send still fails if that leaves a signer with no field (for example one signer whose only field is that tag; a review link is not refused, its fields are placed in the preview);
+   - with no `Template.Size` of its own it is as wide as the tag, at least the type's default width, at the default height; a size of your own wins;
+   - it is centred on the tag. The API takes a `template.alignment` to change that, but this SDK's `TemplateAnchor` does not have it yet;
+   - the saved field's size, offset, placement, default value and read-only setting are **not** copied onto your field. Set them on the field you send if you need them.
+
+   Without the flag, your own anchor fields keep the standard placement and a tag missing from the document fails the send. The flag only has an effect with `TemplateID` or `DeliverableID`. It is not for a file upload (the API rejects a file together with a template, so there is no setup to apply), and `CreateEmbeddedSignature` does not take it.
+
+```go
+// 1. Setup time (administrator or contributor key)
+added, err := client.TurboSign.AddTemplateSignatureAnchor(ctx, &turbodocx.AddTemplateSignatureAnchorRequest{
+    TemplateID: templateID,
+    RoleKey:    "client",       // a role key from GetTemplateSignatureSetup
+    Type:       "signature",    // or "initial", "date", "text", ...
+    Anchor:     "{ClientSign}",
+    // optional: Size (*turbodocx.AnchorSize), Offset (*turbodocx.AnchorOffset), Placement,
+    // DefaultValue, IsReadonly. If the field already exists, whatever you set here overwrites its
+    // saved value; leave them nil to keep the saved ones.
+})
+if err != nil {
+    var conflict *turbodocx.ConflictError
+    var tdErr *turbodocx.TurboDocxError
+    switch {
+    case errors.As(err, &conflict) && conflict.Code == "AnchorOwnedByOtherRole":
+        return fmt.Errorf("{ClientSign} already belongs to another signer role: %w", err)
+    case errors.As(err, &conflict) && conflict.Code == "AnchorTagHasField":
+        return fmt.Errorf("{ClientSign} already holds a different field: %w", err)
+    case errors.As(err, &tdErr) && tdErr.StatusCode == 423:
+        // open for editing in TurboDocx: retry later. Check the status, not tdErr.Code.
+        return fmt.Errorf("the template is locked, try again when it is closed: %w", err)
+    }
+    return err
+}
+// added.TagBecameSignatureField: true = this call created the field; false = it was already saved
+// (same added.FieldID, and it is not yours to remove)
+
+setup, err := client.TurboSign.GetTemplateSignatureSetup(ctx, templateID)
+if err != nil {
+    return err
+}
+// Anchors is nil and AnchoredFieldCount 0 from an older backend that does not send them
+for _, a := range setup.Anchors { // FieldID, RoleKey, Type, Anchor, Placement, Offset, Size, NotFound
+    fmt.Println(a.RoleKey, a.Anchor, a.Type, a.NotFound)
+}
+for _, r := range setup.Roles {
+    fmt.Println(r.Key, r.AnchoredFieldCount, "anchored of", r.FieldCount)
+}
+
+// Undoing your own setup: remove only a field this code created
+if added.TagBecameSignatureField {
+    if _, err := client.TurboSign.RemoveTemplateSignatureAnchor(ctx, templateID, added.FieldID); err != nil {
+        return err
+    }
+}
+
+// 3. Your own anchor fields, here on a send without roles
+_, err = client.TurboSign.SendSignature(ctx, &turbodocx.SendSignatureRequest{
+    DeliverableID: deliverableID, // or TemplateID; not with a File upload
+    DocumentName:  "Services Agreement - Acme",
+    Recipients:    []turbodocx.Recipient{{Name: "Jane Doe", Email: "jane@client.com", SigningOrder: 1}},
+    Fields: []turbodocx.Field{{
+        Type:           "signature",
+        RecipientEmail: "jane@client.com",
+        Template:       &turbodocx.TemplateAnchor{Anchor: "{ClientSign}"},
+    }},
+    ApplySignatureSetup: turbodocx.BoolPtr(true), // also on CreateSignatureReviewLinkRequest
+})
+// Jane's only field is {ClientSign}: if the deliverable lacks the tag she has no field and the send
+// still fails (a 400 whose message names the problem), so check err and surface its message.
+```
+
+- **Never remove a field your code did not create.** Remove an anchored field only when your own add returned `TagBecameSignatureField` true; a field that was already saved (`false`) is someone's real setup. Removing a field also does not bring back the values the template's variable had before the tag became a signature field. (An endpoint whose job is to delete a field the user picked by id is a different case: it removes what it was asked to.)
+- Adding the same type on the same tag for the same role again returns that field (same `FieldID`, `TagBecameSignatureField` false) and **updates** it with any `Size`, `Offset`, `Placement`, `DefaultValue` or `IsReadonly` you send; a setting you leave out keeps its saved value.
+- A tag belongs to one role and holds one field. Another role's tag, or a second field on a tag, is a 409 `*turbodocx.ConflictError` with code `AnchorOwnedByOtherRole` or `AnchorTagHasField`.
+- An unknown role or field id is a 404 `*turbodocx.NotFoundError` with code `SignerRoleNotFound` / `SetupFieldNotFound`; a template with no saved setup is `SignatureSetupNotFound`. A read-only field with no default value (its own or its role's) is a 400 `ReadonlyFieldNoDefaultValue`.
+- A **locked template** (open for editing in TurboDocx) is HTTP **423** on add and remove. The body is `{"error": "Resource is locked", "message": "This template is currently being edited", "data": {...}}` with no code, so detect it with `errors.As(err, &tdErr)` on a `*turbodocx.TurboDocxError` and `tdErr.StatusCode == 423`, never by matching a code (its `Code` is the body's `error` text).
+- On a template with no signer yet, role key `signer_1` creates the first signer.
+- `AddTemplateSignatureAnchorResponse` has `FieldID`, `SignatureSetup` (the saved setup as stored, a `map[string]interface{}`) and `TagBecameSignatureField`. The request's `Size`/`Offset` are `*turbodocx.AnchorSize`/`*turbodocx.AnchorOffset` (not the send-side `turbodocx.Size`), and `DefaultValue`/`IsReadonly` are pointers.
+- The anchor is one tag in single braces with no spaces (`{ClientSign}`), and `Placement` is `replace`, `before`, `after`, `above` or `below`. In `GetTemplateSignatureSetup`, `NotFound` true means the template has no variable (Word/PowerPoint) or text (PDF) with that tag yet.
 
 ### Optional fields
 
@@ -1778,6 +1875,8 @@ Every typed error embeds `turbodocx.TurboDocxError`, so `Code` (string), `Messag
 | `client.TurboSign.SendSignature(ctx, req)` | Send document for e-signature |
 | `client.TurboSign.CreateSignatureReviewLink(ctx, req)` | Preview without emails |
 | `client.TurboSign.GetTemplateSignatureSetup(ctx, templateID)` | List a template's signer roles (`Key`, `Order`, `HasSavedSigner`, `FieldCount`) to send it with `Recipient.Role` |
+| `client.TurboSign.AddTemplateSignatureAnchor(ctx, &turbodocx.AddTemplateSignatureAnchorRequest{...})` | Add an anchored field (a tag such as `{ClientSign}` for one role) to the template's saved signature setup (admin or contributor key) |
+| `client.TurboSign.RemoveTemplateSignatureAnchor(ctx, templateID, fieldID)` | Remove an anchored field from the saved setup |
 | `client.TurboSign.GetStatus(ctx, id)` | Get document-level status + expiresAt (no recipients) |
 | `client.TurboSign.Download(ctx, id)` | Download signed PDF as []byte |
 | `client.TurboSign.VoidDocument(ctx, id, reason)` | Cancel a signature request (reason required) |
@@ -1903,7 +2002,7 @@ Every typed error embeds `turbodocx.TurboDocxError`, so `Code` (string), `Messag
 
 ## Gotchas
 
-- **TurboSign send 400 codes** (read with `vErr.Code` (a `*turbodocx.ValidationError`); the message names the problem): `FieldsRequired` (a send, not a review link, with no or empty `Fields` and no recipient `role`), `FieldPageOutOfRange` (a field's `page` is past the last page), `UnknownSignerRole`, `DuplicateSignerRole` (two recipients for one role), `SignerRoleUnfilled` (a role has no recipient and no saved signer), `TemplateHasNoSignerRoles` (`role` used on a template with no saved setup), `RoleRequiresTemplate` (`role` without `templateId`), `TemplateRolesNeedPdfTemplate` (roles on a non-PDF template). Surface the message to the user.
+- **TurboSign send 400 codes** (read with `vErr.Code` (a `*turbodocx.ValidationError`); the message names the problem): `FieldsRequired` (a send, not a review link, with no or empty `Fields` and no recipient `role`), `FieldPageOutOfRange` (a field's `page` is past the last page), `UnknownSignerRole`, `DuplicateSignerRole` (two recipients for one role), `SignerRoleUnfilled` (a role has no recipient and no saved signer), `TemplateHasNoSignerRoles` (`role` used on a template with no saved setup), `RoleRequiresTemplate` (`role` without `templateId`), `TemplateRolesNeedPdfTemplate` (roles with the template id of a Word or PowerPoint template; send a deliverable generated from it instead). Surface the message to the user.
 - **Go SDK uses instance methods**, not static methods — create a client first with `NewClientWithConfig`
 - **`SenderEmail` is required** in `ClientConfig` for TurboSign operations — `NewClientWithConfig` returns a `*turbodocx.ValidationError` without it. **`SenderName` is optional**; when omitted the sender name resolves to **the name of your API key**.
 - **Context is required** for all API calls — pass `context.Background()` or request context

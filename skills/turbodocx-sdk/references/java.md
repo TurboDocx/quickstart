@@ -127,7 +127,7 @@ try {
 }
 ```
 
-`getTemplateSignatureSetup(templateId)` returns a `TemplateSignatureSetup` (`getTemplateId()`, `getRoles()`); each `TemplateSignatureRole` has `getKey()`, `getLabel()`, `getOrder()`, `hasSavedSigner()`, `getDefaultName()`/`getDefaultEmail()` (null unless `hasSavedSigner()`), and `getFieldCount()`. `getKey()` is the value for the recipient's role.
+`getTemplateSignatureSetup(templateId)` returns a `TemplateSignatureSetup` (`getTemplateId()`, `getRoles()`); each `TemplateSignatureRole` has `getKey()`, `getLabel()`, `getOrder()`, `hasSavedSigner()`, `getDefaultName()`/`getDefaultEmail()` (null unless `hasSavedSigner()`), and `getFieldCount()`. `getKey()` is the value for the recipient's role. The setup also has `getAnchors()` (`List<TemplateSignatureAnchor>`, see below), and each role has `getAnchoredFieldCount()`. From an older backend that does not send them, `getAnchors()` is an empty list (never null) and `getAnchoredFieldCount()` 0.
 
 On a template with no saved signature setup `getTemplateSignatureSetup` throws a 404 with code `SignatureSetupNotFound`:
 
@@ -146,9 +146,109 @@ try {
 - A role left out uses the template's saved signer. If it has none, the API returns a 400 naming the role. Pass a role that has a saved signer to send to someone else this time.
 - An unknown role returns a 400 (`ValidationException` with code `UnknownSignerRole`) whose message lists the template's roles.
 - On a send, `.fields(...)` is optional only when a recipient names a `role` (it is left out of the request when empty); any fields you pass are **added** to the template's (for example an extra witness signature). On a send (`sendSignature`, `createEmbeddedSignature`) where no recipient names a role, an omitted or empty fields is a 400 `FieldsRequired` (SDK 0.8.0 sent the empty list and created a document with nothing to sign). A review link (`createSignatureReviewLink`) needs no fields: the SDK sends an empty list and you place them in the preview.
-- Roles only work for a PDF signature template. A Word template needs a deliverable generated first and sent with `deliverableId`.
+- A role send by `templateId` needs a PDF signature template; the `templateId` of a Word or PowerPoint template is a 400 `TemplateRolesNeedPdfTemplate`. For a Word or PowerPoint template, generate a deliverable and send it with `deliverableId` and roles: it brings each role's anchored fields (see "Anchored fields on the template setup" below for which saved fields each kind of send brings).
 - Use `new Recipient.Builder().role("client").name(...).email(...)` when the role recipient also needs a phone or external id.
 - `role` works the same way on `createSignatureReviewLink` and, via `new EmbeddedSignatureRecipient.Builder().role(...)`, on `createEmbeddedSignature`. A role left out falls back to its saved signer, who also gets an embed URL in the result, so match result entries to signers by email or role rather than by position.
+
+### Anchored fields on the template setup
+
+An **anchored field** is a field on the template's saved signature setup that is tied to a tag such as `{ClientSign}` for one signer role and placed wherever that tag appears in the generated document. Use it when the layout moves with the content (a Word template generated into a deliverable, where coordinates drift), so the template carries the fields and your code does not measure anything. The add and remove calls are not in SDK 0.9.0 or earlier. The SDK's runnable example is [`packages/java-sdk/examples/TurboSignAnchoredFields.java`](https://github.com/TurboDocx/SDK/blob/main/packages/java-sdk/examples/TurboSignAnchoredFields.java).
+
+Three different moments, do not mix them up:
+
+1. **Setup time (once per template):** `addTemplateSignatureAnchor` and `removeTemplateSignatureAnchor` edit the saved setup. They need an **administrator or contributor** API key; a key with a lower role is refused. Making a tag a signature field clears the template's own value for that variable, so **generate the deliverable after the tag became a signature field**: one generated before has the variable's value in place of the tag, and the field has nothing to anchor to.
+2. **Role send:** a recipient that names a role (`Recipient.withRole(...)`) adds that role's saved fields, with no flag. Which saved fields depends on what you send:
+
+   | What you send | Saved fields it brings |
+   |---|---|
+   | `templateId` of a PDF template | placed and anchored |
+   | `deliverableId` of a deliverable generated from a PDF template | placed only |
+   | `deliverableId` of a deliverable generated from a Word or PowerPoint template | anchored only (found by their tags in the deliverable) |
+   | `templateId` of a Word or PowerPoint template | refused (400 `TemplateRolesNeedPdfTemplate`) |
+
+   Fields you pass yourself are sent too, alongside the saved ones; anchor fields you add yourself follow step 3.
+3. **Your own anchor fields, with or without roles:** pass `templateId` or `deliverableId`, `fields` that carry a `Field.TemplateAnchor`, and `.applySignatureSetup(true)` on the `SendSignatureRequest` or `CreateSignatureReviewLinkRequest` builder. Each field whose tag (case-insensitive) and type match an anchored field of the saved setup is marked as that setup's field:
+   - a tag missing from the document is **skipped** instead of failing the send, but the send still fails if that leaves a signer with no field (for example one signer whose only field is that tag; a review link is not refused, its fields are placed in the preview);
+   - with no `template.size` of its own it is as wide as the tag, at least the type's default width, at the default height; a size of your own wins;
+   - it is centred on the tag. The API takes a `template.alignment` to change that, but this SDK's `Field.TemplateAnchor` does not have it yet;
+   - the saved field's size, offset, placement, default value and read-only setting are **not** copied onto your field. Set them on the field you send if you need them.
+
+   Without the flag, your own anchor fields keep the standard placement and a tag missing from the document fails the send. The flag only has an effect with `templateId` or `deliverableId`. It is not for a file upload (the API rejects a file together with a template, so there is no setup to apply), and `createEmbeddedSignature` does not take it.
+
+```java
+import com.turbodocx.TurboDocxException;
+import com.turbodocx.models.*;
+
+// 1. Setup time (administrator or contributor key)
+AddTemplateSignatureAnchorResponse added = null;
+try {
+    added = client.turboSign().addTemplateSignatureAnchor(
+        new AddTemplateSignatureAnchorRequest.Builder()
+            .templateId(templateId)
+            .roleKey("client")            // a role key from getTemplateSignatureSetup
+            .type("signature")            // or "initial", "date", "text", ...
+            .anchor("{ClientSign}")
+            // optional: .size(150, 40) and .offset(0, 10) take doubles (150.5 is sent exactly;
+            // Field.Size / Field.Offset are also accepted), .placement, .defaultValue, .isReadonly.
+            // If the field already exists, whatever you set overwrites its saved value.
+            .build()
+    );
+    // added.isTagBecameSignatureField(): true = this call created the field; false = it was
+    // already saved (same getFieldId(), and it is not yours to remove)
+} catch (TurboDocxException.ConflictException e) {
+    switch (String.valueOf(e.getCode())) {
+        case "AnchorOwnedByOtherRole" -> System.err.println("{ClientSign} already belongs to another signer role");
+        case "AnchorTagHasField" -> System.err.println("{ClientSign} already holds a different field");
+        default -> throw e;
+    }
+} catch (TurboDocxException e) {
+    if (e.getStatusCode() != 423) throw e;
+    // open for editing in TurboDocx: retry later. Check the status, not e.getCode().
+    System.err.println("The template is locked, try again when it is closed");
+}
+
+TemplateSignatureSetup setup = client.turboSign().getTemplateSignatureSetup(templateId);
+// getAnchors() is never null (empty from an older backend); getAnchoredFieldCount() is 0 there
+for (TemplateSignatureAnchor a : setup.getAnchors()) { // getFieldId(), getRoleKey(), getType(), getAnchor(), getPlacement(), getOffset(), getSize(), isNotFound()
+    System.out.println(a.getRoleKey() + " " + a.getAnchor() + " " + (a.isNotFound() ? "tag not in the template" : "found"));
+}
+for (TemplateSignatureRole r : setup.getRoles()) {
+    System.out.println(r.getKey() + ": " + r.getAnchoredFieldCount() + " anchored of " + r.getFieldCount());
+}
+
+// Undoing your own setup: remove only a field this code created
+if (added != null && added.isTagBecameSignatureField()) {
+    client.turboSign().removeTemplateSignatureAnchor(templateId, added.getFieldId());
+}
+
+// 3. Your own anchor fields, here on a send without roles
+client.turboSign().sendSignature(
+    new SendSignatureRequest.Builder()
+        .deliverableId(deliverableId)     // or templateId; not with .file(...)
+        .documentName("Services Agreement - Acme")
+        .recipients(Arrays.asList(new Recipient("Jane Doe", "jane@client.com", 1)))
+        .fields(Arrays.asList(
+            new Field.Builder()
+                .type("signature")
+                .recipientEmail("jane@client.com")
+                .template(new Field.TemplateAnchor.Builder().anchor("{ClientSign}").build())
+                .build()
+        ))
+        .applySignatureSetup(true)        // also on CreateSignatureReviewLinkRequest.Builder
+        .build()
+);
+// Jane's only field is {ClientSign}: if the deliverable lacks the tag she has no field and the send
+// still fails (a 400 whose message names the problem), so catch it and surface e.getMessage().
+```
+
+- **Never remove a field your code did not create.** Remove an anchored field only when your own add returned `isTagBecameSignatureField()` true; a field that was already saved (`false`) is someone's real setup. Removing a field also does not bring back the values the template's variable had before the tag became a signature field. (An endpoint whose job is to delete a field the user picked by id is a different case: it removes what it was asked to.)
+- Adding the same type on the same tag for the same role again returns that field (same `getFieldId()`, `isTagBecameSignatureField()` false) and **updates** it with any `size`, `offset`, `placement`, `defaultValue` or `isReadonly` you send; a setting you leave out keeps its saved value.
+- A tag belongs to one role and holds one field. Another role's tag, or a second field on a tag, is a 409 `TurboDocxException.ConflictException` (read `e.getCode()`) with code `AnchorOwnedByOtherRole` or `AnchorTagHasField`.
+- An unknown role or field id is a 404 `TurboDocxException.NotFoundException` with code `SignerRoleNotFound` / `SetupFieldNotFound`; a template with no saved setup is `SignatureSetupNotFound`. A read-only field with no default value (its own or its role's) is a 400 `ReadonlyFieldNoDefaultValue`.
+- A **locked template** (open for editing in TurboDocx) is HTTP **423** on add and remove. The body is `{"error": "Resource is locked", "message": "This template is currently being edited", "data": {...}}` with no code, so detect it with `e.getStatusCode() == 423` on the `TurboDocxException`, never by matching a code (its `getCode()` is the body's `error` text).
+- On a template with no signer yet, role key `signer_1` creates the first signer.
+- `AddTemplateSignatureAnchorResponse` has `getFieldId()`, `getSignatureSetup()` (the saved setup as stored, a `Map<String, Object>`) and `isTagBecameSignatureField()`. The builder takes `.size(double width, double height)`, `.offset(double x, double y)` (or a `Field.Size` / `Field.Offset`, or a `TemplateSignatureAnchor.Size` / `.Offset`), `.placement(String)`, `.defaultValue(String)`, `.isReadonly(Boolean)`.
+- The anchor is one tag in single braces with no spaces (`{ClientSign}`), and `placement` is `replace`, `before`, `after`, `above` or `below`. In `getTemplateSignatureSetup`, `isNotFound()` true means the template has no variable (Word/PowerPoint) or text (PDF) with that tag yet.
 
 ### Optional fields
 
@@ -1685,6 +1785,8 @@ All seven subtypes are **nested classes** on `com.turbodocx.TurboDocxException` 
 | `client.turboSign().sendSignature(req)` | Send document for e-signature |
 | `client.turboSign().createSignatureReviewLink(req)` | Preview without emails |
 | `client.turboSign().getTemplateSignatureSetup(templateId)` | List a template's signer roles (`getKey()`, `getOrder()`, `hasSavedSigner()`, `getFieldCount()`) to send it with `Recipient.withRole(...)` |
+| `client.turboSign().addTemplateSignatureAnchor(new AddTemplateSignatureAnchorRequest.Builder()...build())` | Add an anchored field (a tag such as `{ClientSign}` for one role) to the template's saved signature setup (admin or contributor key) |
+| `client.turboSign().removeTemplateSignatureAnchor(templateId, fieldId)` | Remove an anchored field from the saved setup |
 | `client.turboSign().getStatus(id)` | Get document-level status + expiresAt (no recipients) |
 | `client.turboSign().download(id)` | Download signed PDF as byte[] |
 | `client.turboSign().voidDocument(id, reason)` | Cancel a signature request (`reason` required) |
@@ -1813,7 +1915,7 @@ All seven subtypes are **nested classes** on `com.turbodocx.TurboDocxException` 
 
 ## Gotchas
 
-- **TurboSign send 400 codes** (read with `e.getCode()`; the message names the problem): `FieldsRequired` (a send, not a review link, with no or empty fields and no recipient `role`), `FieldPageOutOfRange` (a field's `page` is past the last page), `UnknownSignerRole`, `DuplicateSignerRole` (two recipients for one role), `SignerRoleUnfilled` (a role has no recipient and no saved signer), `TemplateHasNoSignerRoles` (`role` used on a template with no saved setup), `RoleRequiresTemplate` (`role` without `templateId`), `TemplateRolesNeedPdfTemplate` (roles on a non-PDF template). Surface the message to the user.
+- **TurboSign send 400 codes** (read with `e.getCode()`; the message names the problem): `FieldsRequired` (a send, not a review link, with no or empty fields and no recipient `role`), `FieldPageOutOfRange` (a field's `page` is past the last page), `UnknownSignerRole`, `DuplicateSignerRole` (two recipients for one role), `SignerRoleUnfilled` (a role has no recipient and no saved signer), `TemplateHasNoSignerRoles` (`role` used on a template with no saved setup), `RoleRequiresTemplate` (`role` without `templateId`), `TemplateRolesNeedPdfTemplate` (roles with the template id of a Word or PowerPoint template; send a deliverable generated from it instead). Surface the message to the user.
 - **Java SDK uses Builder pattern** — create clients with `.Builder()...build()`
 - **`senderEmail` is required** for TurboSign operations. **`senderName` is optional** — when omitted, the sender name resolves to the **API key's name**.
 - **TurboQuote takes no `senderEmail`/`senderName`, but `sendQuote` still emails the recipient** (it creates a signature request). The sender comes from the org's quote template (Quote Settings); an API-key caller whose template has no sender gets 400 `SenderEmailRequired`.
