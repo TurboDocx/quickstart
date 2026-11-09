@@ -155,7 +155,7 @@ Three different moments, do not mix them up:
 
    Fields you pass yourself are sent too, alongside the saved ones; anchor fields you add yourself follow step 3.
 3. **Your own anchor fields, with or without roles:** pass `template_id` or `deliverable_id`, `fields` that carry a `"template": {"anchor": ...}`, and `apply_signature_setup=True` (on `send_signature()` or `create_signature_review_link()`). Each field whose tag (case-insensitive) and type match an anchored field of the saved setup is marked as that setup's field:
-   - a tag missing from the document is **skipped** instead of failing the send, but the send still fails if that leaves a signer with no field (for example one signer whose only field is that tag; a review link is not refused, its fields are placed in the preview);
+   - a tag missing from the document is **skipped** instead of failing the send, but the send, or the review link, then fails with 400 `SignerHasNoFields` if that leaves a signer with no field or only locked ones (for example one signer whose only field is that tag);
    - with no `"size"` of its own in `"template"` it is as wide as the tag, at least the type's default width, at the default height;
    - it is centred on the tag unless its `"template"` sets an `"alignment"` (passed through as is); your own size and alignment win;
    - the saved field's size, offset, placement, default value and read-only setting are **not** copied onto your field. Set them on the field you send if you need them.
@@ -1732,7 +1732,7 @@ The exception attributes are `e.status_code` (int or `None`) and `e.code` (str) 
 
 ## Gotchas
 
-- **TurboSign send 400 codes** (read with `e.code`; the message names the problem): `FieldsRequired` (a send, not a review link, with no or empty `fields` and no recipient `role`), `FieldPageOutOfRange` (a field's `page` is past the last page), `UnknownSignerRole`, `DuplicateSignerRole` (two recipients for one role), `SignerRoleUnfilled` (a role has no recipient and no saved signer), `TemplateHasNoSignerRoles` (`role` used on a template with no saved setup), `RoleRequiresTemplate` (`role` without `templateId`), `TemplateRolesNeedPdfTemplate` (roles with the template id of a Word or PowerPoint template; send a deliverable generated from it instead). Surface the message to the user.
+- **TurboSign send 400 codes** (read with `e.code`; the message names the problem): `FieldsRequired` (a send, not a review link, with no or empty `fields` and no recipient `role`), `FieldPageOutOfRange` (a field's `page` is past the last page), `UnknownSignerRole`, `DuplicateSignerRole` (two recipients for one role), `SignerRoleUnfilled` (a role has no recipient and no saved signer), `TemplateHasNoSignerRoles` (`role` used on a template with no saved setup), `RoleRequiresTemplate` (`role` without `templateId` or `deliverableId`), `SignerHasNoFields` (a signer has no field to sign; with fields from the saved setup, also when a missing tag was skipped, review links included), `TemplateRolesNeedPdfTemplate` (roles with the template id of a Word or PowerPoint template; send a deliverable generated from it instead). Surface the message to the user.
 - **All SDK methods are async** — use `await` in async functions, or `asyncio.run()` for sync contexts
 - **`sender_email` is required** — configure it globally or pass per-call
 - **Flask needs asyncio.run()** wrapping since Flask routes are synchronous by default
