@@ -3572,7 +3572,7 @@
     {
       "id": 78,
       "prompt": "Our Word contract template in TurboDocx has {ClientSign} and {ClientDate} tags, and the template already has a 'client' signer role. Write a one-off setup script for my Express/TypeScript project that turns those two tags into the client's signature and date fields on the template's saved signature setup, then prints which anchored fields the setup has and whether each tag was found in the template.",
-      "expected_output": "Installs @turbodocx/sdk, configures env vars, and adds a TypeScript script that calls TurboSign.addTemplateSignatureAnchor twice (roleKey 'client', type 'signature' / 'date', anchor '{ClientSign}' / '{ClientDate}'), then TurboSign.getTemplateSignatureSetup and prints anchors with notFound plus each role's anchoredFieldCount. Handles ConflictError (AnchorOwnedByOtherRole / AnchorTagHasField) and notes that an administrator or contributor API key is needed.",
+      "expected_output": "Installs @turbodocx/sdk, configures env vars, and adds a TypeScript script that calls TurboSign.addTemplateSignatureAnchor twice (roleKey 'client', type 'signature' / 'date', anchor '{ClientSign}' / '{ClientDate}'), then TurboSign.getTemplateSignatureSetup and prints anchors with notFound plus each role's anchoredFieldCount, defaulting both when an older backend leaves them out (anchors ?? [], anchoredFieldCount ?? 0). Handles ConflictError (AnchorOwnedByOtherRole / AnchorTagHasField); a locked template is detected by statusCode 423, not by a TemplateLocked code. A re-run is safe: re-adding an existing anchored field returns it (tagBecameSignatureField false). The script does not remove any anchored field. Notes that an administrator or contributor API key is needed.",
       "files": [
         "package.json",
         "tsconfig.json",
@@ -3604,13 +3604,28 @@
           "name": "mentions-admin-or-contributor-key",
           "type": "output_contains",
           "description": "The response tells the user the anchor calls need an administrator or contributor API key"
+        },
+        {
+          "name": "tolerates-missing-anchors",
+          "type": "file_contains",
+          "description": "The code tolerates anchors and anchoredFieldCount being absent (older backend), e.g. setup.anchors ?? [] / || [] and anchoredFieldCount ?? 0, rather than iterating setup.anchors directly"
+        },
+        {
+          "name": "no-templatelocked-code",
+          "type": "file_not_contains",
+          "description": "No code matches a 'TemplateLocked' error code (a locked template is a 423 with no code; if handled, it is by statusCode === 423)"
+        },
+        {
+          "name": "no-unconditional-remove",
+          "type": "file_not_contains",
+          "description": "The script does not call removeTemplateSignatureAnchor on a field it did not create (no remove at all, or only inside a check that the add returned tagBecameSignatureField true)"
         }
       ]
     },
     {
       "id": 79,
       "prompt": "In our FastAPI app we generate a TurboDocx deliverable from a Word template and then send it for signature. The template's signature setup already has an anchored signature field on {ClientSign}, but some generated contracts drop that section and the send then fails. We don't use signer roles. Write the endpoint that sends the deliverable to a client so the field fits the tag and a missing tag doesn't break the send.",
-      "expected_output": "Adds an async FastAPI endpoint that awaits TurboSign.send_signature(deliverable_id=..., recipients=[{name, email, signingOrder}], fields=[{type: 'signature', recipientEmail, template: {anchor: '{ClientSign}'}}], apply_signature_setup=True). Does not upload a file.",
+      "expected_output": "Adds an async FastAPI endpoint that awaits TurboSign.send_signature(deliverable_id=..., recipients=[{name, email, signingOrder}], fields=[{type: 'signature', recipientEmail, template: {anchor: '{ClientSign}'}}], apply_signature_setup=True). Does not upload a file. Tells the user that a missing tag is skipped, but because {ClientSign} is the client's only field, a contract without the tag leaves the signer with no field and the send still fails; the endpoint catches that SDK error and returns its message instead of crashing.",
       "files": [
         "pyproject.toml",
         "app/main.py",
@@ -3641,6 +3656,16 @@
           "name": "no-role-on-recipients",
           "type": "file_not_contains",
           "description": "Recipients do not carry a \"role\" key (the user said they don't use signer roles)"
+        },
+        {
+          "name": "explains-signer-left-without-field",
+          "type": "output_contains",
+          "description": "The response says that a missing tag is skipped but the send still fails when that leaves a signer with no field (here the client's only field is {ClientSign}), rather than promising every send will succeed"
+        },
+        {
+          "name": "handles-send-error",
+          "type": "file_contains",
+          "description": "The endpoint catches the SDK error from send_signature (e.g. ValidationError / TurboDocxError) and returns its message as an HTTP error instead of an unhandled 500"
         }
       ]
     },
@@ -3690,7 +3715,7 @@
     {
       "id": 81,
       "prompt": "Write a Laravel artisan command that sets up signature fields on a TurboDocx template from code: {ClientSign} for the 'client' role and {VendorSign} for the 'vendor' role. If a tag already belongs to another role or already has a field, print a clear message instead of crashing.",
-      "expected_output": "Adds an artisan command calling TurboSign::addTemplateSignatureAnchor(new AddTemplateSignatureAnchorRequest(templateId:, roleKey:, type: SignatureFieldType::SIGNATURE, anchor:)) once per role, catching ConflictException and reading $e->errorCode for AnchorOwnedByOtherRole / AnchorTagHasField. Notes the administrator or contributor key requirement.",
+      "expected_output": "Adds an artisan command calling TurboSign::addTemplateSignatureAnchor(new AddTemplateSignatureAnchorRequest(templateId:, roleKey:, type: SignatureFieldType::SIGNATURE, anchor:)) once per role, catching ConflictException and reading $e->errorCode for AnchorOwnedByOtherRole / AnchorTagHasField. A locked template, if handled, is detected by $e->statusCode === 423, not a TemplateLocked code. Re-running the command is safe (an existing field on the same tag, role and type is returned with tagBecameSignatureField false). The command never removes a field. Notes the administrator or contributor key requirement.",
       "files": [
         "composer.json",
         "routes/web.php",
@@ -3721,13 +3746,23 @@
           "name": "command-file-created",
           "type": "file_exists",
           "description": "An artisan command class exists under app/Console/Commands/"
+        },
+        {
+          "name": "no-templatelocked-code",
+          "type": "file_not_contains",
+          "description": "No code matches a 'TemplateLocked' error code (a locked template is a 423 with no code; if handled, it is by $e->statusCode === 423)"
+        },
+        {
+          "name": "no-unconditional-remove",
+          "type": "file_not_contains",
+          "description": "The setup command does not call removeTemplateSignatureAnchor on a field it did not create (no remove at all, or only gated on tagBecameSignatureField true)"
         }
       ]
     },
     {
       "id": 82,
       "prompt": "In our Spring Boot admin service, add two REST endpoints for a TurboDocx template's signature setup: one that lists the anchored signature fields (which role and tag each one is, and whether the tag was found in the template), and one that deletes an anchored field by its id.",
-      "expected_output": "Adds a controller that calls client.turboSign().getTemplateSignatureSetup(templateId) and maps getAnchors() (getFieldId(), getRoleKey(), getAnchor(), getType(), isNotFound()), and one that calls client.turboSign().removeTemplateSignatureAnchor(templateId, fieldId). Handles TurboDocxException.NotFoundException (SetupFieldNotFound / SignatureSetupNotFound) as a 404.",
+      "expected_output": "Adds a controller that calls client.turboSign().getTemplateSignatureSetup(templateId) and maps getAnchors() (getFieldId(), getRoleKey(), getAnchor(), getType(), isNotFound()), and one that calls client.turboSign().removeTemplateSignatureAnchor(templateId, fieldId) for the id the caller asked to delete (an explicit delete endpoint, so no tagBecameSignatureField gate is needed). Handles TurboDocxException.NotFoundException (SetupFieldNotFound / SignatureSetupNotFound) as a 404. A locked template, if handled, is detected by getStatusCode() == 423, not a TemplateLocked code.",
       "files": [
         "pom.xml",
         "src/main/java/com/example/demo/DemoApplication.java"
@@ -3752,13 +3787,18 @@
           "name": "dependency-added",
           "type": "file_contains",
           "description": "pom.xml includes the com.turbodocx sdk dependency"
+        },
+        {
+          "name": "no-templatelocked-code",
+          "type": "file_not_contains",
+          "description": "No code matches a 'TemplateLocked' error code (a locked template is a 423 with no code; if handled, it is by getStatusCode() == 423)"
         }
       ]
     },
     {
       "id": 83,
       "prompt": "Our Rails app sends a generated TurboDocx deliverable for signature without signer roles. The Word template behind it has its signature field saved as an anchored field on {ClientSign}. Add a service object that sends the deliverable to a client and makes the send use the template's anchored field, so a missing tag is skipped rather than failing.",
-      "expected_output": "Adds a service object calling TurboDocxSdk::TurboSign.send_signature(deliverableId:, documentName:, recipients: [{ name:, email:, signingOrder: 1 }], fields: [{ type: 'signature', recipientEmail:, template: { anchor: '{ClientSign}' } }], applySignatureSetup: true).",
+      "expected_output": "Adds a service object calling TurboDocxSdk::TurboSign.send_signature(deliverableId:, documentName:, recipients: [{ name:, email:, signingOrder: 1 }], fields: [{ type: 'signature', recipientEmail:, template: { anchor: '{ClientSign}' } }], applySignatureSetup: true). Tells the user that a missing tag is skipped, but because {ClientSign} is the client's only field, a document without the tag leaves the signer with no field and the send still fails; the service rescues that SDK error and surfaces its message.",
       "files": [
         "Gemfile",
         "config/application.rb",
@@ -3790,6 +3830,16 @@
           "name": "no-role-on-recipients",
           "type": "file_not_contains",
           "description": "Recipients do not carry a role key"
+        },
+        {
+          "name": "explains-signer-left-without-field",
+          "type": "output_contains",
+          "description": "The response says that a missing tag is skipped but the send still fails when that leaves a signer with no field (here the client's only field is {ClientSign}), rather than promising every send will succeed"
+        },
+        {
+          "name": "handles-send-error",
+          "type": "file_contains",
+          "description": "The service rescues the SDK error from send_signature (e.g. TurboDocxSdk::ValidationError / TurboDocxSdk::TurboDocxError) and surfaces its message or returns a failure result, instead of letting it crash unhandled"
         }
       ]
     }
