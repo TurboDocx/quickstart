@@ -85,6 +85,39 @@ System.out.println("Document ID: " + result.getDocumentId());
 2. **Text anchors** when your code generates or controls the document text: put a tag such as `{ClientSignature}` where the field goes (its own text, one distinct tag per signer and field) and place the field by anchor with `placement` `replace` (see the anchor example in this reference).
 3. **Coordinates** (`page` + `x`/`y`/`width`/`height`). Fully supported: if you already know the positions, use them directly. When you don't, options 1 and 2 are easier than measuring. Coordinates need re-measuring if the layout moves; a review link lets you check placement before sending.
 
+### Fit anchor fields to their tags (`fitAnchoredTags`)
+
+Call `.fitAnchoredTags(true)` on the `SendSignatureRequest`, `CreateSignatureReviewLinkRequest` or `CreateEmbeddedSignatureRequest` builder to place each anchor field the way a template's saved setup field is placed. Leave `size` off the `Field.TemplateAnchor` to have the field sized to its tag instead of guessing a width and height.
+
+```java
+SendSignatureResponse result = client.turboSign().sendSignature(
+    new SendSignatureRequest.Builder()
+        .file(pdfBytes)
+        .recipients(Arrays.asList(new Recipient("Jane Doe", "jane@client.com", 1)))
+        .fields(Arrays.asList(
+            // No size: the box is fitted to the line the {ClientSign} tag is on
+            new Field.Builder()
+                .type("signature")
+                .recipientEmail("jane@client.com")
+                .template(new Field.TemplateAnchor.Builder()
+                    .anchor("{ClientSign}")
+                    .placement("replace")
+                    .build())
+                .build()
+        ))
+        .fitAnchoredTags(true)
+        .build()
+);
+```
+
+- It applies to a field whose `template.anchor` is one tag in single braces with no spaces (such as `{ClientSign}`), with `replace` placement (or none) and without `useRegex`. Other fields keep the standard placement.
+- With no `size`, the field is fitted to its tag's line: its height follows the line's font size and it starts where the tag starts. With a `size`, it keeps that size and is centred on its tag.
+- A tag missing from the document still fails the request (a 400 `TurboDocxException.ValidationException`, as without the flag).
+- It works with every document source (`file`, `fileLink`, `templateId`, `deliverableId`) and does not read or change a template's saved setup.
+- Off by default and **sent only when true**: the builder takes a primitive `boolean` defaulting to `false` (getter `isFitAnchoredTags()`), and `false` leaves the request exactly as before.
+- On `createEmbeddedSignature()`, each recipient's `fields` shorthand (`EmbeddedRecipientFields`) gives each field a size, so with the flag those fields are centred on their tags. Pass the request's `fields` without a size to have them fitted.
+- Needs the SDK release that adds it (after 0.9.0). Against 0.9.0 the option does not exist yet (the builder method is missing, a compile error).
+
 ### Send a template with signer roles
 
 Use this when the same document goes out again and again with different signers (an NDA, a contract, an onboarding form). The user sets the template up **once** in TurboDocx: upload the PDF as a template, add each signer as a role on its Signatures tab (e.g. "Client", "Countersigner"), drag each role's fields onto the page, and save the signature setup. A role that is always the same person (e.g. your countersigner) can be given a saved signer there. The code then names each recipient's role with `Recipient.withRole(...)` and passes **no field coordinates or anchors**: the fields saved for that role come with it.

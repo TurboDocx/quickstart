@@ -84,6 +84,33 @@ fmt.Printf("Document ID: %s\n", result.DocumentID)
 2. **Text anchors** when your code generates or controls the document text: put a tag such as `{ClientSignature}` where the field goes (its own text, one distinct tag per signer and field) and place the field by anchor with `placement` `replace` (see the anchor example in this reference).
 3. **Coordinates** (`page` + `x`/`y`/`width`/`height`). Fully supported: if you already know the positions, use them directly. When you don't, options 1 and 2 are easier than measuring. Coordinates need re-measuring if the layout moves; a review link lets you check placement before sending.
 
+### Fit anchor fields to their tags (`FitAnchoredTags`)
+
+Set `FitAnchoredTags: true` on `SendSignatureRequest`, `CreateSignatureReviewLinkRequest` or `CreateEmbeddedSignatureRequest` to place each anchor field the way a template's saved setup field is placed. Leave `Size` nil to have the field sized to its tag instead of guessing a width and height.
+
+```go
+result, err := client.TurboSign.SendSignature(ctx, &turbodocx.SendSignatureRequest{
+    File: pdfBytes,
+    Recipients: []turbodocx.Recipient{
+        {Name: "Jane Doe", Email: "jane@client.com", SigningOrder: 1},
+    },
+    Fields: []turbodocx.Field{
+        // No Size: the box is fitted to the line the {ClientSign} tag is on
+        {Type: "signature", RecipientEmail: "jane@client.com",
+            Template: &turbodocx.TemplateAnchor{Anchor: "{ClientSign}", Placement: "replace"}},
+    },
+    FitAnchoredTags: true,
+})
+```
+
+- It applies to a field whose `template.anchor` is one tag in single braces with no spaces (such as `{ClientSign}`), with `replace` placement (or none) and without `useRegex`. Other fields keep the standard placement.
+- With no `size`, the field is fitted to its tag's line: its height follows the line's font size and it starts where the tag starts. With a `size`, it keeps that size and is centred on its tag.
+- A tag missing from the document still fails the request (a 400 `*turbodocx.ValidationError`, as without the flag).
+- It works with every document source (`File`, `FileLink`, `TemplateID`, `DeliverableID`) and does not read or change a template's saved setup.
+- Off by default and **sent only when true**: `FitAnchoredTags` is a plain `bool` (not a `*bool`, so no `turbodocx.BoolPtr`), and `false` leaves the request exactly as before.
+- On `CreateEmbeddedSignature`, each recipient's `Fields` shorthand gives each field a size, so with the flag those fields are centred on their tags. Pass the request's `Fields` without a size to have them fitted.
+- Needs the SDK release that adds it (after 0.9.0). Against 0.9.0 the option does not exist yet (an unknown field is a compile error).
+
 ### Send a template with signer roles
 
 Use this when the same document goes out again and again with different signers (an NDA, a contract, an onboarding form). The user sets the template up **once** in TurboDocx: upload the PDF as a template, add each signer as a role on its Signatures tab (e.g. "Client", "Countersigner"), drag each role's fields onto the page, and save the signature setup. A role that is always the same person (e.g. your countersigner) can be given a saved signer there. The code then sets each recipient's `Role` and passes **no field coordinates or anchors**: the fields saved for that role come with it.

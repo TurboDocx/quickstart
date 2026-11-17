@@ -3568,6 +3568,129 @@
           "description": ".env file contains TURBODOCX_API_KEY and TURBODOCX_ORG_ID"
         }
       ]
+    },
+    {
+      "id": 84,
+      "prompt": "Our Express (TypeScript) app generates contract PDFs with the tag {ClientSign} on the client's signature line. Add an endpoint that takes an uploaded PDF and sends it to the client for signature, with the signature box sized to fit that line rather than a fixed width and height we'd have to guess.",
+      "expected_output": "Installs @turbodocx/sdk, configures TurboSign from env vars, and adds a POST route that calls TurboSign.sendSignature with the uploaded file, the client as recipient, one signature field anchored to {ClientSign} with no size, and fitAnchoredTags: true. Wires the route and adds the TurboDocx env vars.",
+      "files": [
+        "package.json",
+        "tsconfig.json",
+        "src/index.ts",
+        "package-lock.json"
+      ],
+      "assertions": [
+        {
+          "name": "uses-send-signature-with-file",
+          "type": "file_contains",
+          "description": "Route calls TurboSign.sendSignature with the uploaded file (file: Buffer or path)"
+        },
+        {
+          "name": "anchor-field-client-sign",
+          "type": "file_contains",
+          "description": "The signature field uses template: { anchor: '{ClientSign}' } with placement 'replace' or no placement, and no useRegex"
+        },
+        {
+          "name": "no-size-on-anchor-field",
+          "type": "file_contains",
+          "description": "The anchored field has no template.size and no page/x/y/width/height coordinates, so the API sizes it to the tag"
+        },
+        {
+          "name": "passes-fit-anchored-tags",
+          "type": "file_contains",
+          "description": "The sendSignature request sets fitAnchoredTags: true at the top level of the request (not inside a field or template object)"
+        },
+        {
+          "name": "routes-wired",
+          "type": "file_contains",
+          "description": "src/index.ts mounts the new route"
+        },
+        {
+          "name": "env-has-sign-vars",
+          "type": "file_contains",
+          "description": ".env file contains TURBODOCX_API_KEY, TURBODOCX_ORG_ID and TURBODOCX_SENDER_EMAIL"
+        }
+      ]
+    },
+    {
+      "id": 85,
+      "prompt": "In our FastAPI service, add a preview step before sending: create a TurboSign review link (no emails) for a deliverable we already generated in TurboDocx. Its text contains {ClientSign} and {ClientDate} tags for the client's signature and the signing date. Each field should be fitted to its tag's line instead of a hardcoded size.",
+      "expected_output": "Installs turbodocx-sdk, configures TurboSign from env vars, and adds an async endpoint that awaits TurboSign.create_signature_review_link with deliverable_id, the client recipient, a signature field anchored to {ClientSign} and a date field anchored to {ClientDate} (camelCase keys, no size), and fit_anchored_tags=True. Returns the previewUrl. Wires the router and adds the env vars.",
+      "files": [
+        "pyproject.toml",
+        "app/main.py",
+        "app/routers/__init__.py"
+      ],
+      "assertions": [
+        {
+          "name": "uses-review-link-with-deliverable",
+          "type": "file_contains",
+          "description": "Endpoint awaits TurboSign.create_signature_review_link with deliverable_id=..."
+        },
+        {
+          "name": "passes-fit-anchored-tags-snake-case",
+          "type": "file_contains",
+          "description": "Passes fit_anchored_tags=True as a keyword argument (not fitAnchoredTags=, and not inside a field dict)"
+        },
+        {
+          "name": "two-anchor-fields",
+          "type": "file_contains",
+          "description": "Fields include a signature field anchored to {ClientSign} and a date field anchored to {ClientDate}, using camelCase keys (recipientEmail, template.anchor)"
+        },
+        {
+          "name": "no-size-on-anchor-fields",
+          "type": "file_contains",
+          "description": "Neither anchored field sets template size or page/x/y/width/height"
+        },
+        {
+          "name": "returns-preview-url",
+          "type": "file_contains",
+          "description": "Response returns the review link's previewUrl"
+        },
+        {
+          "name": "router-wired",
+          "type": "file_contains",
+          "description": "app/main.py includes the new router"
+        }
+      ]
+    },
+    {
+      "id": 86,
+      "prompt": "I have a Gin service that sends lease PDFs for signature. The tenant signs where the PDF says {TenantSign}. Add a handler that sends an uploaded lease to the tenant, with the signature field fitted to the tag's line instead of a fixed size.",
+      "expected_output": "Adds the Go SDK, builds the TurboSign client from env vars, and adds a Gin handler that calls client.TurboSign.SendSignature(ctx, &turbodocx.SendSignatureRequest{...}) with the uploaded file bytes, the tenant recipient, a field with Template: &turbodocx.TemplateAnchor{Anchor: \"{TenantSign}\"} and no Size, and FitAnchoredTags: true. Handles the error return and wires the route.",
+      "files": [
+        "go.mod",
+        "main.go",
+        "internal/handlers/.gitkeep",
+        "internal/config/.gitkeep"
+      ],
+      "assertions": [
+        {
+          "name": "uses-send-signature",
+          "type": "file_contains",
+          "description": "Handler calls client.TurboSign.SendSignature with a context and a *turbodocx.SendSignatureRequest holding the uploaded file bytes in File"
+        },
+        {
+          "name": "fit-anchored-tags-plain-bool",
+          "type": "file_contains",
+          "description": "Sets FitAnchoredTags: true on SendSignatureRequest as a plain bool (not turbodocx.BoolPtr(true) or another pointer)"
+        },
+        {
+          "name": "anchor-without-size",
+          "type": "file_contains",
+          "description": "The field uses Template: &turbodocx.TemplateAnchor{Anchor: \"{TenantSign}\"} with Placement \"replace\" or empty, and no Size or X/Y/Width/Height"
+        },
+        {
+          "name": "handles-error-return",
+          "type": "file_contains",
+          "description": "Checks the error returned by SendSignature and responds with an error status"
+        },
+        {
+          "name": "route-wired",
+          "type": "file_contains",
+          "description": "main.go registers the new handler on a route"
+        }
+      ]
     }
   ]
 }
